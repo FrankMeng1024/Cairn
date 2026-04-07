@@ -1,0 +1,10 @@
+# Project directories (project-specific, not part of framework)
+FrankProject/
+PodScribe/
+TankWarGame/
+
+# Temp files
+*.log
+*.txt
+server_err.*
+server_out.*
