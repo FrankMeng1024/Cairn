@@ -8,10 +8,9 @@ Project-level specs (TECH_SPEC.md, DISCOVERY.md) may override these with explici
 
 ## Visual Quality Baseline
 
-- **Reference project**: FrankProject (`C:\ClaudeCodeProjects\FrankProject`)
-- **Minimum bar**: Match or exceed FrankProject's visual quality on every Sprint — this is the floor, not the target
-- **Arch obligation**: Before proposing Sprint 0 style demos, Arch reviews FrankProject to calibrate the quality bar
-- **Frontend obligation**: Every Story's UI output is compared against FrankProject before marking Done — if it falls below that bar, it is not Done
+- **Minimum bar**: Production-quality UI — clean layout, consistent spacing, professional typography, all interactive states handled (hover, active, disabled, focus). This is the floor, not the target.
+- **Arch obligation**: Before Sprint 0 style demos, review `docs/BENCHMARK.md` if it exists for project-specific bar. Otherwise use the minimum bar above.
+- **Frontend obligation**: Every Story's UI output must meet this bar before marking Done.
 
 ---
 
@@ -20,7 +19,7 @@ Project-level specs (TECH_SPEC.md, DISCOVERY.md) may override these with explici
 - **Primary**: Mobile browser (375px viewport, touch-friendly interactions)
 - **Secondary**: Desktop browser (1280px+, no scrolling required to see primary content)
 - **Deploy target**: User's own server, accessible via web browser on both desktop and mobile
-- **Exception**: Projects that are explicitly desktop-only tools (CLI, game, etc.) document their target platform in TECH_SPEC.md and this mobile default does not apply
+- **Override**: Projects may define different viewports in `TECH_SPEC.md §viewports` with explicit rationale.
 
 ---
 

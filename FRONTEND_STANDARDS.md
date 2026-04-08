@@ -1,17 +1,16 @@
 # Frontend Design Standards
 
 ## Quality Benchmark
-The minimum quality bar for all frontend work in this factory is **FrankProject** (`C:\ClaudeCodeProjects\FrankProject`):
+Minimum quality bar for all frontend work in this factory:
 - Smooth animations on all interactive elements (hover, active, loading)
 - Fluid typography and spacing using `clamp()`
 - Full light/dark theme support via CSS custom properties
 - Mobile-first layout, works at 375px without horizontal scroll
 - Every interactive element has hover, active, disabled, and loading states
 - Designed empty states and error states — never a blank screen
+- Inline SVG icon system — consistent weight and style, one set per project
 
-FrankProject scores approximately 7.5/10 visually. New projects must meet or exceed this. The key area where new projects must exceed FrankProject: **icon system** (FrankProject uses emoji; new projects must use consistent SVG icons).
-
-See `docs/BENCHMARK.md` for the detailed FrankProject frontend analysis.
+See `docs/BENCHMARK.md` if the project defines a higher bar.
 
 ## Icon System
 - **Never** use emoji as icons in production UI — they render at different sizes, styles, and positions across platforms
