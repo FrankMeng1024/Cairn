@@ -29,7 +29,20 @@ Every project MUST follow this workflow. Every agent MUST read and internalize t
 
 This workflow is for **Full-Stack UI projects**. All live verification uses MCP Playwright (interaction + screenshots) and MCP Chrome DevTools (measurement + error inspection).
 
-**Playwright availability rule**: MCP Playwright is **mandatory** for all UI project verification. At the start of every Sprint (after `/model opus`), verify Playwright MCP is available by checking `/mcp` or attempting a Playwright tool call. **If Playwright MCP is NOT available: STOP immediately and notify the user.** Do NOT fall back to curl/bash. Do NOT continue the Sprint. Playwright is the only tool that can catch frontend runtime errors (JS crashes, rendering failures, interaction bugs) — curl fallback has been proven to miss Blocker-level bugs that ship to the user. The user must fix the MCP configuration before work continues.
+**Playwright availability rule**: MCP Playwright is **mandatory** for all UI project verification.
+
+At the start of every Sprint (after `/model opus`), verify Playwright MCP is available by attempting a `browser_navigate` call to the health endpoint. If the call succeeds, proceed. If it fails:
+
+1. **Auto-repair attempt** — run these commands and retry:
+   ```
+   CLAUDE_CODE_GIT_BASH_PATH="C:\tools\Git\bin\bash.exe" claude mcp list   # check status
+   CLAUDE_CODE_GIT_BASH_PATH="C:\tools\Git\bin\bash.exe" claude mcp add playwright -s user -- "C:\tools\Nodejs\node.exe" "C:\Users\I585134\AppData\Roaming\npm\node_modules\@playwright\mcp\cli.js"   # re-register if missing
+   ```
+   Then tell the user to restart Claude Code and retry.
+
+2. **If still unavailable after repair: HARD STOP.** Do NOT fall back to curl/bash. Do NOT continue the Sprint. Playwright is the only tool that can catch frontend runtime errors (JS crashes, rendering failures, interaction bugs) — curl fallback has been proven to miss Blocker-level bugs that ship to the user (Sprint 7 incident).
+
+**MCP persistence rule**: MCP servers are configured in `~/.claude.json` (NOT `~/.claude/settings.json`). Only `claude mcp add/remove` commands modify this file. **No workflow step, skill, or agent may edit `~/.claude.json` directly.** If MCP configuration needs to change, use the `claude mcp` CLI commands only. This prevents accidental corruption of persistent MCP settings.
 
 ## Resuming After Context Compact
 
