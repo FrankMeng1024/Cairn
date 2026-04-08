@@ -27,7 +27,21 @@ Every project MUST follow this workflow. Every agent MUST read and internalize t
 
 ## Project Scope
 
-This workflow is for **Full-Stack UI projects**. All live verification uses MCP Playwright (interaction + screenshots) and MCP Chrome DevTools (measurement + error inspection). If Playwright is unavailable at any verification step: **stop immediately** and notify the user — do NOT proceed with any workaround.
+This workflow is for **Full-Stack UI projects**. All live verification uses MCP Playwright (interaction + screenshots) and MCP Chrome DevTools (measurement + error inspection).
+
+**Playwright availability rule**: Prefer MCP Playwright for interaction + screenshots. If Playwright MCP tools are NOT available in the current session, fall back to curl/bash for API-level verification and skip screenshot-based steps — do NOT stop or notify the user. Record the fallback in `tasks/lessons.md`. Only escalate to the user if the entire verification category (e.g., all API endpoints) is untestable.
+
+## Resuming After Context Compact
+
+When a conversation is compacted and resumed mid-project (e.g., `/project --auto 继续开发`):
+
+**If all critical docs exist** (`docs/PRD.md`, `docs/TECH_SPEC.md`, `docs/DISCOVERY.md`, `tasks/jira/` with Sprint directories) — skip "Joining an Existing Project" entirely. Instead:
+1. Read `tasks/PROJECT_STATE.md` if it exists — get current Sprint number and open tasks
+2. Run `git log --oneline -5` — see what was recently committed
+3. Check `tasks/jira/` for the current Sprint directory — find in-progress Stories and open bugs
+4. Continue from exactly where the work left off — no alignment checks, no document re-reads, no user confirmation needed
+
+**If a critical doc is missing** — follow "Joining an Existing Project" below.
 
 ---
 
@@ -42,13 +56,14 @@ Determined at Sprint 0, recorded in `docs/TECH_SPEC.md §acceptance`. Cannot cha
 
 **Mode 2 — Autonomous iteration** (`acceptance_mode: auto`):
 - Activated when the `/project` skill is invoked with `--auto`
-- **User does not participate** after invoking `--auto`. All roles — including PO — are played by the main agent. No user confirmation is requested at any Sprint boundary.
+- **Sprint 0 runs normally with the user** — requirements discussion, style selection (CP1), and plan confirmation (CP2) all happen as usual. The user defines what gets built.
+- **From Sprint 1 onward**: all roles are played by the main agent. No user confirmation at Sprint boundaries.
 - Virtual User is **mandatory** — it cannot be skipped
-- Virtual User is the **project-completion acceptance gate** — it runs ONCE when all Must-Have backlog items are Done, NOT at the end of every Sprint
-- **PO is the main agent** in Mode 2: after each Sprint, PO (main agent) reviews all Must-Have PRD features against Story statuses and QA/UX results, then autonomously decides whether to invoke VU or open a new Sprint
+- Virtual User is the **project-completion acceptance gate** — it is triggered during Sprint Planning when the team unanimously determines there is nothing left to build, NOT at the end of every Sprint
+- **PO is the main agent from Sprint 1**: after each Sprint, PO opens Sprint Planning for the next Sprint. If during Planning (Step 0 — Backlog Refinement), **all key roles (PO, Arch, SM, PM, Dreamer if active) unanimously confirm there is no content worth opening a new Sprint for** — all Must-Have Done, no actionable bugs, no pending CRs, no proposals — then PO triggers VU acceptance instead of opening a new Sprint
 - PO reviews Virtual User acceptance reports; if NOT ACCEPTED, SM opens a new Sprint — no user input required
-- QA and UX still run every Sprint as normal — Virtual User runs only after the full project backlog is cleared
-- **User escalation** occurs ONLY in the three conditions listed in the Virtual User stall detection rule and the User Escalation Conditions table
+- QA and UX still run every Sprint as normal — Virtual User runs only when the team reaches consensus at Sprint Planning that there is nothing left to build
+- **User escalation from Sprint 1 onward** occurs ONLY in the three conditions listed in the User Escalation Conditions table (Mode 2 column)
 
 All role definitions, Sprint lifecycle steps, and completion criteria reference these modes by name. See **Virtual User** role for Mode 2 details. See **Project Completion** for per-mode checklists.
 
@@ -86,13 +101,13 @@ Declared per-role. Main agent enforces these as hard constraints — not suggest
 
 | Role | Permitted tools | Prohibited |
 |------|----------------|------------|
-| QA subagent | Read (knowledge.md + ACs only), Write (verdict file) | Bash, Edit, any source file Read |
-| UX subagent | Read (knowledge.md only), Write (review file) | Bash, Edit, any source file Read |
-| Virtual User subagent | Read (PRD.md + CR.md only), Write (acceptance file) | Bash, Edit, any other file Read |
-| Main agent (as hands) | All Playwright + Bash + Read/Write for evidence | Cannot write verdict/review/acceptance — subagent writes |
-| Developers | All tools | Cannot write verdict/review/acceptance — subagent writes |
+| QA subagent | Read (knowledge.md + ACs only) | Bash, Edit, Write, any source file Read |
+| UX subagent | Read (knowledge.md only) | Bash, Edit, Write, any source file Read |
+| Virtual User subagent | Read (PRD.md + CR.md only) | Bash, Edit, Write, any other file Read |
+| Main agent (as hands) | All Playwright + Bash + Read/Write for evidence and verdict/review files | Cannot compose verdict/review/acceptance independently — must write from subagent's structured output |
+| Developers | All tools | Cannot write verdict/review/acceptance — subagent output only |
 
-**Enforcement**: When launching a subagent, main agent provides ONLY the files in the "Permitted tools" column as context. If a subagent requests a file outside its permission set, main agent refuses and informs subagent it is not available.
+**Enforcement**: Subagents return structured JSON output; main agent physically writes the verdict/review/acceptance file from that output. Subagents have no Write tool access. Main agent writes the file but does NOT compose its content — content comes from subagent structured output only. When launching a subagent, main agent provides ONLY the files in the "Permitted tools" column as context.
 
 ---
 
@@ -136,7 +151,7 @@ Thirteen roles. Each has exactly one area of authority. Virtual User is conditio
 - Produces the PRD and breaks it into Epics
 - Confirms style direction / interface design at Sprint 0
 - Mode 1: verifies every Sprint Demo — independently exercises each Story against the running product, takes evidence; opens Blocker/Critical bugs when demo fails
-- Mode 2 (main agent as PO): after each Sprint, reviews Story statuses + QA/UX results; autonomously decides to invoke VU (all Must-Have Done, no Blockers) or open a new Sprint; reviews VU acceptance reports and escalates disagreements to SM
+- Mode 2 (main agent as PO): after each Sprint, opens Sprint Planning for the next Sprint. At Planning Step 0, if all key roles (PO, Arch, SM, PM, Dreamer if active) unanimously confirm there is nothing worth opening a new Sprint for — triggers VU acceptance. Otherwise opens a new Sprint. Reviews VU acceptance reports and escalates disagreements to SM
 - Proposes CRs based on evolving product thinking
 
 **Does NOT**: write code, make tech decisions, manage agents.
@@ -200,10 +215,10 @@ Thirteen roles. Each has exactly one area of authority. Virtual User is conditio
 - **Creates all Jira Story and Bug files** — SM writes the file with ACs. PM then annotates with points + assignee (see PM role).
 - **Demo bug files**: when PO finds a bug during Demo, SM creates the Bug file in real time. PO describes the issue, SM writes it immediately. PM assigns owner after (or immediately if Blocker stops the demo).
 - **AC operationalization rule**: every AC must be independently verifiable by a QA agent with no implementation knowledge. "Feels right", "looks good" are not acceptable. AC must cite a specific, verifiable condition.
-- **Requirement traceability check**: at every Refinement and Planning, every feature in `docs/PRD.md` + `docs/CR.md` must map to a Story, the backlog, or the "What We Will NOT Build" section in DISCOVERY.md. Gaps escalated to PO.
+- **Requirement traceability check**: at Sprint Planning Step 0, every feature in `docs/PRD.md` + `docs/CR.md` must map to a Story, the backlog, or the "What We Will NOT Build" section in DISCOVERY.md. Gaps escalated to PO.
 - At Sprint Planning step 1: integrates UX ACs into Story files alongside functional ACs (equal weight)
 - Broadcasts interface contract changes; routes schema change requests to DBA
-- **CR tracking**: maintains CR scheduling and 2-Sprint window deadlines. At each Backlog Refinement, identifies CRs due for scheduling and surfaces to PO. At end of 2-Sprint window, SM escalates to PO: schedule or withdraw. If PO does not respond within 1 additional Sprint, SM withdraws the CR and notes it in `docs/CR.md` as Withdrawn.
+- **CR tracking**: maintains CR scheduling and 2-Sprint window deadlines. At Sprint Planning Step 0, identifies CRs due for scheduling and surfaces to PO. At end of 2-Sprint window, SM escalates to PO: schedule or withdraw. If PO does not respond within 1 additional Sprint, SM withdraws the CR and notes it in `docs/CR.md` as Withdrawn.
 - **Closes Bug files** after QA marks Verified (administrative act)
 - Updates CLAUDE.md when workflow changes are warranted (see CLAUDE.md update rule in Sprint Retrospective)
 
@@ -247,11 +262,11 @@ Thirteen roles. Each has exactly one area of authority. Virtual User is conditio
 
 **Responsibilities**:
 
-**Stage 1 — Happy path smoke test** (at Integration step 5):
+**Stage 1 — Happy path smoke test** (runs before launching the QA subagent at Integration step 5; triggers only after Arch Code Review passes at step 3):
 - Launch fresh service via the start script (see Start Script Lifecycle)
 - Navigate the primary user flow, completing every action to its observable result (not just navigating to the page — fill inputs, click/invoke, wait for and verify the outcome)
 - Record actual wait time at each step. Any step exceeding the feedback threshold (default 2s, configurable in `TECH_SPEC.md §performance-targets`) without visible feedback = file a bug immediately
-- Use Playwright for interaction + Chrome DevTools for error inspection
+- Use Playwright for interaction + Chrome DevTools for error inspection (fall back to curl if Playwright unavailable — see Project Scope)
 - If happy path broken: file bug with evidence, return to development. QA subagent NOT launched.
 - If happy path passes: launch QA subagent (Stage 2).
 
@@ -575,7 +590,7 @@ A UX bug is **Blocker** when a first-time user cannot complete the primary flow 
 
 PO finding a bug = QA failed to catch it = process failure → SM opens retrospective action.
 
-**Bug backlog health rule** — checked at every Backlog Refinement:
+**Bug backlog health rule** — checked at Sprint Planning Step 0:
 - **0–5 open** Medium/Low: normal
 - **6–10 open**: Arch flags as tech debt risk; at least 1 bug fix Story added
 - **10+ open**: SM escalates to PO; dedicated bug-fix Sprint recommended
@@ -586,44 +601,24 @@ PO finding a bug = QA failed to catch it = process failure → SM opens retrospe
 
 ### Joining an Existing Project
 
-When an agent is assigned to a project that already has code, this sequence runs in full before any new work.
+**Trigger**: Project already has code, but the `/project` skill has never been run on it — so `docs/PRD.md`, `docs/TECH_SPEC.md`, or `docs/DISCOVERY.md` are missing. This is NOT triggered by context compact on an active project (see "Resuming After Context Compact").
 
-**Step 1 — Orient** (read in this order):
-1. `CLAUDE.md` (this file) + `USER_CONFIG.md`
-2. `docs/DISCOVERY.md` — original vision, scope, project type
-3. `docs/TECH_SPEC.md` — stack, constraints, commit strategy
-4. Interface contract (`docs/API_SPEC.md` + `docs/UI_SPEC.md`)
-5. `tasks/jira/` — current Sprint, Stories, open bugs
-6. `tasks/lessons.md` — what has failed and been learned (if exists)
-7. `git log --oneline -10` — what was recently built
+**New projects** (no code yet) go directly to Sprint 0 — no Joining step.
 
-**Step 2 — Spec vs Code alignment check** (Arch):
-- Read interface contract, then read actual implementation. Any deviation: file Spec Drift item immediately.
-- If `DISCOVERY.md` or `TECH_SPEC.md` does not exist: **stop**. SM raises to user.
-- If commit strategy not recorded: treat as existing/deployed, apply conservative default (Sprint-end commit only).
+**What Joining adds over normal Sprint 0**: one extra step at the beginning — read and understand the existing code before starting Sprint 0 requirements discussion. After that, Sprint 0 runs exactly as normal, including CP1 and CP2 with the user.
 
-**Step 3 — Critical document check** (SM): **STOP if any of these are missing:**
+**Steps**:
 
-| File | Purpose | Missing → |
-|---|---|---|
-| `docs/PRD.md` | Product promises — Virtual User's source of truth | **BLOCK. Must be created before Sprint Planning.** |
-| `docs/CR.md` | Approved changes superseding PRD | Create empty file if no CRs yet — do not block. |
-| `docs/TECH_SPEC.md` | Stack, commit strategy | **BLOCK. SM raises to user.** |
-| `docs/DISCOVERY.md` | Original vision and scope | **BLOCK. SM raises to user.** |
+**Step 1 — Understand the existing code** (Arch):
+1. Read all source files — API endpoints, data models, UI structure, config
+2. Produce a one-page product summary: what is built, what it does, key user flows
+3. Identify any interface contracts or schemas already in place
 
-**If `docs/PRD.md` is missing**: This is a recovery flow — do NOT hard-stop. Arch + SM execute the following sequence:
-1. **Arch reads all available code** — interface contracts, API endpoints, UI structure, data models. Arch produces a one-page product summary: what is built, what it does, key user flows observed.
-2. **SM reads supporting documents** — DISCOVERY.md, TECH_SPEC.md, lessons.md, git log for intent signals.
-3. **SM brings understanding to the user** — SM presents Arch's summary: "Based on the code, the product does X, Y, Z. The likely core promise is [summary]. Before I write the PRD, I want to confirm with you:" Then ask the same questions as Pre-Sprint 0 (core promise, Must Have vs nice-to-have, definition of done, quality expectations). Use Arch's summary as the starting point, not a blank slate.
-4. **Generate PRD** — after user confirms answers, SM writes `docs/PRD.md`.
-5. **User confirms PRD** — No Sprint Planning until confirmed.
+**Step 2 — Produce supporting context** (SM):
+- Read any available docs (README, comments, git log)
+- Produce a gap list: what docs are missing, what decisions are unrecorded
 
-`docs/PRD.md` is **never directly edited** after the user confirms it. All subsequent changes go to `docs/CR.md`. Where a CR conflicts with PRD, the CR takes precedence — this is the intended evolution mechanism, not a PRD modification.
-
-**Step 4 — Current state summary** (SM):
-Produce `tasks/PROJECT_STATE.md`: Sprint number, bug counts, backlog top-5, known tech debt, commit/branch strategy.
-
-**Step 5 — Proceed to Backlog Refinement**.
+**Step 3 — Proceed to Sprint 0** with Arch's product summary as the starting point for requirements discussion. PO presents the summary to the user: "Based on the code, the product does X, Y, Z. Before we write the PRD, I want to confirm:" — then runs Sprint 0 normally from Pre-Sprint 0 onward, including CP1 and CP2.
 
 ---
 
@@ -675,11 +670,11 @@ Resolved before any code. Recorded in `docs/TECH_SPEC.md`. Cannot change mid-pro
 
 #### User Confirmation Point 1 (Style selection)
 
-Present 3 static HTML style demos → user picks → Arch documents choice in `docs/UI_SPEC.md`.
+Present 3 static HTML style demos → user picks → Arch documents choice in `docs/UI_SPEC.md`. Required in both Mode 1 and Mode 2.
 
 #### User Confirmation Point 2 (Sprint 0 complete)
 
-Present: tech stack, schema (if applicable), Sprint 1 Stories with ACs, start script health check evidence, `validate_deps` output, test data requirements, confirmed Decision Checklist.
+Present: tech stack, schema (if applicable), Sprint 1 Stories with ACs, start script health check evidence, `validate_deps` output, test data requirements, confirmed Decision Checklist. Required in both Mode 1 and Mode 2 — this is the last user gate before autonomous iteration begins.
 
 ---
 
@@ -890,10 +885,10 @@ At Integration, the main agent executes steps 4-6 using the QA/UX subagent colla
 |---|---|---|
 | 1 | **DevOps** | Run start script from scratch. Confirm clean start + health check. |
 | 2 | **Frontend Dev** | Integrate against fresh running backend (if applicable). |
-| 3 | **Arch** | Code Review — logic errors, security, contract compliance. Blocks steps 4–6. |
-| 4 | **UX subagent + main agent** | UX subagent writes interaction test plan (first-time user perspective) → **main agent** executes with Playwright → **main agent** returns screenshots to UX subagent → UX subagent reviews and requests more if needed → loop until satisfied → UX subagent writes UX review. Main agent executes; UX subagent judges. |
-| 5 | **QA subagent + main agent** | QA subagent writes test plan → **main agent** runs test runner script + any additional steps → **main agent** returns raw screenshots + responses to QA subagent → QA subagent reviews evidence and judges PASS/FAIL → loop until satisfied → QA subagent writes verdict. Main agent executes; QA subagent judges. |
-| 6 | **Main agent** | If verdict FAIL: fix bugs, re-run from step 1. If PASS: proceed. |
+| 3 | **Arch** | Code Review — logic errors, security, contract compliance. Blocks all subsequent steps (4–10). |
+| 4 | **UX subagent + main agent** | UX subagent writes interaction test plan (first-time user perspective) → **main agent** executes with Playwright → **main agent** returns screenshots to UX subagent → UX subagent reviews and requests more if needed (max 1 additional round) → UX subagent writes UX review. Main agent executes; UX subagent judges. |
+| 5 | **QA Lead + QA subagent + main agent** | QA Lead runs happy path smoke test (Stage 1); if broken, file bug and return to development — QA subagent NOT launched. If passes: QA subagent writes test plan → **main agent** runs test runner script + any additional steps → **main agent** returns raw screenshots + responses to QA subagent → QA subagent reviews evidence and judges PASS/FAIL (max 2 additional rounds) → QA subagent writes verdict. Main agent executes; QA subagent judges. |
+| 6 | **Main agent** | If verdict FAIL: apply 3-tier error budget (see Guardrails). Blocker bug → L3: fix root cause, re-run start script, re-run QA subagent verification only (not full Integration restart unless service is broken). If same Blocker recurs after fix: escalate to user. If PASS: proceed. |
 | 7 | **All** | All Blocker + Critical bugs fixed before Demo. |
 | 8 | **Bug fix** | Fix → re-run start script → re-run test scripts → QA subagent re-verify. |
 | 9 | **SM** | Medium/Low bugs → backlog. |
@@ -930,7 +925,7 @@ Output format for Phase 2 review:
 {
   "friction_items": [{ "severity": "Blocker|Critical|Medium|Low", "description": "...", "screenshot_ref": "..." }],
   "confidence": "HIGH|MEDIUM|LOW",
-  "untested_flows": ["..."],
+  "untested_paths": ["..."],
   "knowledge_updates": ["..."]
 }
 ```
@@ -969,11 +964,12 @@ Output format for Phase 2 judgment:
 ##### Anti-circumvention
 
 - QA/UX subagents have NO access to source code — enforced by prompt (only knowledge.md + ACs provided)
-- Main agent executes tests but does NOT write verdict — QA subagent writes it
+- Main agent executes tests but does NOT compose verdict content — main agent writes the verdict file from QA subagent's structured output only
 - Main agent MUST NOT modify QA/UX knowledge files except to append updates returned by the subagent
 - Main agent MUST NOT modify test scripts to skip checks
 - Hook blocks marking Done/Complete without verdict files
-- If Playwright is unavailable: immediately stop and notify the user. Do NOT proceed with any workaround or skip browser testing.
+- If Playwright is unavailable: fall back to curl/bash for API verification, skip screenshot steps, record fallback in `tasks/lessons.md`. Do NOT stop or notify the user.
+- **JS global scope check (mandatory when Playwright unavailable AND Story modifies JS files)**: grep every modified JS file for `const`/`let`/`var` top-level declarations; cross-check against all other JS files loaded on the same page for name collisions. A `const` redeclaration crashes the entire JS runtime silently from a curl perspective. This check is NOT optional — curl cannot detect it.
 
 #### Sprint Review + Demo
 
@@ -1012,7 +1008,7 @@ Output format for Phase 2 judgment:
 - Anyone proposes; only PO approves
 - Default: defer to backlog
 - Accept mid-sprint: only if CR supports Sprint Goal AND equivalent scope dropped
-- Every backlog CR must go through Refinement before entering a Sprint
+- Every backlog CR must go through Sprint Planning Step 0 (Backlog Refinement) before entering a Sprint
 - **CR time limit**: every PO-approved CR must be scheduled into a Sprint within 2 Sprints of approval (the 2-Sprint window starts at the Sprint when PO approves the CR). If a CR has not been acted on after 2 Sprints, SM flags to PO — either schedule it or withdraw it. If PO does not respond within 1 additional Sprint, SM withdraws the CR and notes it in `docs/CR.md` as Withdrawn. Unactioned CRs are not tracked indefinitely.
 - **SM appends every PO-approved CR to `docs/CR.md`** — one entry per CR, format: `## CR-NNN: [Title] (Sprint N)` + one-line description of what changed. Where CR conflicts with PRD, CR takes precedence. `docs/PRD.md` is never directly edited after creation (see PRD evolution rule in Joining an Existing Project).
 
@@ -1025,7 +1021,7 @@ Facilitated by SM:
 4. SM updates CLAUDE.md if warranted (see update rule)
 5. SM creates Sprint N+1 files; PM assigns
 
-**Lightweight retro rule**: If all three are true — (a) zero bugs found by QA/UX, (b) no Integration restart loops, (c) no Spec Drift — SM records "Sprint N: clean Sprint, no retrospective actions" in `tasks/lessons.md` and skips steps 1-3 above. Step 4 (CLAUDE.md update check) still runs. Full retrospective is mandatory when any of (a)-(c) is violated.
+**Lightweight retro rule**: If all three are true — (a) zero bugs found by QA/UX, (b) no Integration restart loops, (c) no Spec Drift — SM records "Sprint N: clean Sprint, no retrospective actions" in `tasks/lessons.md` and skips steps 1-3 above. Steps 4 (CLAUDE.md update check) and 5 (Sprint N+1 file creation) still run. Full retrospective is mandatory when any of (a)-(c) is violated.
 
 **CLAUDE.md update rule**:
 - **MUST** update when: a workflow step systematically fails across 2+ Sprints (evidence in `tasks/lessons.md`), or new role boundary/gate established
@@ -1049,12 +1045,21 @@ Complete when ALL true:
 Virtual User is **mandatory** in this mode (see Virtual User role). Complete when ALL true:
 
 **VU Invocation Prerequisites — ALL must be verified before VU is launched. Missing any = STOP, do not launch VU:**
+
+**Trigger**: During Sprint Planning for Sprint N+1, at Step 0 (Backlog Refinement), all key roles reach unanimous consensus that there is nothing worth opening a new Sprint for. Specifically:
+- [ ] PO confirms: no Must-Have features remaining, no CRs pending
+- [ ] Arch confirms: no technical debt or Spike follow-ups requiring action
+- [ ] SM confirms: requirement traceability complete — every PRD+CR feature maps to a Done Story or "What We Will NOT Build"
+- [ ] PM confirms: no open Blocker/Critical bugs, no backlog items warranting a Sprint
+- [ ] Dreamer (if active) confirms: no proposals worth pursuing now
+
+**Technical prerequisites (verified after team consensus):**
 - [ ] `docs/BACKLOG.md` has zero Must-Have items remaining
-- [ ] All Must-Have PRD features have Story files with Status = Done in the current Sprint directory
-- [ ] `docs/qa/sprintN-verdict.md` = PASS
-- [ ] `docs/ux/sprintN-review.md` exists with no Blocker-level friction
+- [ ] All Must-Have PRD features have Story files with Status = Done
+- [ ] `docs/qa/sprintN-verdict.md` = PASS (latest Sprint)
+- [ ] `docs/ux/sprintN-review.md` exists with no Blocker-level friction (latest Sprint)
 - [ ] No open Blocker or Critical bugs
-- [ ] Mode 1: PO (user) has explicitly stated "ready for final acceptance" — recorded in `tasks/PROJECT_STATE.md`. Mode 2: main agent (as PO) verifies the above conditions and proceeds autonomously — no user confirmation required.
+- [ ] (Mode 1 note: VU does not run in Mode 1 — this prerequisite list is Mode 2 only.)
 
 **Then VU runs:**
 Virtual User subagent writes walkthrough from PRD/CR → main agent executes with sequential screenshots → main agent returns flipbook to Virtual User → Virtual User reviews and judges → if NOT ACCEPTED: HARD STOP, SM召集团队评审 VU 每条不满意点（合理→新 Sprint Story；需补充说明→PO 提供上下文→VU 重新评估，最终解释权在 VU）→ 如仍有合理问题则开新 Sprint。If stall: escalate to user.
@@ -1074,7 +1079,7 @@ Virtual User subagent writes walkthrough from PRD/CR → main agent executes wit
 - [ ] `docs/` up to date
 - [ ] `tasks/lessons.md` has final retrospective
 
-Continue: PO adds new Epic → Backlog Refinement.
+Continue: PO adds new Epic → Sprint Planning (Step 0 — Backlog Refinement).
 Stop: SM produces final `tasks/PROJECT_STATE.md`.
 
 ---
@@ -1092,15 +1097,30 @@ Stop: SM produces final `tasks/PROJECT_STATE.md`.
 
 ## User Escalation Conditions
 
+## User Escalation Conditions
+
+**Mode 1** (manual) — escalate for any of:
+
 | Condition | Who triggers | What user decides |
 |---|---|---|
-| Sprint 0 style/interface confirmation | Arch/SM | Direction |
-| Sprint 0 completion confirmation | SM | Stack, schema, Sprint 1 plan |
+| Sprint 0 style/interface confirmation (CP1) | Arch/SM | Direction |
+| Sprint 0 completion confirmation (CP2) | SM | Stack, schema, Sprint 1 plan |
 | Spike NOT VIABLE | Arch | Alternative technical direction |
 | Arch vs PO large disagreement | SM | Direction |
 | CR adds a full Sprint's worth of scope | PO | Whether to add a Sprint |
 | Fundamental technical blocker | Arch | Architecture pivot |
-| Virtual User stall (Mode 2) | SM | Continue iterating / lower bar / stop project |
+
+**Mode 2** (auto) — Sprint 0 escalations same as Mode 1 (user defines requirements and confirms Sprint 1 plan). From Sprint 1 onward, escalate ONLY for:
+
+| Condition | Who triggers | What user decides |
+|---|---|---|
+| Spike NOT VIABLE with no viable alternative | Arch | Architecture pivot or stop |
+| Fundamental technical blocker with no workaround | Arch | Architecture pivot or stop |
+| Virtual User stall (3 Sprints, same issue, <0.5 score change) | SM | Continue / lower bar / stop |
+
+**In Mode 2 from Sprint 1 onward, do NOT escalate for**: Arch/PO disagreements (PO = main agent, resolves autonomously), normal bugs or QA failures (fix and retry), scope decisions within approved backlog.
+
+**In Mode 2, do NOT escalate for**: style choices, Sprint 0 confirmation, Arch/PO disagreements (PO = main agent, resolves autonomously), scope changes (PO decides autonomously), normal bugs, QA failures (fix and retry).
 
 All other decisions resolved autonomously.
 
@@ -1196,10 +1216,11 @@ Types: feat | fix | test | devops | docs | refactor | style | spike
 **Verification Enforcement (absolute)**:
 - A Story is NOT Done until QA subagent has produced a verdict referencing that Story — hook checks evidence directory exists
 - A Sprint is NOT complete until `docs/qa/sprintN-verdict.md` = PASS AND `docs/ux/sprintN-review.md` exists — hook enforced
-- QA verdict is written by QA subagent, NOT by main agent
-- UX review is written by UX subagent, NOT by main agent
+- QA verdict content is authored by QA subagent, NOT by main agent — main agent writes the file from QA subagent's structured output only
+- UX review content is authored by UX subagent, NOT by main agent — main agent writes the file from UX subagent's structured output only
 - Test runner script reads from the test config file — project-specific, no hardcoded selectors
-- If Playwright is unavailable: immediately stop and notify the user. Do NOT proceed with any workaround or skip browser testing.
+- If Playwright is unavailable: fall back to curl/bash for API verification, skip screenshot steps, record fallback in `tasks/lessons.md`. Do NOT stop or notify the user.
+- **JS global scope check (mandatory when Playwright unavailable AND Story modifies JS files)**: grep every modified JS file for `const`/`let`/`var` top-level declarations; cross-check against all other JS files loaded on the same page for name collisions. A `const` redeclaration crashes the entire JS runtime silently from a curl perspective. This check is NOT optional — curl cannot detect it.
 
 ---
 
