@@ -29,7 +29,7 @@ Every project MUST follow this workflow. Every agent MUST read and internalize t
 
 This workflow is for **Full-Stack UI projects**. All live verification uses MCP Playwright (interaction + screenshots) and MCP Chrome DevTools (measurement + error inspection).
 
-**Playwright availability rule**: Prefer MCP Playwright for interaction + screenshots. If Playwright MCP tools are NOT available in the current session, fall back to curl/bash for API-level verification and skip screenshot-based steps — do NOT stop or notify the user. Record the fallback in `tasks/lessons.md`. Only escalate to the user if the entire verification category (e.g., all API endpoints) is untestable.
+**Playwright availability rule**: MCP Playwright is **mandatory** for all UI project verification. At the start of every Sprint (after `/model opus`), verify Playwright MCP is available by checking `/mcp` or attempting a Playwright tool call. **If Playwright MCP is NOT available: STOP immediately and notify the user.** Do NOT fall back to curl/bash. Do NOT continue the Sprint. Playwright is the only tool that can catch frontend runtime errors (JS crashes, rendering failures, interaction bugs) — curl fallback has been proven to miss Blocker-level bugs that ship to the user. The user must fix the MCP configuration before work continues.
 
 ## Resuming After Context Compact
 
@@ -266,7 +266,7 @@ Thirteen roles. Each has exactly one area of authority. Virtual User is conditio
 - Launch fresh service via the start script (see Start Script Lifecycle)
 - Navigate the primary user flow, completing every action to its observable result (not just navigating to the page — fill inputs, click/invoke, wait for and verify the outcome)
 - Record actual wait time at each step. Any step exceeding the feedback threshold (default 2s, configurable in `TECH_SPEC.md §performance-targets`) without visible feedback = file a bug immediately
-- Use Playwright for interaction + Chrome DevTools for error inspection (fall back to curl if Playwright unavailable — see Project Scope)
+- Use Playwright for interaction + Chrome DevTools for error inspection. If Playwright unavailable: STOP — see Playwright availability rule in Project Scope.
 - If happy path broken: file bug with evidence, return to development. QA subagent NOT launched.
 - If happy path passes: launch QA subagent (Stage 2).
 
@@ -968,8 +968,7 @@ Output format for Phase 2 judgment:
 - Main agent MUST NOT modify QA/UX knowledge files except to append updates returned by the subagent
 - Main agent MUST NOT modify test scripts to skip checks
 - Hook blocks marking Done/Complete without verdict files
-- If Playwright is unavailable: fall back to curl/bash for API verification, skip screenshot steps, record fallback in `tasks/lessons.md`. Do NOT stop or notify the user.
-- **JS global scope check (mandatory when Playwright unavailable AND Story modifies JS files)**: grep every modified JS file for `const`/`let`/`var` top-level declarations; cross-check against all other JS files loaded on the same page for name collisions. A `const` redeclaration crashes the entire JS runtime silently from a curl perspective. This check is NOT optional — curl cannot detect it.
+- If Playwright is unavailable: STOP and notify user — see Playwright availability rule in Project Scope. No curl fallback, no degraded verification.
 
 #### Sprint Review + Demo
 
@@ -1219,8 +1218,7 @@ Types: feat | fix | test | devops | docs | refactor | style | spike
 - QA verdict content is authored by QA subagent, NOT by main agent — main agent writes the file from QA subagent's structured output only
 - UX review content is authored by UX subagent, NOT by main agent — main agent writes the file from UX subagent's structured output only
 - Test runner script reads from the test config file — project-specific, no hardcoded selectors
-- If Playwright is unavailable: fall back to curl/bash for API verification, skip screenshot steps, record fallback in `tasks/lessons.md`. Do NOT stop or notify the user.
-- **JS global scope check (mandatory when Playwright unavailable AND Story modifies JS files)**: grep every modified JS file for `const`/`let`/`var` top-level declarations; cross-check against all other JS files loaded on the same page for name collisions. A `const` redeclaration crashes the entire JS runtime silently from a curl perspective. This check is NOT optional — curl cannot detect it.
+- If Playwright is unavailable: STOP and notify user — see Playwright availability rule in Project Scope. No curl fallback, no degraded verification.
 
 ---
 
