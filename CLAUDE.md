@@ -29,32 +29,80 @@ Every project MUST follow this workflow. Every agent MUST read and internalize t
 
 This workflow is for **Full-Stack UI projects**. All live verification uses MCP Playwright (interaction + screenshots) and MCP Chrome DevTools (measurement + error inspection).
 
-**Playwright availability rule**: MCP Playwright is **mandatory** for all UI project verification.
+**MCP availability check — mandatory at Sprint start** (after `/model opus`):
 
-At the start of every Sprint (after `/model opus`), verify Playwright MCP is available by attempting a `browser_navigate` call to the health endpoint. If the call succeeds, proceed. If it fails:
+Two MCPs are required for all UI projects. Check both before any Sprint work begins.
 
-1. **Auto-repair attempt** — run these commands and retry:
-   ```
-   CLAUDE_CODE_GIT_BASH_PATH="C:\tools\Git\bin\bash.exe" claude mcp list   # check status
-   CLAUDE_CODE_GIT_BASH_PATH="C:\tools\Git\bin\bash.exe" claude mcp add playwright -s user -- "C:\tools\Nodejs\node.exe" "C:\Users\I585134\AppData\Roaming\npm\node_modules\@playwright\mcp\cli.js"   # re-register if missing
-   ```
-   Then tell the user to restart Claude Code and retry.
+| MCP | Check method | Auto-repair command |
+|-----|-------------|---------------------|
+| **Playwright** | Attempt `browser_navigate` to health endpoint | `claude mcp add playwright -s user -- "C:\tools\Nodejs\node.exe" "C:\Users\I585134\AppData\Roaming\npm\node_modules\@playwright\mcp\cli.js"` |
+| **context7** | Call `resolve-library-id` with `"react"` — if it returns an ID, context7 is live | `claude mcp add context7 -s user -- "C:\tools\Nodejs\node.exe" "C:\Users\I585134\AppData\Roaming\npm\node_modules\@upstash\context7-mcp\dist\index.js"` |
 
-2. **If still unavailable after repair: HARD STOP.** Do NOT fall back to curl/bash. Do NOT continue the Sprint. Playwright is the only tool that can catch frontend runtime errors (JS crashes, rendering failures, interaction bugs) — curl fallback has been proven to miss Blocker-level bugs that ship to the user (Sprint 7 incident).
+**If either MCP fails**:
+1. Run `CLAUDE_CODE_GIT_BASH_PATH="C:\tools\Git\bin\bash.exe" claude mcp list` to inspect status
+2. Run the auto-repair command above for the failing MCP
+3. Tell the user to restart Claude Code, then retry
+
+**If either MCP is still unavailable after repair: HARD STOP.** Do NOT continue. Do NOT degrade gracefully.
+- Playwright unavailable = verification quality is compromised — curl fallback has proven to miss Blocker-level bugs (Sprint 7 incident)
+- context7 unavailable = implementation quality is compromised — library API hallucinations will enter production code
+- Both are equally non-negotiable. Notify the user and wait for resolution.
 
 **MCP persistence rule**: MCP servers are configured in `~/.claude.json` (NOT `~/.claude/settings.json`). Only `claude mcp add/remove` commands modify this file. **No workflow step, skill, or agent may edit `~/.claude.json` directly.** If MCP configuration needs to change, use the `claude mcp` CLI commands only. This prevents accidental corruption of persistent MCP settings.
 
-## Resuming After Context Compact
+## Project Entry — Four Cases
 
-When a conversation is compacted and resumed mid-project (e.g., `/project --auto 继续开发`):
+Every `/project` invocation falls into exactly one case. Identify the case first, then follow only that path. No other checks needed.
 
-**If all critical docs exist** (`docs/PRD.md`, `docs/TECH_SPEC.md`, `docs/DISCOVERY.md`, `tasks/jira/` with Sprint directories) — skip "Joining an Existing Project" entirely. Instead:
-1. Read `tasks/PROJECT_STATE.md` if it exists — get current Sprint number and open tasks
+| Case | Condition | Action |
+|------|-----------|--------|
+| **1 — New project** | No code, no docs | Go directly to Sprint 0 |
+| **2 — Existing code, no factory docs** | Code exists, but `docs/PRD.md` or `docs/TECH_SPEC.md` or `docs/DISCOVERY.md` missing | Joining flow: read code → Sprint 0 |
+| **3 — In-progress project** | All critical docs exist AND `PROJECT_STATE.md` status ≠ COMPLETE | Resume: read PROJECT_STATE → continue from interruption point. Zero extra process. |
+| **4 — Completed project, new iteration** | All critical docs exist AND `PROJECT_STATE.md` status = COMPLETE | Doc health check → Sprint 0 gap-fill if needed → Sprint Planning for new features |
+
+Critical docs = `docs/PRD.md` + `docs/TECH_SPEC.md` + `docs/DISCOVERY.md` + `tasks/jira/` with at least one Sprint directory.
+
+---
+
+### Case 3 — Resume (in-progress)
+
+1. Read `tasks/PROJECT_STATE.md` — get current Sprint number and open tasks
 2. Run `git log --oneline -5` — see what was recently committed
-3. Check `tasks/jira/` for the current Sprint directory — find in-progress Stories and open bugs
+3. Check `tasks/jira/sprintN/` for in-progress Stories and open bugs
 4. Continue from exactly where the work left off — no alignment checks, no document re-reads, no user confirmation needed
 
-**If a critical doc is missing** — follow "Joining an Existing Project" below.
+**Zero tolerance for extra process on resume.** The entire purpose of this case is to prevent compact-induced deadlock. If in doubt about which Story to work on next, read the Story files — do not ask the user.
+
+---
+
+### Case 4 — Completed project, new iteration
+
+**Step 1 — Doc health check** (automated, MANDATORY — do NOT skip or defer):
+
+**HARD STOP if not done**: Before any Sprint Planning, every item below must be explicitly checked. "I know this project" is not a substitute for reading the files. Missing or thin = flag for Sprint 0 gap-fill.
+
+Check each item. Missing or thin = flag for Sprint 0 gap-fill.
+
+| Doc | What to check |
+|-----|--------------|
+| `docs/UI_SPEC.md` | Contains Product Soul answers (emotional core, visual metaphor, interaction story)? |
+| `docs/DISCOVERY.md` | Contains `§ui-intent`? |
+| `docs/PRD.md` + `docs/CR.md` | Any unimplemented Must-Have features? Any approved CRs not yet scheduled? |
+| `docs/TECH_SPEC.md` | Stack and viewports still valid for the new work? |
+
+**Step 2 — If any flag found: run Sprint 0 gap-fill**
+
+Sprint 0 gap-fill is NOT a full Sprint 0. It only fills the flagged gaps:
+- Missing Product Soul → Arch runs the three-question protocol, updates `docs/UI_SPEC.md`
+- Missing `§ui-intent` → PO asks user the UI intent question, records answer in `docs/DISCOVERY.md §ui-intent`
+- Unimplemented Must-Haves or pending CRs → PO reviews with user, updates PRD/CR as needed
+
+Gap-fill ends as soon as all flags are resolved. It may take one exchange or several — stop the moment there are no more gaps.
+
+**Step 3 — Sprint Planning for new features**
+
+Proceed directly to Sprint Planning with the user's new request as the input. No further checks.
 
 ---
 
@@ -89,6 +137,7 @@ All role definitions, Sprint lifecycle steps, and completion criteria reference 
 | Context | Required Model |
 |---|---|
 | Sprint Planning (SM, Arch) | `claude-opus-4-6` |
+| Arch Code Review subagent | `claude-opus-4-6` |
 | Arch Code Review | `claude-opus-4-6` |
 | UX Live Review | `claude-opus-4-6` |
 | QA Lead Smoke Test | `claude-opus-4-6` |
@@ -114,6 +163,7 @@ Declared per-role. Main agent enforces these as hard constraints — not suggest
 
 | Role | Permitted tools | Prohibited |
 |------|----------------|------------|
+| Arch subagent (Code Review) | Read (API_SPEC.md + UI_SPEC.md + diff summary provided by main agent) | Bash, Edit, Write, direct source file Read |
 | QA subagent | Read (knowledge.md + ACs only) | Bash, Edit, Write, any source file Read |
 | UX subagent | Read (knowledge.md only) | Bash, Edit, Write, any source file Read |
 | Virtual User subagent | Read (PRD.md + CR.md only) | Bash, Edit, Write, any other file Read |
@@ -130,6 +180,7 @@ Declared per-role. Main agent enforces these as hard constraints — not suggest
 |---|---|
 | **MCP Playwright** | Interaction + screenshots: `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_take_screenshot`, `browser_resize`, `browser_console_messages`, `browser_select` |
 | **MCP Chrome DevTools** | Measurement + inspection: `list_network_requests`, `list_console_messages`, `performance_start_trace`, `lighthouse_audit`, `take_snapshot` |
+| **context7** | Live library docs: `resolve-library-id` + `get-library-docs` before implementing any component that uses an external library. See `FRONTEND_STANDARDS.md §MCP-Assisted Development` for usage rules. |
 
 Use Playwright for interaction and visual verification. Use Chrome DevTools for measurement and error inspection. Use both where both add value.
 
@@ -199,8 +250,8 @@ Thirteen roles. Each has exactly one area of authority. Virtual User is conditio
 - Breaks ties when developers disagree
 - Identifies dependencies requiring a Spike
 - **Trade-off logging**: at every Sprint Planning, explicitly state known trade-offs. SM logs these as backlog items.
-- **Code Review** (at Integration step 3): reviews for logic errors, security issues, interface contract compliance. **Also confirms any Spec Drift fixes logged in Story Notes** (see Guardrails). Blocks subsequent steps until resolved.
-- **Spot-check** during bug fix cycle: confirms fix does not introduce new issues or break contracts.
+- **Code Review** (at Integration step 3): runs as an **isolated subagent** — main agent provides a diff summary (not raw source), Arch subagent reviews against API_SPEC.md + UI_SPEC.md + Story Notes. Returns structured JSON verdict. Main agent writes `docs/arch/sprintN-review.md` from the output. This independence is intentional: Arch-as-subagent cannot be influenced by the implementation context the main agent accumulated while writing the code. **Also confirms any Spec Drift fixes logged in Story Notes** (see Guardrails). Blocks subsequent steps until verdict = PASS.
+- **Spot-check** during bug fix cycle: re-launched as subagent with the fix diff summary — confirms fix does not introduce new issues or break contracts.
 
 **Does NOT**: write business logic, manage business requirements.
 
@@ -259,10 +310,9 @@ Thirteen roles. Each has exactly one area of authority. Virtual User is conditio
 **Authority**: Frontend code only.
 
 **Responsibilities**:
-- Implements UI per confirmed style direction and `docs/UI_SPEC.md`
-- Uses production-quality inline SVG icons — no emoji, no Unicode as icons
+- Implements UI per confirmed style direction, `docs/UI_SPEC.md`, and `C:\ClaudeCodeProjects\FRONTEND_STANDARDS.md` — all frontend quality standards, icon rules, Product Soul Protocol, animation requirements, competitive reference, and MCP usage rules are defined there, not here
 - **Prerequisites**: read `docs/UI_SPEC.md` + `docs/API_SPEC.md` before Sprint Planning and after any contract update. All API knowledge comes from the interface contract — never assumes or guesses.
-- **Competitive reference**: before implementing each component, reference 1-2 mainstream products for interaction patterns (skip if no comparable product exists — note in Story Notes)
+- **Library docs**: before implementing any component using an external library, use context7 (`resolve-library-id` → `get-library-docs`) to fetch current API. context7 availability verified at Sprint start.
 - **Pre-integration self-verify**: navigate to local dev URL, verify at all target viewports (per `TECH_SPEC.md §viewports`), confirm zero console errors, confirm no failed network requests. Save evidence to evidence directory (see MCP Tool Protocol). This is a development exit check, not a substitute for QA.
 
 **Does NOT**: modify API, application config, schema, or the start script. Does NOT propose interface contract changes (raises to SM; Arch decides).
@@ -279,7 +329,7 @@ Thirteen roles. Each has exactly one area of authority. Virtual User is conditio
 - Launch fresh service via the start script (see Start Script Lifecycle)
 - Navigate the primary user flow, completing every action to its observable result (not just navigating to the page — fill inputs, click/invoke, wait for and verify the outcome)
 - Record actual wait time at each step. Any step exceeding the feedback threshold (default 2s, configurable in `TECH_SPEC.md §performance-targets`) without visible feedback = file a bug immediately
-- Use Playwright for interaction + Chrome DevTools for error inspection. If Playwright unavailable: STOP — see Playwright availability rule in Project Scope.
+- Use Playwright for interaction + Chrome DevTools for error inspection. If Playwright unavailable: HARD STOP — see MCP availability check in Project Scope.
 - If happy path broken: file bug with evidence, return to development. QA subagent NOT launched.
 - If happy path passes: launch QA subagent (Stage 2).
 
@@ -465,11 +515,15 @@ Virtual User subagent reviews the flipbook
 ```
 
 **Verdict rules**:
-- Score >= 9/10 → ACCEPTED → project complete
-- Score < 9/10 → NOT ACCEPTED → **HARD STOP**:
+- Score >= 9.5/10 → ACCEPTED → project complete
+- Score < 9.5/10 → NOT ACCEPTED → **HARD STOP**:
   1. **团队评审**：SM 召集 PO、Arch、QA Lead 开会，逐条分析 VU 的不满意点。每条结论二选一：
      - **合理**：SM 创建 Story，进入下一个 Sprint 修复
-     - **补充说明**：PO 整理补充信息（例如设计决策背景、PRD 原文依据），SM 将信息提供给 VU，VU 重新评估该条目。**最终解释权在 VU——VU 可采纳也可维持原判。此通道仅用于补充 VU 可能未掌握的上下文，不得用于施压或掩盖真实问题。**
+     - **补充说明**：PO 整理补充信息，SM 将信息提供给 VU，VU 重新评估该条目。**最终解释权在 VU——VU 可采纳也可维持原判。**
+       - **允许**：解释实现决策背景（"PRD要求A，我们通过B方式实现"）、澄清PRD措辞歧义
+       - **不允许**：改变PRD要求、降低VU期望、声称某功能"不在PRD范围内"（PRD已写的不可抹去）
+       - **PRD锁定**：PRD是真实用户在Sprint 0确认的承诺，PO（main agent）无权单方面修改或重新解释用户意图
+       - **关闭条件**：同一条VU不满意点补充说明后VU仍不接受，该条目直接转为Story，不再允许二次解释
   2. 所有"合理"条目形成 Story → 开新 Sprint → 走完整流程 → PO 重新确认 → VU 重新评估。
   3. One VU evaluation per Sprint — never multiple rounds within the same Sprint.
 - Any feature marked "不能用" → NOT ACCEPTED regardless of score
@@ -614,9 +668,9 @@ PO finding a bug = QA failed to catch it = process failure → SM opens retrospe
 
 ### Joining an Existing Project
 
-**Trigger**: Project already has code, but the `/project` skill has never been run on it — so `docs/PRD.md`, `docs/TECH_SPEC.md`, or `docs/DISCOVERY.md` are missing. This is NOT triggered by context compact on an active project (see "Resuming After Context Compact").
+**Trigger**: Case 2 only — code exists but factory docs (`docs/PRD.md`, `docs/TECH_SPEC.md`, or `docs/DISCOVERY.md`) are missing. See Project Entry table above.
 
-**New projects** (no code yet) go directly to Sprint 0 — no Joining step.
+**Not triggered by**: context compact on an active project (Case 3), or a completed project resuming new work (Case 4).
 
 **What Joining adds over normal Sprint 0**: one extra step at the beginning — read and understand the existing code before starting Sprint 0 requirements discussion. After that, Sprint 0 runs exactly as normal, including CP1 and CP2 with the user.
 
@@ -632,6 +686,8 @@ PO finding a bug = QA failed to catch it = process failure → SM opens retrospe
 - Produce a gap list: what docs are missing, what decisions are unrecorded
 
 **Step 3 — Proceed to Sprint 0** with Arch's product summary as the starting point for requirements discussion. PO presents the summary to the user: "Based on the code, the product does X, Y, Z. Before we write the PRD, I want to confirm:" — then runs Sprint 0 normally from Pre-Sprint 0 onward, including CP1 and CP2.
+
+**UI intent question (mandatory before Sprint 0 begins)**: PO must ask the user: "现有UI风格是维持现状，还是在此次迭代中提升到FRONTEND_STANDARDS.md的最高质量标准？" User's answer recorded in `DISCOVERY.md §ui-intent`. All Frontend Dev decisions in subsequent Sprints follow this intent — it cannot be overridden mid-project without a CR.
 
 ---
 
@@ -695,6 +751,8 @@ Present: tech stack, schema (if applicable), Sprint 1 Stories with ACs, start sc
 
 **Goal**: Prove every system-level dependency works. No PO demo — **Spike Review** by Arch + SM.
 
+**Skip condition**: If the project has no system-level dependencies (e.g. pure frontend HTML/JS with no backend, no database, no external APIs), Arch may declare at Sprint Planning that Sprint 1 is not needed — skip directly to Feature Sprints. Decision recorded in `TECH_SPEC.md §spike-decision`. Arch must explicitly state the reason; silence is not a skip.
+
 A Spike is Done when `docs/spike-results/SPIKE-NNN.md` exists:
 - What was tested / exact commands / exact output
 - Conclusion: VIABLE / NOT VIABLE / VIABLE WITH CONDITIONS
@@ -735,6 +793,8 @@ PO ranks top 5-8 backlog candidates; Arch flags Spike/tech dependencies; QA Lead
 **Sprint gate**: Sprint Planning is not complete until `tasks/jira/sprintN/` contains at least one Story file with Status = Todo. A Sprint Goal file alone is not sufficient. Integration MUST NOT begin on a Sprint with zero Story files.
 
 **Sprint capacity target**: Minimum 4 stories per Sprint (not counting Bug-fix Stories). If Planning produces fewer than 4, SM flags to PO — either pull more from backlog or record the justification in SPRINT_GOAL.md. Exceptions are valid only for hotfix or infrastructure Sprints with explicit PO rationale documented.
+
+**Anti-splitting rule**: Every Story counted toward the minimum must independently satisfy the Definition of Ready — it must have distinct user-visible value, its own ACs, and be demo-able without other Stories. SM rejects any Story that exists solely to meet the count. Splitting rationale must state the user-visible value of each part; "too big" alone is not sufficient.
 
 **Sprint Goal**: one sentence, user-visible outcome. Tiebreaker for conflicts: SM reads it aloud, parties state position → PO decides.
 
@@ -898,7 +958,7 @@ At Integration, the main agent executes steps 4-6 using the QA/UX subagent colla
 |---|---|---|
 | 1 | **DevOps** | Run start script from scratch. Confirm clean start + health check. |
 | 2 | **Frontend Dev** | Integrate against fresh running backend (if applicable). |
-| 3 | **Arch** | Code Review — logic errors, security, contract compliance. Blocks all subsequent steps (4–10). |
+| 3 | **Arch subagent + main agent** | Main agent prepares a diff summary (what changed, per Story — no raw source dump). Arch subagent launched with: diff summary + `docs/API_SPEC.md` + `docs/UI_SPEC.md` + Story Notes. Arch subagent reviews for logic errors, security issues, contract compliance, and confirms any Spec Drift fixes. Returns structured JSON: `{ "verdict": "PASS\|FAIL", "issues": [...], "spec_drift": [...] }`. Main agent writes `docs/arch/sprintN-review.md` from this output. Blocks all subsequent steps (4–10) until verdict = PASS. |
 | 4 | **UX subagent + main agent** | UX subagent writes interaction test plan (first-time user perspective) → **main agent** executes with Playwright → **main agent** returns screenshots to UX subagent → UX subagent reviews and requests more if needed (max 1 additional round) → UX subagent writes UX review. Main agent executes; UX subagent judges. |
 | 5 | **QA Lead + QA subagent + main agent** | QA Lead runs happy path smoke test (Stage 1); if broken, file bug and return to development — QA subagent NOT launched. If passes: QA subagent writes test plan → **main agent** runs test runner script + any additional steps → **main agent** returns raw screenshots + responses to QA subagent → QA subagent reviews evidence and judges PASS/FAIL (max 2 additional rounds) → QA subagent writes verdict. Main agent executes; QA subagent judges. |
 | 6 | **Main agent** | If verdict FAIL: apply 3-tier error budget (see Guardrails). Blocker bug → L3: fix root cause, re-run start script, re-run QA subagent verification only (not full Integration restart unless service is broken). If same Blocker recurs after fix: escalate to user. If PASS: proceed. |
@@ -910,6 +970,19 @@ At Integration, the main agent executes steps 4-6 using the QA/UX subagent colla
 ##### Subagent Launch Rules
 
 **Prompt templates (literal — do not paraphrase)**:
+
+Arch subagent launch prompt:
+```
+You are Arch (Architect). Context provided: [docs/API_SPEC.md contents] + [docs/UI_SPEC.md contents] + [diff summary: what changed per Story] + [Story Notes].
+Your job: review the changes for (1) logic errors, (2) security issues, (3) interface contract compliance, (4) confirm any Spec Drift fixes noted in Story Notes.
+You CANNOT read source code directly — the diff summary is your only view of changes.
+Output format:
+{
+  "verdict": "PASS|FAIL",
+  "issues": [{ "severity": "Blocker|Critical|Medium", "description": "...", "story_ref": "..." }],
+  "spec_drift": [{ "description": "...", "confirmed_fixed": true|false }]
+}
+```
 
 QA subagent launch prompt:
 ```
@@ -981,7 +1054,7 @@ Output format for Phase 2 judgment:
 - Main agent MUST NOT modify QA/UX knowledge files except to append updates returned by the subagent
 - Main agent MUST NOT modify test scripts to skip checks
 - Hook blocks marking Done/Complete without verdict files
-- If Playwright is unavailable: STOP and notify user — see Playwright availability rule in Project Scope. No curl fallback, no degraded verification.
+- If Playwright is unavailable: HARD STOP — see MCP availability check in Project Scope. No curl fallback, no degraded verification.
 
 #### Sprint Review + Demo
 
@@ -1003,7 +1076,7 @@ Output format for Phase 2 judgment:
 - [ ] Health check passes
 - [ ] All Story ACs verified against running product
 - [ ] All QA tests pass (real service, no mocks for happy path)
-- [ ] Arch code review complete
+- [ ] Arch subagent code review = PASS — `docs/arch/sprintN-review.md` exists
 - [ ] UX subagent review complete — `docs/ux/sprintN-review.md` exists
 - [ ] QA subagent verdict = PASS — `docs/qa/sprintN-verdict.md` exists
 - [ ] Playwright screenshots in evidence directories (see MCP Tool Protocol)
@@ -1022,7 +1095,7 @@ Output format for Phase 2 judgment:
 - Accept mid-sprint: only if CR supports Sprint Goal AND equivalent scope dropped
 - Every backlog CR must go through Sprint Planning Step 0 (Backlog Refinement) before entering a Sprint
 - **CR time limit**: every PO-approved CR must be scheduled into a Sprint within 2 Sprints of approval (the 2-Sprint window starts at the Sprint when PO approves the CR). If a CR has not been acted on after 2 Sprints, SM flags to PO — either schedule it or withdraw it. If PO does not respond within 1 additional Sprint, SM withdraws the CR and notes it in `docs/CR.md` as Withdrawn. Unactioned CRs are not tracked indefinitely.
-- **SM appends every PO-approved CR to `docs/CR.md`** — one entry per CR, format: `## CR-NNN: [Title] (Sprint N)` + one-line description of what changed. Where CR conflicts with PRD, CR takes precedence. `docs/PRD.md` is never directly edited after creation (see PRD evolution rule in Joining an Existing Project).
+- **SM appends every PO-approved CR to `docs/CR.md`** — one entry per CR, format: `## CR-NNN: [Title] (Sprint N)` + one-line description of what changed. Where CR conflicts with PRD, CR takes precedence. `docs/PRD.md` is never directly edited after creation — all changes go through the CR process.
 
 #### Sprint Retrospective
 
@@ -1074,7 +1147,7 @@ Virtual User is **mandatory** in this mode (see Virtual User role). Complete whe
 - [ ] (Mode 1 note: VU does not run in Mode 1 — this prerequisite list is Mode 2 only.)
 
 **Then VU runs:**
-Virtual User subagent writes walkthrough from PRD/CR → main agent executes with sequential screenshots → main agent returns flipbook to Virtual User → Virtual User reviews and judges → if NOT ACCEPTED: HARD STOP, SM召集团队评审 VU 每条不满意点（合理→新 Sprint Story；需补充说明→PO 提供上下文→VU 重新评估，最终解释权在 VU）→ 如仍有合理问题则开新 Sprint。If stall: escalate to user.
+Virtual User subagent writes walkthrough from PRD/CR → main agent executes with sequential screenshots → main agent returns flipbook to Virtual User → Virtual User reviews and judges → if NOT ACCEPTED: HARD STOP, SM召集团队评审VU每条不满意点（合理→新Sprint Story；需补充说明→PO提供上下文[仅允许：实现背景、PRD歧义澄清；不允许：改变PRD要求]→VU重新评估，最终解释权在VU，同一条目不允许二次解释）→如仍有合理问题则开新Sprint。If stall: escalate to user.
 
 **Final completion criteria:**
 - [ ] All Must-have features from `docs/PRD.md` (+ `docs/CR.md`) Done
@@ -1086,7 +1159,7 @@ Virtual User subagent writes walkthrough from PRD/CR → main agent executes wit
   - screenshots: every page at all target viewports (+ dark mode if supported)
 - [ ] QA subagent verdict = PASS
 - [ ] UX subagent review = no Blocker friction
-- [ ] Virtual User acceptance score >= 9/10 and verdict = ACCEPTED
+- [ ] Virtual User acceptance score >= 9.5/10 and verdict = ACCEPTED
 - [ ] Deployment artifacts produced (if applicable)
 - [ ] `docs/` up to date
 - [ ] `tasks/lessons.md` has final retrospective
@@ -1109,8 +1182,6 @@ Stop: SM produces final `tasks/PROJECT_STATE.md`.
 
 ## User Escalation Conditions
 
-## User Escalation Conditions
-
 **Mode 1** (manual) — escalate for any of:
 
 | Condition | Who triggers | What user decides |
@@ -1130,9 +1201,7 @@ Stop: SM produces final `tasks/PROJECT_STATE.md`.
 | Fundamental technical blocker with no workaround | Arch | Architecture pivot or stop |
 | Virtual User stall (3 Sprints, same issue, <0.5 score change) | SM | Continue / lower bar / stop |
 
-**In Mode 2 from Sprint 1 onward, do NOT escalate for**: Arch/PO disagreements (PO = main agent, resolves autonomously), normal bugs or QA failures (fix and retry), scope decisions within approved backlog.
-
-**In Mode 2, do NOT escalate for**: style choices, Sprint 0 confirmation, Arch/PO disagreements (PO = main agent, resolves autonomously), scope changes (PO decides autonomously), normal bugs, QA failures (fix and retry).
+**In Mode 2 from Sprint 1 onward, do NOT escalate for**: style choices, Arch/PO disagreements (PO = main agent, resolves autonomously), normal bugs or QA failures (fix and retry), scope decisions within approved backlog.
 
 All other decisions resolved autonomously.
 
@@ -1142,9 +1211,7 @@ All other decisions resolved autonomously.
 
 ### Frontend Design Standards
 
-See `C:\ClaudeCodeProjects\FRONTEND_STANDARDS.md` for full details.
-
-Summary: Quality bar from `docs/BENCHMARK.md` if defined. Icons: inline SVG only. CSS: design token variables. Every interactive element: all states (hover, active, disabled, focus). Platform support: all viewports in DISCOVERY.md.
+All frontend quality standards are defined in `C:\ClaudeCodeProjects\FRONTEND_STANDARDS.md`. This file is the single source of truth for: quality bar, icon system, CSS design system, Product Soul Protocol, animation requirements, competitive reference, MCP-assisted development rules, and thematic imagination requirements. CLAUDE.md does not duplicate this content.
 
 ### Tech Stack Selection
 
@@ -1231,23 +1298,25 @@ Types: feat | fix | test | devops | docs | refactor | style | spike
 - QA verdict content is authored by QA subagent, NOT by main agent — main agent writes the file from QA subagent's structured output only
 - UX review content is authored by UX subagent, NOT by main agent — main agent writes the file from UX subagent's structured output only
 - Test runner script reads from the test config file — project-specific, no hardcoded selectors
-- If Playwright is unavailable: STOP and notify user — see Playwright availability rule in Project Scope. No curl fallback, no degraded verification.
+- If Playwright is unavailable: HARD STOP — see MCP availability check in Project Scope. No curl fallback, no degraded verification.
 
 ---
 
 ## Lessons Learned
 
-`tasks/lessons.md` updated by SM at every Sprint Retrospective. **Keep entries concise — one lesson, one line conclusion. Verbose entries defeat the purpose.**
+`tasks/lessons.md` is the **rule upgrade queue** — a staging area for observations that may become CLAUDE.md rules. Updated by SM at every Sprint Retrospective.
 
 ```markdown
 # Lessons Learned
 ## Sprint N — <YYYY-MM-DD>
-### What worked
-- [one line: what + why it worked]
-### What failed
-- [one line: what failed] → Root cause: [one line] → Fix applied: [one line]
-### Rule updates made
-- [CLAUDE.md section updated + reason]
+- [pending] What happened → Root cause → Why it matters  
+- [archived: CLAUDE.md §section] What was promoted to a rule
+- [dropped: reason] What was considered and rejected
 ```
 
-**Pruning rule** (enforced as gate): Before adding new entries, SM checks: if file exceeds 80 lines, prune entries older than 3 Sprints that have been converted to CLAUDE.md rules or resolved. `tasks/lessons.md` must never exceed 100 lines — lines above 100 are considered truncated by convention.
+**Every entry has a mandatory lifecycle status**:
+- `[pending]` — not yet decided; survives indefinitely until promoted or dropped
+- `[archived: CLAUDE.md §section]` — promoted to a rule; deletable after 3 Sprints
+- `[dropped: reason]` — explicitly rejected; deletable immediately
+
+**SM Retro obligation**: Before closing the Retrospective, SM must process every `[pending]` entry — either promote to CLAUDE.md (and mark `[archived]`) or explicitly drop with a reason. Leaving entries as `[pending]` indefinitely is a process failure. No entry may be deleted without first being archived or dropped.
