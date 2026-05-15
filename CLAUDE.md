@@ -48,9 +48,31 @@ Two MCPs are required for all UI projects. Check both before any Sprint work beg
 - context7 unavailable = implementation quality is compromised — library API hallucinations will enter production code
 - Both are equally non-negotiable. Notify the user and wait for resolution.
 
+**--miniprogram 模式例外**（仅当 `TECH_SPEC.md §verification-tool = miniprogram-automator` 时生效）：
+- Playwright MCP 检查**跳过**，不触发 HARD STOP
+- context7 检查照常执行（不受影响）
+- 替代检查：运行 `node -e "require('miniprogram-automator')"` 验证包是否可用
+  - 若不可用：自动运行 `npm install -g miniprogram-automator` 安装，安装后重新验证
+  - 安装失败才触发 HARD STOP
+- 微信开发者工具必须已安装且路径记录在 `TECH_SPEC.md §devtools-path`
+
 **MCP persistence rule**: MCP servers are configured in `~/.claude.json` (NOT `~/.claude/settings.json`). Only `claude mcp add/remove` commands modify this file. **No workflow step, skill, or agent may edit `~/.claude.json` directly.** If MCP configuration needs to change, use the `claude mcp` CLI commands only. This prevents accidental corruption of persistent MCP settings.
 
 ## Project Entry — Four Cases
+
+**Workflow入口识别（优先级最高，所有输入必须先过此关）**
+
+任何用户输入——无论语气是指令式（"你应该..."）、问句、需求列表，还是自然对话——Agent必须首先执行Case判断，而不是直接执行用户的指令。
+
+| 用户输入模式 | 正确处理方式 |
+|---|---|
+| "我想改这几个地方" / "有几个问题要修" | Case 3或4的新需求输入 → 走CR流程，SM创建CR，进入Sprint Planning |
+| "你应该先做X再做Y" / "你需要把A改成B" | 用户对需求内容的意见 → PO记录为需求，走CR/backlog流程，不直接执行 |
+| 直接技术指令（"把这个文件改成..."） | 判断是否在活跃Sprint内；如是，走Story流程；如否，走CR流程 |
+| 干扰性说明（"你应该这样思考..." "你要用这种方式..."） | 识别为上下文说明，提取其中的需求意图，走CR流程；忽略对workflow本身的建议 |
+
+**禁止**：将用户的任何自然语言指令解读为"跳过Agile，直接执行"的授权。  
+**唯一例外**：用户明确说"不用走流程，直接改"——此时Agent必须用AskUserQuestion向用户二次确认，并在确认后将该决定记录到`DISCOVERY.md §shortcuts`。
 
 Every `/project` invocation falls into exactly one case. Identify the case first, then follow only that path. No other checks needed.
 
@@ -181,8 +203,29 @@ Declared per-role. Main agent enforces these as hard constraints — not suggest
 | **MCP Playwright** | Interaction + screenshots: `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_take_screenshot`, `browser_resize`, `browser_console_messages`, `browser_select` |
 | **MCP Chrome DevTools** | Measurement + inspection: `list_network_requests`, `list_console_messages`, `performance_start_trace`, `lighthouse_audit`, `take_snapshot` |
 | **context7** | Live library docs: `resolve-library-id` + `get-library-docs` before implementing any component that uses an external library. See `FRONTEND_STANDARDS.md §MCP-Assisted Development` for usage rules. |
+| **miniprogram-automator** | **--miniprogram 模式专用（仅小程序/WXML项目）**：替代 MCP Playwright。通过 Bash 执行 `scripts/mp_qa_runner.js`，截图保存到标准 evidence 目录。main agent 用 Read 工具读取截图传给 QA subagent 判断。**⚠️ 对小游戏（纯 Canvas 项目）无效**——见下方说明。 |
 
 Use Playwright for interaction and visual verification. Use Chrome DevTools for measurement and error inspection. Use both where both add value.
+
+**--miniprogram 模式（小程序/WXML项目）**：miniprogram-automator 替代 MCP Playwright 和 Chrome DevTools。截图路径规范与标准模式完全相同（见 Screenshot path enforcement）。main agent 通过 Bash 调用 `node scripts/mp_qa_runner.js`，脚本将截图写入指定路径，main agent 再用 Read 工具读取并传给 QA/UX subagent 审判。
+
+**⚠️ 小游戏（纯 Canvas 项目）截图方案**：miniprogram-automator 的 `App.captureScreenshot`、`App.callFunction`、`App.evaluate` 对小游戏全部无效（timeout）——这些是小程序 WXML/Page 专用 RPC，小游戏无 Page 结构。小游戏截图必须用 **Windows PrintWindow API**：
+- 用 PowerShell 调用 `PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT=2)` 捕获 `Chrome_RenderWidgetHostHWND` 窗口
+- 每次 DevTools 重启后句柄会变，用 `Get-Process wechatdevtools | Where-Object { $_.MainWindowHandle -ne 0 }` 重新查找主进程，再枚举子窗口找 `Chrome_RenderWidgetHostHWND`
+- **截图必须写入项目内的标准 evidence 目录**（见下方 Screenshot path enforcement），绝不能写到桌面或系统临时目录。PowerShell 脚本的输出路径参数必须是绝对路径，格式：`<project_root>\docs\qa\sprintN-evidence\<story-id>-<step>.png`（QA）或 `<project_root>\docs\ux\sprintN-evidence\<name>-<step>.png`（UX）。main agent 调用 PowerShell 时必须显式传入该路径，不得依赖默认输出位置。
+- main agent 用 Read 工具读取截图传给 QA/UX subagent
+- `scripts/mp_qa_runner.js` 对小游戏的截图逻辑无效，需直接用 PowerShell 脚本替代
+- PowerShell 中不能用 `$pid` 变量名（系统保留），改用 `$procId`
+
+**小游戏截图完整性强制规则（绝对，无例外）**：
+
+1. **本 Sprint 实时截图原则**：QA/UX/VU 所有 verdict/review/acceptance 引用的截图必须来自本 Sprint 的实时运行。禁止引用"来自之前 session"的截图，禁止用 git diff 替代截图证据。
+2. **code diff 禁止作为视觉证据**：任何 AC 不得以"已在代码中验证"作为通过依据。唯一例外：纯逻辑 AC（如函数返回值）可用 console log JSON 作为证据，但必须在 verdict 中明确标注"logic-only AC"，不得占 AC 总数超过 20%。
+3. **截图管道 Sprint 启动检查（强制）**：每次 Sprint QA/UX 开始前，main agent 必须运行 `python scripts/mss_check.py --sprint N`。输出截图存入 `docs/qa/sprintN-evidence/mss-check.png`。截图非全黑（亮度 > 10）= 管道 OK，可继续。全黑或脚本报错 = HARD STOP，修复后重试。
+4. **hwnd 禁止硬编码**：所有截图脚本必须在运行时通过枚举进程动态查找 `wechatdevtools.exe` 窗口句柄，不得在代码中写死 hwnd 数值。`scripts/mss_check.py` 和 `scripts/glm_analyze.py` 均内置动态发现逻辑。
+5. **非全黑验证**：每张截图保存后，脚本必须计算图像平均亮度（numpy）。亮度 ≤ 10 = 全黑 = 捕获失败，自动重试（最多 3 次，每次 sleep 2s）。3 次全黑 = HARD STOP。
+6. **DevTools 前台强制**：截图前必须调用 `ShowWindow(hwnd, SW_RESTORE)` + `SetForegroundWindow(hwnd)` + `time.sleep(1.5)`，确保 DevTools 窗口可见不被遮挡。
+7. **GLM-4V 辅助验证（推荐，QA 可要求）**：QA subagent 可在测试计划中要求 main agent 调用 `python scripts/glm_analyze.py <screenshot_path>`，返回 `screen_type` + `visible_elements` + `visual_issues` JSON，供 subagent 判断截图内容是否符合 AC。这不替代截图，而是补充截图分析的客观性。GLM 也可通过 web_search 工具搜索外网解决技术问题。
 
 **Evidence directories** (canonical definition — all roles reference this section):
 
@@ -197,6 +240,14 @@ docs/virtual-user/          ← Only in Mode 2
 
 **Evidence naming convention**: `<story-id>-<step>.png` (e.g. `STORY-00012-03.png`).
 All roles saving evidence use this convention and these directories.
+
+**Screenshot path enforcement (absolute rule — no exceptions)**:
+- Every `browser_take_screenshot` call MUST include an explicit `filename` parameter with the full relative path: `docs/qa/sprintN-evidence/<story-id>-<step>.png` or `docs/ux/sprintN-evidence/<name>-<step>.png`
+- **NEVER** call `browser_take_screenshot` without a `filename` parameter — the default saves to the project root directory, which is forbidden
+- Before calling `browser_take_screenshot`, the target directory MUST exist. Create it with `Bash mkdir -p` if needed.
+- **--miniprogram 模式（小游戏 PowerShell 截图）**：PowerShell PrintWindow 截图同样适用本规则。截图**必须**写入项目内的 evidence 目录，**禁止**写到桌面（`$env:USERPROFILE\Desktop`）、临时目录（`$env:TEMP`）或项目根目录。main agent 调用 PowerShell 时必须将完整绝对路径作为参数传入，目标目录不存在时先用 `New-Item -ItemType Directory -Force` 创建。
+- Screenshots found outside the evidence directories (project root, Desktop, temp) = process failure. SM logs in `tasks/lessons.md`. Developer moves them to the correct directory and confirms path discipline going forward.
+- Virtual User flipbook screenshots: `docs/virtual-user/sprintN-flow/flow-NN.png`
 
 ---
 
@@ -314,6 +365,7 @@ Thirteen roles. Each has exactly one area of authority. Virtual User is conditio
 - **Prerequisites**: read `docs/UI_SPEC.md` + `docs/API_SPEC.md` before Sprint Planning and after any contract update. All API knowledge comes from the interface contract — never assumes or guesses.
 - **Library docs**: before implementing any component using an external library, use context7 (`resolve-library-id` → `get-library-docs`) to fetch current API. context7 availability verified at Sprint start.
 - **Pre-integration self-verify**: navigate to local dev URL, verify at all target viewports (per `TECH_SPEC.md §viewports`), confirm zero console errors, confirm no failed network requests. Save evidence to evidence directory (see MCP Tool Protocol). This is a development exit check, not a substitute for QA.
+- **Visual fidelity self-check**: before marking any UI Story Done, open the confirmed Sprint 0 style demo HTML in a browser tab. Compare card layout, color coding, typography, navigation structure, and hover states against the running product. Any visible deviation from the confirmed style must be justified in the Story Notes field — unjustified deviations are Spec Drift and must be flagged to Arch.
 
 **Does NOT**: modify API, application config, schema, or the start script. Does NOT propose interface contract changes (raises to SM; Arch decides).
 
@@ -330,6 +382,8 @@ Thirteen roles. Each has exactly one area of authority. Virtual User is conditio
 - Navigate the primary user flow, completing every action to its observable result (not just navigating to the page — fill inputs, click/invoke, wait for and verify the outcome)
 - Record actual wait time at each step. Any step exceeding the feedback threshold (default 2s, configurable in `TECH_SPEC.md §performance-targets`) without visible feedback = file a bug immediately
 - Use Playwright for interaction + Chrome DevTools for error inspection. If Playwright unavailable: HARD STOP — see MCP availability check in Project Scope.
+- **--miniprogram 模式例外（小程序/WXML）**：用 `node scripts/mp_qa_runner.js --smoke` 替代 Playwright 执行 happy path。截图保存到标准 evidence 目录，main agent 用 Read 工具读取验证。HARD STOP 规则不适用。
+- **--miniprogram 模式例外（小游戏/纯Canvas）**：`mp_qa_runner.js` 对小游戏无效。用 PowerShell PrintWindow API 截取 `Chrome_RenderWidgetHostHWND` 窗口，截图写入标准 evidence 目录。句柄每次 DevTools 重启后需重新查找。
 - If happy path broken: file bug with evidence, return to development. QA subagent NOT launched.
 - If happy path passes: launch QA subagent (Stage 2).
 
@@ -580,6 +634,7 @@ UX files a bug for any of: wait exceeding feedback threshold without feedback, r
 - Prototype for any UX-risk Story (before dev starts)
 - `docs/ux/sprintN-review.md` — UX Problem List: issues found, addressed, deferred
 - Sprint 0: `docs/ux/knowledge.md` — initial product understanding + primary user flow end-to-end
+- **Visual fidelity check** (every Sprint): main agent opens the confirmed Sprint 0 style demo HTML file in a browser tab AND the running product side-by-side. UX subagent receives BOTH screenshots and flags any deviation in: layout structure, color system, typography scale, spacing, hover states. Deviations filed as bugs with "visual-fidelity" tag. This prevents gradual drift from the confirmed style direction.
 
 **Does NOT**: write production code, make visual style decisions, make technical decisions, do final acceptance, manage QA.
 
@@ -717,7 +772,7 @@ Resolved before any code. Recorded in `docs/TECH_SPEC.md`. Cannot change mid-pro
 |---|---|---|
 | Project type | Arch proposes, user confirms | `TECH_SPEC.md §type` |
 | Git commit strategy (A: auto / B: Sprint-end / C: manual) | User confirms at CP2 | `TECH_SPEC.md §git` |
-| Branch strategy | Arch proposes, user confirms | `TECH_SPEC.md §git` |
+| Branch strategy | Arch proposes, user confirms. Record `--branch <name>` in `TECH_SPEC.md §git` if using a feature branch; omit for direct-to-main. See Git Strategy §Branch and push behavior. | `TECH_SPEC.md §git` |
 | Deployment target (local / remote / both) | User confirms at CP2 | `TECH_SPEC.md §deploy` |
 | Primary language/runtime | Arch proposes | `TECH_SPEC.md §stack` |
 
@@ -778,6 +833,11 @@ Facilitated by SM. Required: PO, PM, Arch, UX, developers, DBA (if applicable), 
 
 **Step 0 — Backlog Refinement (merged, runs at start of Sprint Planning)**:
 PO ranks top 5-8 backlog candidates; Arch flags Spike/tech dependencies; QA Lead flags missing testable ACs or test data; SM runs requirement traceability check (every feature in `docs/PRD.md` + `docs/CR.md` must map to a Story, the backlog, or "What We Will NOT Build" — gaps escalated to PO). This replaces the previously separate Backlog Refinement event.
+
+**CR完整性检查（强制，在requirement traceability check中执行）**：SM必须将`docs/CR.md`中所有状态为Approved的CR逐条核对：
+- 已有对应Story（Status = Todo/In Progress/Done）→ 标记为"已覆盖"，继续
+- 无对应Story但已进入backlog → 标记为"待排期"，在SPRINT_GOAL.md中记录预计Sprint
+- **静默丢失**（无Story、无backlog记录、无"What We Will NOT Build"记录）→ **这是process failure**。SM必须立即创建Story或明确记录为"What We Will NOT Build"，并通知PO。任何CR既无Story又无明确处置记录，禁止继续进行本次Sprint Planning。
 
 **Definition of Ready**: ACs written + testable, business value clear, dependencies identified, technical approach known, test data identified, sized by PM.
 
@@ -961,6 +1021,7 @@ At Integration, the main agent executes steps 4-6 using the QA/UX subagent colla
 | 3 | **Arch subagent + main agent** | Main agent prepares a diff summary (what changed, per Story — no raw source dump). Arch subagent launched with: diff summary + `docs/API_SPEC.md` + `docs/UI_SPEC.md` + Story Notes. Arch subagent reviews for logic errors, security issues, contract compliance, and confirms any Spec Drift fixes. Returns structured JSON: `{ "verdict": "PASS\|FAIL", "issues": [...], "spec_drift": [...] }`. Main agent writes `docs/arch/sprintN-review.md` from this output. Blocks all subsequent steps (4–10) until verdict = PASS. |
 | 4 | **UX subagent + main agent** | UX subagent writes interaction test plan (first-time user perspective) → **main agent** executes with Playwright → **main agent** returns screenshots to UX subagent → UX subagent reviews and requests more if needed (max 1 additional round) → UX subagent writes UX review. Main agent executes; UX subagent judges. |
 | 5 | **QA Lead + QA subagent + main agent** | QA Lead runs happy path smoke test (Stage 1); if broken, file bug and return to development — QA subagent NOT launched. If passes: QA subagent writes test plan → **main agent** runs test runner script + any additional steps → **main agent** returns raw screenshots + responses to QA subagent → QA subagent reviews evidence and judges PASS/FAIL (max 2 additional rounds) → QA subagent writes verdict. Main agent executes; QA subagent judges. |
+| 5a | **Main agent** | **Navigation regression (mandatory, cannot be skipped even if QA test plan omits it)**: For every page in the application (list, dashboard, settings, detail), navigate TO → navigate AWAY → navigate BACK. After each transition, run `browser_console_messages(level="error")`. Any error = Blocker bug filed immediately. This step catches SPA routing errors, global scope issues, and state management bugs that single-page screenshots miss. |
 | 6 | **Main agent** | If verdict FAIL: apply 3-tier error budget (see Guardrails). Blocker bug → L3: fix root cause, re-run start script, re-run QA subagent verification only (not full Integration restart unless service is broken). If same Blocker recurs after fix: escalate to user. If PASS: proceed. |
 | 7 | **All** | All Blocker + Critical bugs fixed before Demo. |
 | 8 | **Bug fix** | Fix → re-run start script → re-run test scripts → QA subagent re-verify. |
@@ -991,6 +1052,11 @@ Your job is two-phase:
 Phase 1: Write a test plan — specific steps, expected results, evidence to capture. Return only the test plan.
 Phase 2: After receiving evidence, judge each AC as PASS or FAIL with reasoning.
 Rules: You CANNOT read source code. You CANNOT write verdict — return judgment and I will write it.
+MANDATORY: Your test plan MUST include a "Navigation Regression" section with these exact steps:
+1. For each page tested: navigate TO the page, take screenshot, navigate AWAY to a different page, navigate BACK, take screenshot again
+2. After EACH navigation: main agent must run browser_console_messages(level="error") and report ALL errors to you
+3. If any console error is found after any navigation: FAIL the entire verdict immediately
+A test plan without a Navigation Regression section is incomplete — return it for revision.
 Output format for Phase 2 judgment:
 {
   "per_story": [{ "story_id": "...", "verdict": "PASS|FAIL", "confidence": "HIGH|MEDIUM|LOW", "failing_acs": [], "notes": "..." }],
@@ -1007,6 +1073,7 @@ Your job is two-phase:
 Phase 1: Write interaction test instructions from a first-time user perspective. Return only the instructions.
 Phase 2: After receiving screenshots, report friction, confusion, or broken flows.
 Rules: You have no implementation knowledge. You cannot read source code.
+MANDATORY: Your interaction test plan MUST include step 4 (navigate away and return) for EVERY feature tested. After return: main agent must run browser_console_messages(level="error") and report all errors to you. Any console error after navigation = Blocker friction item.
 Output format for Phase 2 review:
 {
   "friction_items": [{ "severity": "Blocker|Critical|Medium|Low", "description": "...", "screenshot_ref": "..." }],
@@ -1055,6 +1122,10 @@ Output format for Phase 2 judgment:
 - Main agent MUST NOT modify test scripts to skip checks
 - Hook blocks marking Done/Complete without verdict files
 - If Playwright is unavailable: HARD STOP — see MCP availability check in Project Scope. No curl fallback, no degraded verification.
+  **--miniprogram 模式例外**：Playwright 不可用不触发 HARD STOP，miniprogram-automator 已在 MCP availability check 阶段验证可用。
+- Main agent MUST execute `browser_console_messages(level="error")` after EVERY page navigation during QA and UX test execution — not just at the end. If main agent reports "0 errors" without evidence of having run this check at each navigation step, the verdict is invalid. This rule exists because Sprint 7 and Sprint 12 both shipped runtime JS errors that were invisible in static screenshots.
+  **--miniprogram 模式**：用 `mp_qa_runner.js` 的 `getLogList()` 替代 `browser_console_messages`（仅适用于小程序/WXML项目）。**小游戏项目**：`getLogList()` 同样不可用，通过 `wx.__logList` 或 DevTools HTTP API 获取日志，在每次页面跳转后调用，错误同样触发 Blocker bug。行为要求与标准模式一致。
+- Main agent MUST NOT skip any step in QA/UX test plans. If a test plan step is ambiguous, main agent asks the subagent for clarification — never interprets "navigate and check" as "take a screenshot of the destination page."
 
 #### Sprint Review + Demo
 
@@ -1097,6 +1168,12 @@ Output format for Phase 2 judgment:
 - **CR time limit**: every PO-approved CR must be scheduled into a Sprint within 2 Sprints of approval (the 2-Sprint window starts at the Sprint when PO approves the CR). If a CR has not been acted on after 2 Sprints, SM flags to PO — either schedule it or withdraw it. If PO does not respond within 1 additional Sprint, SM withdraws the CR and notes it in `docs/CR.md` as Withdrawn. Unactioned CRs are not tracked indefinitely.
 - **SM appends every PO-approved CR to `docs/CR.md`** — one entry per CR, format: `## CR-NNN: [Title] (Sprint N)` + one-line description of what changed. Where CR conflicts with PRD, CR takes precedence. `docs/PRD.md` is never directly edited after creation — all changes go through the CR process.
 
+**CR批量调度规则（Sprint容量硬约束）**：
+- 用户一次性提交多条需求时，PO全部受理为CR并记录到`docs/CR.md`，但SM必须按Story sizing规则（每条1-3天）评估总容量再分配Sprint
+- 超出当前Sprint容量（上限约8个Story）的CR，SM必须分配到后续Sprint的backlog——**禁止将超容量内容强塞进单Sprint**
+- SM在Sprint Planning Step 0必须明确声明："本Sprint承接N条CR（CR-XXX至CR-XXX对应Story XXXXX至XXXXX），其余M条CR进入Sprint N+1 backlog"
+- 用户提交20条需求 → 允许开2-3个连续Sprint逐批消化，这是正常行为，不需要用户确认
+
 #### Sprint Retrospective
 
 Facilitated by SM:
@@ -1106,7 +1183,7 @@ Facilitated by SM:
 4. SM updates CLAUDE.md if warranted (see update rule)
 5. SM creates Sprint N+1 files; PM assigns
 
-**Lightweight retro rule**: If all three are true — (a) zero bugs found by QA/UX, (b) no Integration restart loops, (c) no Spec Drift — SM records "Sprint N: clean Sprint, no retrospective actions" in `tasks/lessons.md` and skips steps 1-3 above. Steps 4 (CLAUDE.md update check) and 5 (Sprint N+1 file creation) still run. Full retrospective is mandatory when any of (a)-(c) is violated.
+**Lightweight retro rule**: If all four are true — (a) zero bugs found by QA/UX, (b) no Integration restart loops, (c) no Spec Drift, (d) no VU NOT ACCEPTED verdict in the previous Sprint — SM records "Sprint N: clean Sprint, no retrospective actions" in `tasks/lessons.md` and skips steps 1-3 above. Steps 4 (CLAUDE.md update check) and 5 (Sprint N+1 file creation) still run. Full retrospective is mandatory when any of (a)-(d) is violated. **Specifically**: if the previous Sprint ended with VU NOT ACCEPTED, the next Sprint's retrospective MUST be full — including review of all `[pending]` entries in `tasks/lessons.md` to verify past lessons were actually implemented, not just recorded.
 
 **CLAUDE.md update rule**:
 - **MUST** update when: a workflow step systematically fails across 2+ Sprints (evidence in `tasks/lessons.md`), or new role boundary/gate established
@@ -1141,6 +1218,7 @@ Virtual User is **mandatory** in this mode (see Virtual User role). Complete whe
 **Technical prerequisites (verified after team consensus):**
 - [ ] `docs/BACKLOG.md` has zero Must-Have items remaining
 - [ ] All Must-Have PRD features have Story files with Status = Done
+- [ ] **每条`docs/CR.md`中Approved的CR状态为Done，或已明确记录为"延期至Sprint N"，或已记录为"What We Will NOT Build"** — 任何CR既无Story又无明确处置记录：STOP，不得launch VU
 - [ ] `docs/qa/sprintN-verdict.md` = PASS (latest Sprint)
 - [ ] `docs/ux/sprintN-review.md` exists with no Blocker-level friction (latest Sprint)
 - [ ] No open Blocker or Critical bugs
@@ -1265,6 +1343,20 @@ Types: feat | fix | test | devops | docs | refactor | style | spike
 - Each bug fix verified — strategy A only
 - Sprint Demo accepted — always
 
+**Branch and push behavior** (recorded in `TECH_SPEC.md §git` at Sprint 0):
+
+Two modes, selected at Sprint 0:
+
+- **No `--branch` (default)**: push directly to `main` or `master` (whichever exists) at every commit trigger point. Simple, linear history.
+- **`--branch <name>`**: push to the named branch. If the branch does not exist locally or remotely, create it automatically (`git checkout -b <name>` + `git push -u origin <name>`).
+
+**Push failure handling (both modes)**:
+- If `git push` fails for any reason (network, rejected, no remote): do NOT discard the commit. The commit stays local.
+- Log the failure to `tasks/errors.md` with timestamp and error output.
+- Retry the push at the next commit trigger point (accumulate commits, push all at once).
+- If push has been failing for 3+ consecutive trigger points: notify the user and pause push attempts until resolved.
+- **Commit is always the minimum guarantee** — work is never lost due to a push failure.
+
 ---
 
 ## Guardrails
@@ -1299,6 +1391,7 @@ Types: feat | fix | test | devops | docs | refactor | style | spike
 - UX review content is authored by UX subagent, NOT by main agent — main agent writes the file from UX subagent's structured output only
 - Test runner script reads from the test config file — project-specific, no hardcoded selectors
 - If Playwright is unavailable: HARD STOP — see MCP availability check in Project Scope. No curl fallback, no degraded verification.
+  **--miniprogram 模式例外**：Playwright 不可用不触发 HARD STOP，miniprogram-automator 已在 MCP availability check 阶段验证可用。
 
 ---
 

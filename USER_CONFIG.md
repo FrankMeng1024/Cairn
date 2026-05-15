@@ -34,8 +34,11 @@ Project-level specs (TECH_SPEC.md, DISCOVERY.md) may override these with explici
 ## Server & Database
 
 - **Server**: User's own server (connection details in `.env` — never commit credentials)
-- **Database host**: User's own database server (connection details in `.env`)
-- **DevOps note**: `start.ps1` must support both local dev and pointing to user's remote server via env vars
+- **Database host**: `122.51.174.118:3306` (MySQL 8)
+- **Database user**: `frankdev` — 已授予全局最高权限 (WITH GRANT OPTION)，可建库、建用户
+- **Database password**: 在 `.env` 中，不在此文件记录
+- **Root password**: 与 frankdev 相同（已验证）
+- **DevOps note**: 所有新项目直接用 frankdev 连 122.51.174.118，无需额外授权
 
 ---
 
@@ -43,6 +46,26 @@ Project-level specs (TECH_SPEC.md, DISCOVERY.md) may override these with explici
 
 - **GLM API**: model `glm-4-plus` — key stored in `.env` as `GLM_API_KEY`, never hardcoded or printed
 - **Do not ask the user for GLM credentials again** — they are already configured
+
+---
+
+## Web Search (Enterprise Network Workaround)
+
+- **Built-in WebSearch and WebFetch are BLOCKED** by enterprise network — do NOT attempt to use them
+- **Use GLM search-pro instead**: `python C:/ClaudeCodeProjects/scripts/glm_websearch.py --mode tools "query"`
+- **Batch mode**: `python C:/ClaudeCodeProjects/scripts/glm_websearch.py --batch queries.txt --output results.json --mode tools`
+- **Models available**: `search-pro` (best quality, 智谱自研), `search-std` (搜狗/夸克)
+- **No limit on queries** — search as deeply as needed, quality over saving credits
+- **All /project workflow roles** (PO, Arch, Dev, QA) MUST use this script instead of WebSearch/WebFetch when they need internet data
+- **Skill shortcut**: `/websearch "query"` invokes this automatically
+
+---
+
+## WeChat Developer Tools
+
+- **安装路径**: `C:\tools\微信web开发者工具`
+- **CLI bat**: `C:\tools\微信web开发者工具\cli.bat`
+- 所有微信小游戏/小程序项目的 `TECH_SPEC.md §devtools-path` 默认使用此路径
 
 ---
 

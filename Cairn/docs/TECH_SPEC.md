@@ -5,7 +5,7 @@ Mobile App (React Native + Expo)
 
 ## §acceptance
 `acceptance_mode: auto`
-`ui_only_sprints: 3` (Sprint 2–4 are UI-only per user instruction; stop after Sprint 4 for user review)
+`ui_only_sprints: 3` (Sprints 3–5 were UI-only; user review completed after Sprint 5, full iteration resumes Sprint 6+)
 
 ## §stack
 
@@ -22,7 +22,9 @@ Mobile App (React Native + Expo)
 | **Database** | MySQL 8 (existing server) | 用户现有服务器 |
 | **TTS** | expo-speech | 系统TTS，支持压低音乐音量 |
 | **GPS** | expo-location | 后台定位、地理围栏 |
+| **Keep Awake** | expo-keep-awake | 运动中防息屏（跑步/徒步 tracking state） |
 | **AR (Phase 2)** | expo-three + ARKit/ARCore | Phase 2加入 |
+| **Icons** | lucide-react-native + react-native-svg | 统一SVG图标系统，2px stroke，替代emoji |
 
 ## §viewports
 - Primary: iPhone 14/15 (390×844pt)

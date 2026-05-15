@@ -50,6 +50,13 @@ export const FontSize = {
   tiny: 9,
 } as const;
 
+export const IconSize = {
+  sm: 18,
+  md: 22,
+  lg: 28,
+  xl: 36,
+} as const;
+
 export const Shadow = {
   card: {
     shadowColor: '#000',
