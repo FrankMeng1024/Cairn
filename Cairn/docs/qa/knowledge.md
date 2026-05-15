@@ -106,9 +106,18 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 - RecentActivityStrip AC2 coverage gap: only duration fallback (distance < 10m) tested; km display branch not tested in Sprint 23
 - expo-keep-awake Wake Lock produces 2 errors per Hiking visit (activate + deactivate) — both pre-existing, non-blocking
 
-## Sprint 23 Verification Summary
+## Sprint 24 Updates
 
-- STORY-00059 (HomeScreen activity cards + QuickStats): PASS HIGH
-- STORY-00060 (HikingScreen premium map placeholder): PASS HIGH
-- STORY-00061 (SettingsScreen mode selector refinement): PASS HIGH
-- STORY-00062 (RecentActivityStrip typography): PASS MEDIUM (distance > 10m branch untested)
+- RunningScreen selected card: Colors.running (blue) left-border + Colors.runningLight bg tint + blue checkmark. Unselected = white bg no accent. Updated baseline (was green in Sprint 22).
+- MapHistoryScreen session cards: pill badge ("Run"/"Hike") + bold duration primary stat + "date · distance" secondary line. Previous plain text format replaced.
+- MapHistoryScreen: red triangle in map area = DANGER data marker pin, NOT a UI warning element. Do not flag in future sprints.
+- FriendsScreen: gradient avatar circles (green), online status dots (green=online, grey=inactive), shadow-elevated cards, green summary capsule (primaryBg+primary text), dashed "Add a friend" card with primaryLight bg.
+- FriendsScreen amber dot (Colors.warning, Recent <1h) = coverage gap — no test data friend in 0-60min window.
+- Cross-screen h3/700 title confirmed: RunningScreen ("Running Mode"), MapHistoryScreen ("Route Map"), FriendsScreen ("Friends"). Tab pill = primaryBg + primary text when selected.
+
+## Sprint 24 Verification Summary
+
+- STORY-00063 (RunningScreen route cards): PASS HIGH
+- STORY-00064 (MapHistoryScreen session cards): PASS HIGH
+- STORY-00065 (FriendsScreen visual depth): PASS HIGH
+- STORY-00066 (Cross-screen typography): PASS HIGH

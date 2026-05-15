@@ -13,6 +13,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Share,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useNavigation } from '@react-navigation/native';
@@ -181,8 +182,11 @@ export function RunningScreen() {
       <SafeAreaView style={preStyles.container} edges={['top', 'bottom']}>
         {/* Header */}
         <View style={preStyles.header}>
-          <BackButton variant="inline" />
-          <Text style={preStyles.title}>Running Mode</Text>
+          <View style={preStyles.topBar}>
+            <BackButton variant="inline" />
+            <Text style={preStyles.title}>Running Mode</Text>
+            <View style={{ width: 60 }} />
+          </View>
           <Text style={preStyles.subtitle}>Select a route (optional)</Text>
         </View>
 
@@ -194,9 +198,13 @@ export function RunningScreen() {
             onPress={() => setSelectedRoute(null)}
             activeOpacity={0.85}
           >
-            <View style={[preStyles.routeIconBadge, { backgroundColor: Colors.primaryLight }]}>
+            <LinearGradient
+              colors={[Colors.primaryLight, Colors.primaryLight.replace('0.15', '0.28')]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={preStyles.routeIconBadge}
+            >
               <Icon name="Target" size={IconSize.md} color={Colors.primary} strokeWidth={1.8} />
-            </View>
+            </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={preStyles.routeName}>Free Run</Text>
               <Text style={preStyles.routeMeta}>GPS tracking · Any route</Text>
@@ -215,15 +223,19 @@ export function RunningScreen() {
               onPress={() => setSelectedRoute(r.id)}
               activeOpacity={0.85}
             >
-              <View style={[preStyles.routeIconBadge, { backgroundColor: Colors.runningLight }]}>
+              <LinearGradient
+                colors={[Colors.runningLight, Colors.runningLight.replace('0.12', '0.24')]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={preStyles.routeIconBadge}
+              >
                 <Icon name="Route" size={IconSize.md} color={Colors.running} strokeWidth={1.8} />
-              </View>
+              </LinearGradient>
               <View style={{ flex: 1 }}>
                 <Text style={preStyles.routeName}>{r.name}</Text>
                 <Text style={preStyles.routeMeta}>{r.distanceKm} km</Text>
               </View>
               {selectedRoute === r.id && (
-                <View style={preStyles.checkBadge}>
+                <View style={[preStyles.checkBadge, { backgroundColor: Colors.running }]}>
                   <Icon name="Check" size={14} color="#fff" strokeWidth={3} />
                 </View>
               )}
@@ -342,8 +354,13 @@ const preStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   header: {
     paddingHorizontal: Spacing.base,
-    paddingTop: Spacing.lg,
+    paddingTop: Spacing.sm,
     paddingBottom: Spacing.md,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  topBar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: Spacing.sm,
   },
   backBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -351,10 +368,10 @@ const preStyles = StyleSheet.create({
   },
   backText: { fontSize: FontSize.caption, color: Colors.primary, fontWeight: '600' },
   title: {
-    fontSize: FontSize.h1, fontWeight: '800',
-    color: Colors.textPrimary, letterSpacing: -0.5,
+    fontSize: FontSize.h3, fontWeight: '700',
+    color: Colors.textPrimary,
   },
-  subtitle: { fontSize: FontSize.caption, color: Colors.textSecondary, marginTop: 4 },
+  subtitle: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 4 },
 
   routeList: { flex: 1, paddingHorizontal: Spacing.base, gap: Spacing.sm },
   routeCard: {
@@ -365,7 +382,7 @@ const preStyles = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: 'transparent',
     ...Shadow.card,
   },
-  routeCardSelected: { borderLeftColor: Colors.primary },
+  routeCardSelected: { borderLeftColor: Colors.running, backgroundColor: Colors.runningLight.replace('0.12', '0.06') },
   routeIconBadge: {
     width: 48, height: 48, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
@@ -379,7 +396,7 @@ const preStyles = StyleSheet.create({
 
   footer: { padding: Spacing.xl, gap: Spacing.sm },
   startBtn: {
-    backgroundColor: Colors.running, borderRadius: Radius.button,
+    backgroundColor: Colors.primary, borderRadius: Radius.button,
     paddingVertical: Spacing.lg, alignItems: 'center',
     flexDirection: 'row', gap: Spacing.sm, justifyContent: 'center',
   },

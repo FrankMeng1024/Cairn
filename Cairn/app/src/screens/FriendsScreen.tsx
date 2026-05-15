@@ -10,6 +10,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Switch, Animated, ActivityIndicator,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -49,27 +50,54 @@ function PressCard({
   );
 }
 
+// Derive status dot color: online=success, recent(<1h)=warning, inactive=border
+function getStatusDotColor(online: boolean, lastSeen: string): string {
+  if (online) return Colors.success;
+  // "45m ago", "1h ago", "Just now" → recent
+  const recentMatch = lastSeen.match(/^(\d+)m ago$/i);
+  if (recentMatch) return Colors.warning;
+  if (/^1h ago$/i.test(lastSeen)) return Colors.warning;
+  if (/just now/i.test(lastSeen)) return Colors.success;
+  return Colors.border;
+}
+
 // ── Friend Card ─────────────────────────────────────────────────────────────
 function FriendCard({ friend, onToggleShare }: {
   friend: Friend;
   onToggleShare: () => void;
 }) {
+  const statusColor = getStatusDotColor(friend.online, friend.lastSeen);
+  const avatarGradStart = Colors.primaryLight;
+  const avatarGradEnd = Colors.primaryLight.replace('0.15', '0.30');
+
   return (
     <View style={cardStyles.card}>
       <View style={cardStyles.avatarWrap}>
-        <View style={[cardStyles.avatar, { backgroundColor: friend.sharing ? Colors.primaryLight : Colors.border }]}>
-          <Text style={[cardStyles.avatarText, { color: friend.sharing ? Colors.primary : Colors.textMuted }]}>
+        <LinearGradient
+          colors={[avatarGradStart, avatarGradEnd]}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={cardStyles.avatar}
+        >
+          <Text style={cardStyles.avatarText}>
             {friend.initials}
           </Text>
-        </View>
-        <View style={[cardStyles.onlineDot, { backgroundColor: friend.online ? Colors.success : Colors.border }]} />
+        </LinearGradient>
+        <View style={[cardStyles.onlineDot, { backgroundColor: statusColor }]} />
       </View>
       <View style={cardStyles.info}>
         <Text style={cardStyles.name}>{friend.name}</Text>
-        <Text style={cardStyles.meta}>
-          {friend.online ? 'Online' : friend.lastSeen}
-          {friend.sharedMarkers > 0 ? ` · ${friend.sharedMarkers} shared flags` : ''}
-        </Text>
+        <View style={cardStyles.metaRow}>
+          <Text style={cardStyles.meta}>
+            {friend.online ? 'Online' : friend.lastSeen}
+          </Text>
+          {friend.sharedMarkers > 0 && (
+            <>
+              <Text style={cardStyles.metaDot}> · </Text>
+              <Icon name="Flag" size={12} color={Colors.flag} strokeWidth={2} />
+              <Text style={cardStyles.meta}> {friend.sharedMarkers} shared flags</Text>
+            </>
+          )}
+        </View>
         {!friend.sharing && (
           <Text style={cardStyles.noShareLabel}>Not sharing flags</Text>
         )}
@@ -237,10 +265,13 @@ export function FriendsScreen() {
       {hasFriends ? (
         <>
           {/* Share summary banner */}
-          <View style={styles.shareBanner}>
-            <Text style={styles.shareBannerText}>
-              Sharing flags with {sharingCount}/{friends.length} friends
-            </Text>
+          <View style={styles.shareBannerRow}>
+            <View style={styles.sharePill}>
+              <Icon name="Users" size={12} color={Colors.primary} strokeWidth={2} />
+              <Text style={styles.shareBannerText}>
+                Sharing flags with {sharingCount}/{friends.length} friends
+              </Text>
+            </View>
             <Text style={styles.shareBannerSub}>Toggle sharing individually per friend</Text>
           </View>
 
@@ -313,21 +344,28 @@ const styles = StyleSheet.create({
   },
   addTopBtnText: { fontSize: FontSize.small, fontWeight: '700', color: '#fff' },
 
-  shareBanner: {
-    backgroundColor: Colors.primaryBg,
+  shareBannerRow: {
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
+    gap: 4,
+  },
+  sharePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.primaryBg,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md, paddingVertical: 4,
   },
   shareBannerText: { fontSize: FontSize.caption, fontWeight: '600', color: Colors.primary },
-  shareBannerSub: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+  shareBannerSub: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2, paddingHorizontal: 2 },
 
   scrollContent: { padding: Spacing.base, gap: Spacing.sm, paddingBottom: Spacing.xxl },
 
   addCard: {
-    backgroundColor: Colors.surface, borderRadius: Radius.card,
+    backgroundColor: Colors.primaryLight, borderRadius: Radius.card,
     padding: Spacing.base, flexDirection: 'row', alignItems: 'center',
-    gap: Spacing.md, borderWidth: 1.5, borderColor: Colors.border,
-    borderStyle: 'dashed',
+    gap: Spacing.md, borderWidth: 1.5, borderColor: Colors.primary,
+    borderStyle: 'dashed', opacity: 0.9,
   },
   addCardIconWrap: {
     width: 46, height: 46, borderRadius: 23,
@@ -357,18 +395,20 @@ const cardStyles = StyleSheet.create({
   },
   avatarWrap: { position: 'relative' },
   avatar: {
-    width: 46, height: 46, borderRadius: 23,
+    width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { fontSize: FontSize.h3, fontWeight: '700' },
+  avatarText: { fontSize: FontSize.body, fontWeight: '700', color: Colors.primary },
   onlineDot: {
     position: 'absolute', bottom: 0, right: 0,
-    width: 12, height: 12, borderRadius: 6,
+    width: 10, height: 10, borderRadius: 5,
     borderWidth: 2, borderColor: Colors.bg,
   },
   info: { flex: 1 },
   name: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
-  meta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  metaDot: { fontSize: FontSize.small, color: Colors.textSecondary },
+  meta: { fontSize: FontSize.small, color: Colors.textSecondary },
   noShareLabel: {
     fontSize: FontSize.tiny, fontWeight: '600', color: Colors.textMuted,
     marginTop: 3, backgroundColor: Colors.border,

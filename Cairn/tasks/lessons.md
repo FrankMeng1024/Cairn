@@ -1,5 +1,11 @@
 # Lessons Learned
 
+## Sprint 23 — 2026-05-15
+- [archived: CLAUDE.md §Integration] Sprint 23: clean Sprint, no retrospective actions. Zero QA bugs, no integration restart loops, Arch flagged one non-blocking Medium spec drift (topo opacity string manipulation — deferred to future cleanup). No prior VU NOT ACCEPTED.
+- [pending] STORY-00062 AC2: distance > 10m km-display branch not tested in Sprint 23 (only duration fallback). Future QA should add a session with distance > 100m to test data.
+- [pending] STORY-00062 AC1: "Hike" badge variant not tested (no Hike sessions in test data). Future QA should add hike session to store data.
+- [resolved: Sprint 23] Spec drift: MODE_META Navigator used hardcoded '#b47c28' and 'rgba(180,130,60,0.12)' — now uses Colors.flag and Colors.flagLight (STORY-00061 DONE).
+
 ## Sprint 22 — 2026-05-15
 - [archived: CLAUDE.md §Integration] Sprint 22: clean Sprint, no retrospective actions. Zero QA bugs, no integration restart loops, no Spec Drift confirmed fixed, no prior VU NOT ACCEPTED.
 - [resolved: Sprint 22] "0.0 km" stat on HomeScreen — formatDistance now returns '--' for <10m (STORY-00056 DONE)

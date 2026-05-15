@@ -9,6 +9,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert,
   Dimensions, Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -151,8 +152,13 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
   const dateStr = formatDate(session.startedAt);
   const actLabel = session.activityMode === 'running' ? 'Run' : 'Hike';
   const actColor = session.activityMode === 'running' ? Colors.running : Colors.primary;
-  const actIconBg = session.activityMode === 'running' ? Colors.runningLight : Colors.primaryLight;
+  const actLightBg = session.activityMode === 'running' ? Colors.runningLight : Colors.primaryLight;
+  const actDeepBg = session.activityMode === 'running'
+    ? Colors.runningLight.replace('0.12', '0.24')
+    : Colors.primaryLight.replace('0.15', '0.28');
   const actIcon: IconName = session.activityMode === 'running' ? 'PersonStanding' : 'Mountain';
+  const distStr = formatDistance(session.distanceM, 'km', 1);
+  const durationStr = formatDuration(session.durationS);
 
   const expandAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
   useEffect(() => {
@@ -167,16 +173,22 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
     <View style={{ marginBottom: Spacing.sm }}>
       <PressRow onPress={onPress}>
         <View style={[cardStyles.routeCard, (isSelected || isExpanded) && cardStyles.routeCardSelected]}>
-          <View style={[cardStyles.activityBadge, { backgroundColor: actIconBg }]}>
+          <LinearGradient
+            colors={[actLightBg, actDeepBg]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={cardStyles.activityBadge}
+          >
             <Icon name={actIcon} size={20} color={actColor} strokeWidth={1.8} />
-          </View>
+          </LinearGradient>
           <View style={cardStyles.routeInfo}>
-            <Text style={cardStyles.routeName}>
-              {session.name ?? `${actLabel} · ${dateStr}`}
-            </Text>
-            <Text style={cardStyles.routeMeta}>
-              {dateStr} · {formatDistance(session.distanceM, 'km', 1)} km · {formatDuration(session.durationS)}
-            </Text>
+            {/* Activity type pill badge */}
+            <View style={[cardStyles.actTypePill, { backgroundColor: actLightBg }]}>
+              <Text style={[cardStyles.actTypePillText, { color: actColor }]}>{actLabel}</Text>
+            </View>
+            {/* Primary stat: duration */}
+            <Text style={cardStyles.routePrimary}>{durationStr}</Text>
+            {/* Secondary line: date · distance */}
+            <Text style={cardStyles.routeMeta}>{dateStr} · {distStr} km</Text>
           </View>
           <View style={cardStyles.routeChevron}>
             <Icon
@@ -196,7 +208,7 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
             <Text style={cardStyles.expandedStatLbl}>km</Text>
           </View>
           <View style={cardStyles.expandedStat}>
-            <Text style={cardStyles.expandedStatVal}>{formatDuration(session.durationS)}</Text>
+            <Text style={cardStyles.expandedStatVal}>{durationStr}</Text>
             <Text style={cardStyles.expandedStatLbl}>time</Text>
           </View>
           <View style={cardStyles.expandedStat}>
@@ -316,9 +328,9 @@ export function MapHistoryScreen() {
         {/* Map placeholder label */}
         {!selectedSession && (
           <View style={styles.mapLabelWrap}>
-            <Icon name="Map" size={28} color={Colors.textMuted} strokeWidth={1.5} />
-            <Text style={styles.mapLabel}>Trail Map</Text>
-            <Text style={styles.mapSubLabel}>Route history · Flag markers</Text>
+            <Icon name="Map" size={32} color={Colors.primary} strokeWidth={1.3} />
+            <Text style={styles.mapLabel}>Route Map</Text>
+            <Text style={styles.mapSubLabel}>Select a route below to view</Text>
           </View>
         )}
 
@@ -389,7 +401,7 @@ export function MapHistoryScreen() {
             style={[styles.tabItem, tab === 'routes' && styles.tabItemActive]}
             onPress={() => setTab('routes')}
           >
-            <Icon name="Route" size={14} color={tab === 'routes' ? '#fff' : Colors.textSecondary} strokeWidth={2} />
+            <Icon name="Route" size={14} color={tab === 'routes' ? Colors.primary : Colors.textSecondary} strokeWidth={2} />
             <Text style={[styles.tabText, tab === 'routes' && styles.tabTextActive]}>
               Routes{sessions.length > 0 ? ` (${sessions.length})` : ''}
             </Text>
@@ -398,7 +410,7 @@ export function MapHistoryScreen() {
             style={[styles.tabItem, tab === 'flags' && styles.tabItemActive]}
             onPress={() => setTab('flags')}
           >
-            <Icon name="Flag" size={14} color={tab === 'flags' ? '#fff' : Colors.textSecondary} strokeWidth={2} />
+            <Icon name="Flag" size={14} color={tab === 'flags' ? Colors.primary : Colors.textSecondary} strokeWidth={2} />
             <Text style={[styles.tabText, tab === 'flags' && styles.tabTextActive]}>
               Flags{markers.length > 0 ? ` (${markers.length})` : ''}
             </Text>
@@ -537,10 +549,10 @@ const styles = StyleSheet.create({
   },
   mapLabelWrap: {
     position: 'absolute', alignItems: 'center',
-    top: '38%', left: 0, right: 0, gap: 4, opacity: 0.35,
+    top: '38%', left: 0, right: 0, gap: 6,
   },
-  mapLabel: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.textMuted },
-  mapSubLabel: { fontSize: FontSize.small, color: Colors.textMuted },
+  mapLabel: { fontSize: FontSize.h3, fontWeight: '600', color: Colors.primary, opacity: 0.7 },
+  mapSubLabel: { fontSize: FontSize.small, color: Colors.textMuted, opacity: 0.8 },
   markerPin: {
     position: 'absolute', width: 30, height: 30, borderRadius: 15,
     borderWidth: 2.5, alignItems: 'center', justifyContent: 'center',
@@ -575,7 +587,7 @@ const styles = StyleSheet.create({
   backText: { fontSize: FontSize.small, fontWeight: '700', color: Colors.primary },
   topTitle: {
     flex: 1, textAlign: 'center',
-    fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary,
+    fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary,
   },
   planBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -594,9 +606,9 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     borderRadius: Radius.pill, paddingVertical: 7, gap: 5,
   },
-  tabItemActive: { backgroundColor: Colors.primary },
+  tabItemActive: { backgroundColor: Colors.primaryBg },
   tabText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
-  tabTextActive: { color: '#fff' },
+  tabTextActive: { color: Colors.primary, fontWeight: '700' },
 
   listPanel: {
     backgroundColor: Colors.surface,
@@ -642,9 +654,16 @@ const cardStyles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
   },
-  routeInfo: { flex: 1 },
+  routeInfo: { flex: 1, gap: 2 },
+  actTypePill: {
+    alignSelf: 'flex-start',
+    borderRadius: Radius.pill, paddingHorizontal: 8, paddingVertical: 2,
+    marginBottom: 1,
+  },
+  actTypePillText: { fontSize: FontSize.tiny, fontWeight: '700', letterSpacing: 0.3 },
+  routePrimary: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
   routeName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
-  routeMeta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+  routeMeta: { fontSize: FontSize.small, color: Colors.textSecondary },
   routeChevron: {},
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
@@ -667,8 +686,8 @@ const cardStyles = StyleSheet.create({
     paddingTop: Spacing.md, paddingBottom: Spacing.sm,
   },
   expandedStat: { alignItems: 'center' },
-  expandedStatVal: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
-  expandedStatLbl: { fontSize: FontSize.tiny, color: Colors.textMuted, marginTop: 1 },
+  expandedStatVal: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary },
+  expandedStatLbl: { fontSize: FontSize.tiny, color: Colors.textMuted, fontWeight: '600', marginTop: 1 },
   viewOnMapBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     alignSelf: 'center', borderWidth: 1, borderRadius: 20,
