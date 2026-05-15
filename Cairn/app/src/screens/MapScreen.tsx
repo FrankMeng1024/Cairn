@@ -1,19 +1,22 @@
 /**
- * MapScreen — Sprint 13 SVG polish
+ * MapScreen — Sprint 31 premium uplift
  *
- * - Emoji replaced with lucide SVG icons throughout
- * - Map markers, type selector, detail badge all use Icon component
- * - Permission icons: Lock, Users, Globe
- * - Activity mode chip: Mountain / PersonStanding
- * - FAB: MapPin SVG
- * - Helpful button: ThumbsUp SVG
+ * - STORY-00095: Map placeholder → topo rings + S-curve trail + GPS pill + Download CTA
+ * - STORY-00096: CreateMarkerSheet → 4-card grid, LinearGradient badges, CircleCheck selection, 3-tier char counter
+ * - STORY-00097: MarkerDetailSheet → LinearGradient type badge, outlined Helpful pill
+ * - STORY-00098: Tracking bar → Colors.surface + Shadow.elevated + 3px green left-border, red FAB badge
+ * - STORY-00099: GPS/mode chips → rgba(255,255,255,0.95), LinearGradient in activity modal
  */
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, Modal,
-  TextInput, Animated,
+  TextInput, Animated, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore } from '../store/useAppStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
@@ -22,7 +25,21 @@ import { MOCK_MARKERS, MARKER_META, MarkerType } from '../data/mockData';
 
 const { width: W, height: H } = Dimensions.get('window');
 
-// ── Map Placeholder ───────────────────────────────────────────────────────────
+// ── Flag type config (matching HikingScreen FLAG_TYPES) ───────────────────────
+const FLAG_TYPES: {
+  id: MarkerType;
+  icon: IconName;
+  label: string;
+  color: string;
+  bg: string;
+}[] = [
+  { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: Colors.danger,   bg: Colors.dangerBg  },
+  { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: Colors.info,     bg: Colors.infoBg    },
+  { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: Colors.success,  bg: Colors.successBg },
+  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg },
+];
+
+// ── Map Placeholder (STORY-00095) ─────────────────────────────────────────────
 function MapPlaceholder({
   markers, onMarkerPress,
 }: {
@@ -31,35 +48,45 @@ function MapPlaceholder({
 }) {
   return (
     <View style={styles.mapContainer}>
-      {/* Grid background */}
-      {Array.from({ length: 8 }).map((_, i) => (
-        <View key={`h${i}`} style={[styles.gridLine, styles.gridH, { top: `${(i + 1) * 11}%` as any }]} />
-      ))}
-      {Array.from({ length: 6 }).map((_, i) => (
-        <View key={`v${i}`} style={[styles.gridLine, styles.gridV, { left: `${(i + 1) * 14}%` as any }]} />
-      ))}
-      {/* Trail line (mock) */}
+      {/* Topo elevation rings — concentric, varying opacity (matches HikingScreen) */}
+      <View style={[styles.topoRing, { width: 320, height: 320, borderRadius: 160, top: 100, left: W / 2 - 160, borderColor: Colors.primaryDim }]} />
+      <View style={[styles.topoRing, { width: 240, height: 240, borderRadius: 120, top: 140, left: W / 2 - 120, borderColor: Colors.primaryDeep }]} />
+      <View style={[styles.topoRing, { width: 165, height: 165, borderRadius: 83, top: 178, left: W / 2 - 83, borderColor: Colors.primaryMuted }]} />
+      <View style={[styles.topoRing, { width: 96, height: 96, borderRadius: 48, top: 212, left: W / 2 - 48, borderColor: Colors.primaryMuted, backgroundColor: 'rgba(93,124,70,0.06)' }]} />
+      {/* Trail S-curve — three segments */}
       <View style={styles.trailLine} />
-      {/* Placeholder label */}
-      <View style={styles.mapLabel}>
-        <Text style={styles.mapLabelText}>Trail Map</Text>
-        <Text style={styles.mapLabelSub}>Real map loads with offline pack</Text>
+      <View style={styles.trailLine2} />
+      <View style={styles.trailLine3} />
+      {/* Location pin at trail midpoint */}
+      <View style={styles.locationDot}>
+        <View style={styles.locationDotInner} />
+        <View style={styles.locationPulse} />
+      </View>
+      {/* Trail Map label + CTA */}
+      <View style={styles.mapLabelWrap}>
+        <Text style={styles.mapLabel}>Trail Map</Text>
+        <Text style={styles.mapSubLabel}>Download an offline pack to get started</Text>
+        <TouchableOpacity style={styles.downloadBtn} activeOpacity={0.8}>
+          <Icon name="Download" size={12} color={Colors.primary} strokeWidth={2.5} />
+          <Text style={styles.downloadBtnText}>Download Map</Text>
+        </TouchableOpacity>
       </View>
       {/* Mock markers */}
       {markers.map((m) => {
         const meta = MARKER_META[m.type];
+        const flagType = FLAG_TYPES.find(f => f.id === m.type);
         return (
           <TouchableOpacity
             key={m.id}
             style={[styles.mapMarker, {
-              left: m.x * W - 14,
-              top: m.y * (H * 0.75) - 14,
-              backgroundColor: meta.bg,
+              left: m.x * W - 16,
+              top: m.y * (H * 0.75) - 16,
               borderColor: meta.color,
+              backgroundColor: meta.bg,
             }]}
             onPress={() => onMarkerPress(m)}
           >
-            <Icon name={meta.iconName as IconName} size={13} color={meta.color} strokeWidth={2} />
+            <Icon name={(flagType?.icon ?? meta.iconName) as IconName} size={14} color={meta.color} strokeWidth={2.5} />
           </TouchableOpacity>
         );
       })}
@@ -67,151 +94,187 @@ function MapPlaceholder({
   );
 }
 
-// ── Mark Creation Sheet ───────────────────────────────────────────────────────
+// ── CreateMarkerSheet (STORY-00096) ───────────────────────────────────────────
 function CreateMarkerSheet({
-  visible, onClose, onConfirm, isGuided,
+  visible, onClose, onConfirm,
 }: {
   visible: boolean; onClose: () => void;
   onConfirm: (type: MarkerType, text: string) => void;
-  isGuided: boolean;
 }) {
-  const [selectedType, setSelectedType] = useState<MarkerType>('free');
+  const [selectedType, setSelectedType] = useState<MarkerType | null>(null);
   const [text, setText] = useState('');
+  const [textFocused, setTextFocused] = useState(false);
   const [permission, setPermission] = useState<'personal' | 'group' | 'public'>('personal');
-  const slideAnim = useRef(new Animated.Value(300)).current;
+  const slideAnim = useRef(new Animated.Value(400)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(slideAnim, {
-      toValue: visible ? 0 : 300,
-      duration: 280,
-      useNativeDriver: true,
-    }).start();
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 200, friction: 18 }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: 400, duration: 180, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
+      ]).start();
+    }
   }, [visible]);
+
+  const charCount = text.length;
+  const canSave = selectedType !== null;
 
   const permIconNames: Record<'personal' | 'group' | 'public', IconName> = {
     personal: 'Lock', group: 'Users', public: 'Globe',
   };
-  const permColors: Record<'personal' | 'group' | 'public', string> = {
-    personal: Colors.textSecondary, group: Colors.info, public: Colors.primary,
-  };
   const permLabels = { personal: 'Only me', group: 'Friends', public: 'Public' };
-  const permHints = {
-    personal: 'Only you can see this flag',
-    group: 'Your friends can also see it',
-    public: 'Visible to all users',
-  };
 
   if (!visible) return null;
 
   return (
-    <View style={styles.sheetOverlay}>
-      <TouchableOpacity style={styles.sheetBackdrop} onPress={onClose} activeOpacity={1} />
-      <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
-        <View style={styles.sheetHandle} />
-        <Text style={styles.sheetTitle}>Plant a flag</Text>
-        {isGuided && (
-          <Text style={styles.sheetSubtitle}>Leave useful info for those who follow</Text>
-        )}
+    <Animated.View style={[styles.sheetOverlay, { opacity: opacityAnim }]}>
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} activeOpacity={1} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
+          <View style={styles.sheetHandle} />
+          {/* Header */}
+          <View style={styles.sheetHeaderRow}>
+            <Text style={styles.sheetTitle}>Plant a Flag</Text>
+            <TouchableOpacity style={styles.sheetCloseBtn} onPress={onClose}>
+              <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
 
-        {/* Type selector */}
-        <View style={styles.typeRow}>
-          {(Object.keys(MARKER_META) as MarkerType[]).map((t) => {
-            const meta = MARKER_META[t];
-            const active = selectedType === t;
-            return (
-              <TouchableOpacity
-                key={t}
-                style={[styles.typeBtn, active && { backgroundColor: meta.bg, borderColor: meta.color }]}
-                onPress={() => setSelectedType(t)}
-              >
-                <Icon name={meta.iconName as IconName} size={18} color={meta.color} strokeWidth={1.8} />
-                {isGuided && <Text style={[styles.typeBtnLabel, { color: meta.color }]}>{meta.label}</Text>}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+          {/* 4-card flag type grid (STORY-00096) */}
+          <View style={styles.typeGrid}>
+            {FLAG_TYPES.map((flag) => {
+              const isSelected = selectedType === flag.id;
+              return (
+                <TouchableOpacity
+                  key={flag.id}
+                  style={[styles.typeCard, isSelected && styles.typeCardSelected]}
+                  onPress={() => setSelectedType(flag.id)}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={[flag.bg, flag.bg.replace(')', ', 0.9)').replace('rgb', 'rgba')]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                    style={[styles.typeIconBadge, { borderColor: flag.color + '40' }]}
+                  >
+                    <Icon name={flag.icon} size={IconSize.md} color={flag.color} strokeWidth={2} />
+                  </LinearGradient>
+                  <Text style={[styles.typeCardLabel, { color: isSelected ? Colors.primary : Colors.textSecondary }]}>
+                    {flag.label}
+                  </Text>
+                  {/* CircleCheck selection indicator */}
+                  {isSelected && (
+                    <View style={styles.typeCardCheck}>
+                      <Icon name="CircleCheck" size={14} color={Colors.primary} strokeWidth={2.5} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-        {/* Text input */}
-        <View style={styles.inputWrap}>
-          <TextInput
-            style={styles.textInput}
-            placeholder={isGuided ? 'Short description (max 30 chars)' : 'Note...'}
-            placeholderTextColor={Colors.textMuted}
-            value={text}
-            onChangeText={(t) => setText(t.slice(0, 30))}
-            multiline
-          />
-          {isGuided && (
-            <Text style={styles.charCount}>{text.length}/30</Text>
-          )}
-        </View>
+          {/* Note input with 3-tier char counter */}
+          <View style={styles.noteWrap}>
+            <TextInput
+              style={[styles.noteInput, textFocused && styles.noteInputFocused, charCount >= 30 && styles.noteInputError]}
+              placeholder="Describe this spot… (optional)"
+              placeholderTextColor={Colors.textMuted}
+              value={text}
+              onChangeText={(t) => setText(t.slice(0, 30))}
+              multiline
+              numberOfLines={2}
+              onFocus={() => setTextFocused(true)}
+              onBlur={() => setTextFocused(false)}
+            />
+            {(textFocused || charCount > 0) && (
+              <Text style={[
+                styles.charCount,
+                charCount >= 30 ? { color: Colors.danger } : charCount >= 25 ? { color: Colors.warning } : null,
+              ]}>{charCount}/30</Text>
+            )}
+          </View>
 
-        {/* Permission */}
-        <View style={styles.permRow}>
-          {(['personal', 'group', 'public'] as const).map((p) => {
-            const active = permission === p;
-            return (
-              <TouchableOpacity
-                key={p}
-                style={[styles.permBtn, active && styles.permBtnActive]}
-                onPress={() => setPermission(p)}
-              >
-                <Icon name={permIconNames[p]} size={16} color={active ? Colors.primary : permColors[p]} strokeWidth={1.8} />
-                {isGuided && (
-                  <View>
-                    <Text style={[styles.permBtnLabel, active && styles.permBtnLabelActive]}>{permLabels[p]}</Text>
-                    <Text style={styles.permBtnHint}>{permHints[p]}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+          {/* Permission selector — outlined pill style */}
+          <View style={styles.permRow}>
+            {(['personal', 'group', 'public'] as const).map((p) => {
+              const active = permission === p;
+              return (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.permPill, active && styles.permPillActive]}
+                  onPress={() => setPermission(p)}
+                >
+                  <Icon name={permIconNames[p]} size={14} color={active ? Colors.primary : Colors.textSecondary} strokeWidth={1.8} />
+                  <Text style={[styles.permPillLabel, active && styles.permPillLabelActive]}>{permLabels[p]}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-        {/* Confirm */}
-        <TouchableOpacity
-          style={styles.confirmBtn}
-          onPress={() => { onConfirm(selectedType, text); onClose(); setText(''); }}
-        >
-          <Text style={styles.confirmBtnText}>Plant Flag</Text>
-          {isGuided && (
-            <Text style={styles.confirmBtnHint}>This flag will help those who come after you</Text>
-          )}
-        </TouchableOpacity>
-      </Animated.View>
-    </View>
+          {/* Save button — disabled until type selected */}
+          <TouchableOpacity
+            style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
+            onPress={() => {
+              if (!canSave) return;
+              onConfirm(selectedType!, text);
+              onClose();
+              setText('');
+              setSelectedType(null);
+            }}
+            activeOpacity={canSave ? 0.8 : 1}
+          >
+            <Icon name="Flag" size={IconSize.sm} color={canSave ? '#fff' : Colors.textMuted} strokeWidth={2} />
+            <Text style={[styles.saveBtnText, !canSave && { color: Colors.textMuted }]}>Plant Flag</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </KeyboardAvoidingView>
+    </Animated.View>
   );
 }
 
-// ── Marker Detail Sheet ───────────────────────────────────────────────────────
+// ── MarkerDetailSheet (STORY-00097) ───────────────────────────────────────────
 function MarkerDetailSheet({
-  marker, onClose, isGuided,
+  marker, onClose,
 }: {
   marker: typeof MOCK_MARKERS[0] | null;
   onClose: () => void;
-  isGuided: boolean;
 }) {
   if (!marker) return null;
   const meta = MARKER_META[marker.type];
+  const flagType = FLAG_TYPES.find(f => f.id === marker.type);
+
   return (
     <View style={styles.sheetOverlay}>
-      <TouchableOpacity style={styles.sheetBackdrop} onPress={onClose} activeOpacity={1} />
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} activeOpacity={1} />
       <View style={[styles.sheet, { paddingBottom: 40 }]}>
         <View style={styles.sheetHandle} />
-        <View style={styles.detailHeader}>
-          <View style={[styles.detailTypeBadge, { backgroundColor: meta.bg, borderColor: meta.color }]}>
-            <Icon name={meta.iconName as IconName} size={14} color={meta.color} strokeWidth={2} />
+        {/* Header: LinearGradient type badge + time/author */}
+        <View style={styles.detailHeaderRow}>
+          <LinearGradient
+            colors={[meta.bg, meta.bg.replace(')', ', 0.9)').replace('rgb', 'rgba')]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={[styles.detailTypeBadge, { borderColor: meta.color + '50' }]}
+          >
+            <Icon name={(flagType?.icon ?? meta.iconName) as IconName} size={14} color={meta.color} strokeWidth={2.5} />
             <Text style={[styles.detailTypeLabel, { color: meta.color }]}>{meta.label}</Text>
-          </View>
-          <Text style={styles.detailTime}>{marker.minutesAgo}m ago · {marker.author}</Text>
+          </LinearGradient>
+          <Text style={styles.detailMeta}>{marker.author} · {marker.minutesAgo}m ago</Text>
         </View>
-        <Text style={styles.detailText}>{marker.text}</Text>
-        <TouchableOpacity style={styles.helpfulBtn}>
-          <Icon name="ThumbsUp" size={18} color={Colors.textSecondary} strokeWidth={1.8} />
-          {isGuided
-            ? <Text style={styles.helpfulBtnText}>Helpful — let the author know this helped you</Text>
-            : <Text style={styles.helpfulBtnText}>Helpful</Text>
-          }
+        {/* Marker title h3/600 */}
+        {marker.title ? (
+          <Text style={styles.detailTitle}>{marker.title}</Text>
+        ) : null}
+        {/* Note text */}
+        <Text style={styles.detailNote}>{marker.text}</Text>
+        {/* Helpful outlined pill */}
+        <TouchableOpacity style={styles.helpfulPill}>
+          <Icon name="ThumbsUp" size={15} color={Colors.textSecondary} strokeWidth={1.8} />
+          <Text style={styles.helpfulPillText}>Helpful</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -220,14 +283,21 @@ function MarkerDetailSheet({
 
 // ── Main Map Screen ───────────────────────────────────────────────────────────
 export function MapScreen() {
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { uiMode, activityMode, setActivityMode, trackingState, setTrackingState,
     trackingDistance, trackingDuration, incrementTracking } = useAppStore();
-  const isGuided = uiMode === 'beginner';
 
   const [markers, setMarkers] = useState(MOCK_MARKERS);
   const [createVisible, setCreateVisible] = useState(false);
   const [selectedMarker, setSelectedMarker] = useState<typeof MOCK_MARKERS[0] | null>(null);
   const [showModeModal, setShowModeModal] = useState(false);
+
+  // Spring scales for buttons
+  const fabScale = useRef(new Animated.Value(1)).current;
+  const springIn = (val: Animated.Value) =>
+    Animated.spring(val, { toValue: 0.95, useNativeDriver: true, tension: 300, friction: 10 }).start();
+  const springOut = (val: Animated.Value) =>
+    Animated.spring(val, { toValue: 1, useNativeDriver: true, tension: 300, friction: 8 }).start();
 
   // Mock tracking timer
   useEffect(() => {
@@ -251,20 +321,25 @@ export function MapScreen() {
     }]);
   };
 
+  const isTracking = trackingState === 'tracking';
+
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
-      {/* Map */}
+      {/* Map — full bleed topo placeholder */}
       <MapPlaceholder markers={markers} onMarkerPress={(m) => setSelectedMarker(m)} />
 
-      {/* Top bar */}
+      {/* Top bar — STORY-00099: rgba(255,255,255,0.95) overlay chips */}
       <SafeAreaView style={styles.topBar} edges={['top']} pointerEvents="box-none">
-        {/* GPS status */}
-        <View style={styles.gpsChip}>
-          <View style={styles.gpsDot} />
-          {isGuided
-            ? <Text style={styles.chipText}>GPS Connected ±5m</Text>
-            : <Text style={styles.chipText}>GPS</Text>
-          }
+        {/* Left: back + GPS */}
+        <View style={styles.topLeft}>
+          <TouchableOpacity style={styles.backChip} onPress={() => nav.goBack()}>
+            <Icon name="ChevronLeft" size={16} color={Colors.primary} strokeWidth={2.5} />
+            <Text style={styles.backChipText}>Back</Text>
+          </TouchableOpacity>
+          <View style={styles.gpsChip}>
+            <View style={styles.gpsDot} />
+            <Text style={styles.chipText}>GPS Connected ±5m</Text>
+          </View>
         </View>
 
         {/* Activity mode chip */}
@@ -273,117 +348,141 @@ export function MapScreen() {
             name={activityMode === 'hiking' ? 'Mountain' : 'PersonStanding'}
             size={16} color={Colors.primary} strokeWidth={1.8}
           />
-          {isGuided && (
-            <Text style={styles.chipText}>{activityMode === 'hiking' ? 'Hiking' : 'Running'}</Text>
-          )}
+          <Text style={styles.chipText}>{activityMode === 'hiking' ? 'Hiking' : 'Running'}</Text>
         </TouchableOpacity>
       </SafeAreaView>
 
-      {/* Tracking overlay (bottom stats bar) */}
-      {trackingState === 'tracking' && (
+      {/* Tracking bar — STORY-00098: white card + Shadow.elevated + 3px green left-border */}
+      {isTracking && (
         <View style={styles.trackingBar}>
           {activityMode === 'running' ? (
-            // Running mode — big pace, minimal
             <>
-              <Text style={styles.trackingPaceBig}>5:30</Text>
-              {isGuided && <Text style={styles.trackingPaceLabel}>Current pace /km</Text>}
-              <View style={styles.trackingRow}>
-                <Text style={styles.trackingStat}>{trackingDistance.toFixed(2)}{isGuided ? ' km' : 'k'}</Text>
-                <Text style={styles.trackingStat}>{formatDuration(trackingDuration)}</Text>
+              <View style={styles.trackingStatItem}>
+                <Text style={styles.trackingValueLg}>5:30</Text>
+                <Text style={styles.trackingUnit}>pace /km</Text>
               </View>
-              <TouchableOpacity style={styles.markLaterBtn}>
-                <Text style={styles.markLaterText}>Flag later</Text>
+              <View style={styles.statDivider} />
+              <View style={styles.trackingStatItem}>
+                <Text style={styles.trackingValue}>{trackingDistance.toFixed(2)}</Text>
+                <Text style={styles.trackingUnit}>km</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.trackingStatItem}>
+                <Text style={styles.trackingValue}>{formatDuration(trackingDuration)}</Text>
+                <Text style={styles.trackingUnit}>elapsed</Text>
+              </View>
+              <TouchableOpacity style={styles.stopBtn} onPress={() => setTrackingState('idle')}>
+                <Icon name="Square" size={12} color="#fff" strokeWidth={3} />
+                <Text style={styles.stopBtnText}>Stop</Text>
               </TouchableOpacity>
             </>
           ) : (
-            // Hiking mode — stats row
             <>
-              <View style={styles.trackingStatsRow}>
-                <View style={styles.trackingStatItem}>
-                  <Text style={styles.trackingStatValue}>{trackingDistance.toFixed(2)}</Text>
-                  <Text style={styles.trackingStatUnit}>{isGuided ? 'km' : 'km'}</Text>
-                </View>
-                <View style={styles.trackingStatItem}>
-                  <Text style={styles.trackingStatValue}>{formatDuration(trackingDuration)}</Text>
-                  <Text style={styles.trackingStatUnit}>{isGuided ? 'elapsed' : ''}</Text>
-                </View>
-                <View style={styles.trackingStatItem}>
-                  <Text style={styles.trackingStatValue}>850</Text>
-                  <Text style={styles.trackingStatUnit}>{isGuided ? 'elev m' : 'm'}</Text>
-                </View>
+              <View style={styles.trackingStatItem}>
+                <Text style={styles.trackingValueLg}>{trackingDistance.toFixed(2)}</Text>
+                <Text style={styles.trackingUnit}>km</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.trackingStatItem}>
+                <Text style={styles.trackingValue}>{formatDuration(trackingDuration)}</Text>
+                <Text style={styles.trackingUnit}>elapsed</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.trackingStatItem}>
+                <Text style={styles.trackingValue}>850</Text>
+                <Text style={styles.trackingUnit}>elev m</Text>
               </View>
               <TouchableOpacity style={styles.stopBtn} onPress={() => setTrackingState('idle')}>
-                <Text style={styles.stopBtnText}>
-                  {isGuided ? 'Stop' : '■'}
-                </Text>
+                <Icon name="Square" size={12} color="#fff" strokeWidth={3} />
+                <Text style={styles.stopBtnText}>Stop</Text>
               </TouchableOpacity>
             </>
           )}
         </View>
       )}
 
-      {/* FAB */}
-      {trackingState !== 'tracking' || activityMode === 'hiking' ? (
-        <TouchableOpacity
-          style={[styles.fab, trackingState === 'tracking' && styles.fabSmall]}
-          onPress={() => setCreateVisible(true)}
-        >
-          <Icon name="MapPin" size={22} color="#fff" strokeWidth={2} />
-          {isGuided && trackingState === 'idle' && <Text style={styles.fabLabel}>Flag</Text>}
-        </TouchableOpacity>
-      ) : null}
+      {/* Bottom controls */}
+      <SafeAreaView style={styles.bottomOverlay} edges={['bottom']} pointerEvents="box-none">
+        <View style={styles.bottomRow}>
+          {/* Start/Stop tracking button */}
+          {!isTracking ? (
+            <TouchableOpacity
+              style={styles.startTrackingBtn}
+              onPress={() => setTrackingState('tracking')}
+            >
+              <Icon name="Play" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
+              <Text style={styles.startTrackingText}>
+                {activityMode === 'hiking' ? 'Start Hiking' : 'Start Running'}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )}
 
-      {/* Start tracking button (when idle) */}
-      {trackingState === 'idle' && (
-        <TouchableOpacity
-          style={styles.startTrackingBtn}
-          onPress={() => setTrackingState('tracking')}
-        >
-          <Text style={styles.startTrackingText}>
-            {isGuided ? `Start ${activityMode === 'hiking' ? 'Hiking' : 'Running'}` : '▶'}
-          </Text>
-        </TouchableOpacity>
-      )}
+          {/* FAB — STORY-00098: red badge showing flag count */}
+          <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+            <TouchableOpacity
+              style={styles.fab}
+              onPress={() => setCreateVisible(true)}
+              activeOpacity={1}
+              onPressIn={() => springIn(fabScale)}
+              onPressOut={() => springOut(fabScale)}
+            >
+              <Icon name="MapPin" size={22} color="#fff" strokeWidth={2} />
+              {markers.length > 0 && (
+                <View style={styles.fabBadge}>
+                  <Text style={styles.fabBadgeText}>{markers.length}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      </SafeAreaView>
 
       {/* Sheets */}
       <CreateMarkerSheet
         visible={createVisible}
         onClose={() => setCreateVisible(false)}
         onConfirm={handleAddMarker}
-        isGuided={isGuided}
       />
       <MarkerDetailSheet
         marker={selectedMarker}
         onClose={() => setSelectedMarker(null)}
-        isGuided={isGuided}
       />
 
-      {/* Activity mode modal */}
+      {/* Activity mode modal — STORY-00099: LinearGradient icon badges */}
       <Modal visible={showModeModal} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowModeModal(false)} activeOpacity={1}>
           <View style={styles.modeModal}>
             <Text style={styles.modeModalTitle}>Activity Mode</Text>
-            {(['hiking', 'running'] as const).map((m) => (
+            {([
+              { id: 'hiking' as const, icon: 'Mountain' as IconName, label: 'Hiking Mode', hint: 'Map-first, full flag features', gradColors: [Colors.primaryLight, Colors.primaryBg] as [string, string] },
+              { id: 'running' as const, icon: 'PersonStanding' as IconName, label: 'Running Mode', hint: 'Voice-first, minimal UI, lock-screen safe', gradColors: [Colors.infoBg, Colors.infoBg] as [string, string] },
+            ]).map((m) => (
               <TouchableOpacity
-                key={m}
-                style={[styles.modeModalRow, activityMode === m && styles.modeModalRowActive]}
-                onPress={() => { setActivityMode(m); setShowModeModal(false); }}
+                key={m.id}
+                style={[styles.modeModalRow, activityMode === m.id && styles.modeModalRowActive]}
+                onPress={() => { setActivityMode(m.id); setShowModeModal(false); }}
               >
-                <View style={styles.modeModalIconWrap}>
+                {/* LinearGradient icon badge */}
+                <LinearGradient
+                  colors={m.gradColors}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={styles.modeModalIconBadge}
+                >
                   <Icon
-                    name={m === 'hiking' ? 'Mountain' : 'PersonStanding'}
-                    size={22} color={activityMode === m ? Colors.primary : Colors.textSecondary}
+                    name={m.icon}
+                    size={22} color={activityMode === m.id ? Colors.primary : Colors.textSecondary}
                     strokeWidth={1.8}
                   />
+                </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modeModalLabel}>{m.label}</Text>
+                  <Text style={styles.modeModalHint}>{m.hint}</Text>
                 </View>
-                <View>
-                  <Text style={styles.modeModalLabel}>{m === 'hiking' ? 'Hiking Mode' : 'Running Mode'}</Text>
-                  {isGuided && (
-                    <Text style={styles.modeModalHint}>
-                      {m === 'hiking' ? 'Map-first, full flag features' : 'Voice-first, minimal UI, lock-screen safe'}
-                    </Text>
-                  )}
-                </View>
+                {activityMode === m.id && (
+                  <Icon name="CircleCheck" size={18} color={Colors.primary} strokeWidth={2} />
+                )}
               </TouchableOpacity>
             ))}
           </View>
@@ -394,163 +493,255 @@ export function MapScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ── Map Placeholder (STORY-00095) ───────────────────────────────────────────
   mapContainer: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: '#e8f0e0',
+    backgroundColor: Colors.primaryBg, overflow: 'hidden',
   },
-  gridLine: { position: 'absolute', backgroundColor: 'rgba(93,124,70,0.1)' },
-  gridH: { left: 0, right: 0, height: 1 },
-  gridV: { top: 0, bottom: 0, width: 1 },
+  topoRing: {
+    position: 'absolute',
+    borderWidth: 1.5,
+    backgroundColor: 'transparent',
+  },
   trailLine: {
-    position: 'absolute', left: '20%', right: '20%', top: '30%', bottom: '40%',
-    borderWidth: 3, borderColor: Colors.primary, borderRadius: 40,
-    borderStyle: 'dashed',
+    position: 'absolute', top: 240, left: 60, right: 80,
+    height: 2.5, backgroundColor: Colors.primaryMuted, borderRadius: 2,
   },
-  mapLabel: { position: 'absolute', top: '50%', alignSelf: 'center', alignItems: 'center', marginTop: -20 },
-  mapLabelText: { fontSize: FontSize.h3, fontWeight: '600', color: 'rgba(93,124,70,0.5)' },
-  mapLabelSub: { fontSize: FontSize.small, color: 'rgba(93,124,70,0.4)', marginTop: 2 },
-  mapMarker: {
+  trailLine2: {
+    position: 'absolute', top: 240, left: 60, width: 140, height: 120,
+    borderBottomWidth: 2.5, borderRightWidth: 2.5,
+    borderColor: Colors.primaryMuted, borderBottomRightRadius: 20,
+  },
+  trailLine3: {
+    position: 'absolute', top: 360, left: 200, width: 100, height: 80,
+    borderBottomWidth: 2.5, borderLeftWidth: 2.5,
+    borderColor: Colors.primaryDeep, borderBottomLeftRadius: 20,
+  },
+  locationDot: {
+    position: 'absolute', top: 290, left: W / 2 - 10,
+    width: 20, height: 20, alignItems: 'center', justifyContent: 'center',
+  },
+  locationDotInner: {
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: Colors.primary, borderWidth: 2.5, borderColor: '#fff',
+  },
+  locationPulse: {
     position: 'absolute', width: 28, height: 28, borderRadius: 14,
-    borderWidth: 2, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: Colors.primaryDeep,
+  },
+  mapLabelWrap: {
+    position: 'absolute', bottom: 180, left: 0, right: 0,
+    alignItems: 'center', gap: 6,
+  },
+  mapLabel: {
+    fontSize: FontSize.h3, fontWeight: '600',
+    color: Colors.primary, opacity: 0.7,
+  },
+  mapSubLabel: {
+    fontSize: FontSize.small, color: Colors.primary, opacity: 0.5, marginTop: 2,
+  },
+  downloadBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1.5, borderColor: Colors.primaryMuted,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 14, paddingVertical: 7, marginTop: 4,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  downloadBtnText: { fontSize: FontSize.small, fontWeight: '700', color: Colors.primary },
+  mapMarker: {
+    position: 'absolute', width: 32, height: 32, borderRadius: 16,
+    borderWidth: 2.5, alignItems: 'center', justifyContent: 'center',
+    ...Shadow.card,
   },
 
+  // ── Top bar (STORY-00099) ────────────────────────────────────────────────────
   topBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    flexDirection: 'row', justifyContent: 'space-between',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: Spacing.base, paddingTop: Spacing.sm,
   },
+  topLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  backChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md, paddingVertical: 7, ...Shadow.card,
+  },
+  backChipText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.primary },
   gpsChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: Colors.surface, borderRadius: Radius.pill,
-    paddingHorizontal: 12, paddingVertical: 6, ...Shadow.card,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md, paddingVertical: 7, ...Shadow.card,
   },
   gpsDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.success },
   modeChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: Colors.surface, borderRadius: Radius.pill,
-    paddingHorizontal: 12, paddingVertical: 6, ...Shadow.card,
+    backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md, paddingVertical: 7, ...Shadow.card,
   },
-  chipText: { fontSize: FontSize.caption, fontWeight: '600', color: Colors.textPrimary },
+  chipText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary },
 
+  // ── Tracking bar (STORY-00098) ───────────────────────────────────────────────
   trackingBar: {
-    position: 'absolute', bottom: 90, left: Spacing.base, right: Spacing.base,
-    backgroundColor: Colors.surface, borderRadius: Radius.card,
-    padding: Spacing.base, alignItems: 'center', ...Shadow.overlay,
+    position: 'absolute', top: 90, left: Spacing.base, right: Spacing.base,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.card, padding: Spacing.md,
+    gap: Spacing.sm, ...Shadow.elevated,
+    borderWidth: 1, borderColor: Colors.border,
+    borderLeftWidth: 3, borderLeftColor: Colors.primary,
   },
-  trackingPaceBig: { fontSize: 48, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -2 },
-  trackingPaceLabel: { fontSize: FontSize.caption, color: Colors.textSecondary, marginTop: -4, marginBottom: 8 },
-  trackingRow: { flexDirection: 'row', gap: Spacing.xl },
-  trackingStat: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
-  trackingStatsRow: { flexDirection: 'row', gap: Spacing.xl, marginBottom: Spacing.sm },
-  trackingStatItem: { alignItems: 'center' },
-  trackingStatValue: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary },
-  trackingStatUnit: { fontSize: FontSize.small, color: Colors.textSecondary },
+  trackingStatItem: { alignItems: 'center', flex: 1 },
+  trackingValueLg: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary },
+  trackingValue: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary },
+  trackingUnit: { fontSize: FontSize.tiny, color: Colors.textSecondary, marginTop: 1 },
+  statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
   stopBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: Colors.danger, borderRadius: Radius.button,
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
   },
-  stopBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
-  markLaterBtn: {
-    backgroundColor: Colors.primaryLight, borderRadius: Radius.button,
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, marginTop: Spacing.sm,
-  },
-  markLaterText: { color: Colors.primary, fontWeight: '700', fontSize: FontSize.body },
+  stopBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.small },
 
-  fab: {
-    position: 'absolute', right: Spacing.base, bottom: 100,
-    backgroundColor: Colors.primary, borderRadius: Radius.circle,
-    width: 64, height: 64, alignItems: 'center', justifyContent: 'center',
-    ...Shadow.fab,
+  // ── Bottom controls ──────────────────────────────────────────────────────────
+  bottomOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, pointerEvents: 'box-none' },
+  bottomRow: {
+    flexDirection: 'row', alignItems: 'flex-end',
+    paddingHorizontal: Spacing.base, paddingBottom: Spacing.lg, gap: Spacing.sm,
   },
-  fabSmall: { width: 52, height: 52 },
-  fabLabel: {
-    fontSize: FontSize.tiny, color: '#fff', fontWeight: '700',
-    position: 'absolute', bottom: -18,
-  },
-
   startTrackingBtn: {
-    position: 'absolute', bottom: 100, left: Spacing.base,
-    backgroundColor: Colors.primary, borderRadius: Radius.button,
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+    borderWidth: 2, borderColor: Colors.primaryMuted,
+    ...Shadow.card,
+  },
+  startTrackingText: { fontSize: FontSize.body, fontWeight: '700', color: Colors.primary },
+  fab: {
+    backgroundColor: Colors.primary, borderRadius: Radius.circle,
+    width: 60, height: 60, alignItems: 'center', justifyContent: 'center',
     ...Shadow.fab,
   },
-  startTrackingText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
+  fabBadge: {
+    position: 'absolute', top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: Colors.danger, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4, borderWidth: 2, borderColor: '#fff',
+  },
+  fabBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
-  // Sheets
-  sheetOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', zIndex: 100 },
-  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.overlayDark },
+  // ── Sheets ───────────────────────────────────────────────────────────────────
+  sheetOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', zIndex: 100, backgroundColor: Colors.overlayDark },
   sheet: {
     backgroundColor: Colors.surface, borderTopLeftRadius: Radius.sheet,
-    borderTopRightRadius: Radius.sheet, padding: Spacing.base,
-    paddingBottom: 48, ...Shadow.overlay,
+    borderTopRightRadius: Radius.sheet, padding: Spacing.xl,
+    paddingBottom: 48, gap: Spacing.md, ...Shadow.overlay,
   },
   sheetHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.border,
-    alignSelf: 'center', marginBottom: Spacing.md,
+    width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border,
+    alignSelf: 'center', marginBottom: Spacing.xs,
   },
-  sheetTitle: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
-  sheetSubtitle: { fontSize: FontSize.caption, color: Colors.textSecondary, marginBottom: Spacing.base },
+  sheetHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sheetTitle: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary },
+  sheetCloseBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center',
+  },
 
-  typeRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
-  typeBtn: {
-    flex: 1, alignItems: 'center', padding: Spacing.sm,
+  // 4-card grid (STORY-00096)
+  typeGrid: { flexDirection: 'row', gap: Spacing.sm },
+  typeCard: {
+    flex: 1, alignItems: 'center', gap: Spacing.xs, paddingVertical: Spacing.sm,
     borderRadius: Radius.card, borderWidth: 1.5, borderColor: Colors.border,
-    backgroundColor: Colors.bg, gap: 2,
+    backgroundColor: Colors.surface, ...Shadow.card,
   },
-  typeBtnLabel: { fontSize: FontSize.tiny, fontWeight: '600' },
+  typeCardSelected: {
+    borderColor: Colors.primary, backgroundColor: Colors.primaryBg,
+  },
+  typeIconBadge: {
+    width: 44, height: 44, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1,
+  },
+  typeCardLabel: { fontSize: FontSize.small, fontWeight: '700' },
+  typeCardCheck: {
+    position: 'absolute', top: 6, right: 6,
+  },
 
-  inputWrap: {
+  // Note input
+  noteWrap: { position: 'relative' },
+  noteInput: {
     backgroundColor: Colors.bg, borderRadius: Radius.button,
-    padding: Spacing.md, marginBottom: Spacing.md,
+    padding: Spacing.md, fontSize: FontSize.body, color: Colors.textPrimary,
+    borderWidth: 1.5, borderColor: Colors.border, minHeight: 70,
+    textAlignVertical: 'top',
   },
-  textInput: { fontSize: FontSize.body, color: Colors.textPrimary, minHeight: 60 },
-  charCount: { textAlign: 'right', fontSize: FontSize.small, color: Colors.textMuted, marginTop: 4 },
-
-  permRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
-  permBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: Colors.bg, borderRadius: Radius.card, padding: Spacing.sm,
-    borderWidth: 1.5, borderColor: Colors.border,
+  noteInputFocused: { borderColor: Colors.primary },
+  noteInputError: { borderColor: Colors.danger },
+  charCount: {
+    position: 'absolute', bottom: 8, right: Spacing.sm,
+    fontSize: FontSize.tiny, color: Colors.textMuted,
   },
-  permBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
-  permBtnLabel: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
-  permBtnLabelActive: { color: Colors.primary },
-  permBtnHint: { fontSize: 9, color: Colors.textMuted },
 
-  confirmBtn: {
-    backgroundColor: Colors.primary, borderRadius: Radius.button,
-    padding: Spacing.md, alignItems: 'center',
+  // Permission pills
+  permRow: { flexDirection: 'row', gap: Spacing.sm },
+  permPill: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.pill,
+    paddingVertical: Spacing.xs, paddingHorizontal: Spacing.sm,
+    backgroundColor: Colors.surface,
   },
-  confirmBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
-  confirmBtnHint: { color: 'rgba(255,255,255,0.7)', fontSize: FontSize.small, marginTop: 2 },
+  permPillActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+  permPillLabel: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
+  permPillLabelActive: { color: Colors.primary },
 
-  detailHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
+  // Save button
+  saveBtn: {
+    borderRadius: Radius.button, paddingVertical: Spacing.md,
+    alignItems: 'center', backgroundColor: Colors.primary,
+    flexDirection: 'row', gap: Spacing.xs, justifyContent: 'center',
+  },
+  saveBtnDisabled: { backgroundColor: Colors.border },
+  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
+
+  // MarkerDetailSheet (STORY-00097)
+  detailHeaderRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
   detailTypeBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderWidth: 1.5, borderRadius: Radius.pill, paddingHorizontal: 10, paddingVertical: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-start', borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
+    borderWidth: 1.5,
   },
-  detailTypeLabel: { fontSize: FontSize.small, fontWeight: '600' },
-  detailTime: { fontSize: FontSize.caption, color: Colors.textSecondary },
-  detailText: { fontSize: FontSize.body, color: Colors.textPrimary, lineHeight: 22, marginBottom: Spacing.lg },
-  helpfulBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: Colors.bg, borderRadius: Radius.button, padding: Spacing.md,
+  detailTypeLabel: { fontSize: FontSize.caption, fontWeight: '700' },
+  detailMeta: { fontSize: FontSize.caption, color: Colors.textSecondary },
+  detailTitle: { fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary },
+  detailNote: { fontSize: FontSize.body, color: Colors.textSecondary, lineHeight: 22 },
+  helpfulPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-start',
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
+    backgroundColor: Colors.surface,
   },
-  helpfulBtnText: { fontSize: FontSize.caption, color: Colors.textSecondary },
+  helpfulPillText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
 
-  // Modal
+  // Activity mode modal (STORY-00099)
   modalOverlay: { flex: 1, backgroundColor: Colors.overlayDark, justifyContent: 'center', padding: Spacing.xl },
-  modeModal: { backgroundColor: Colors.surface, borderRadius: Radius.cardLg, padding: Spacing.base, ...Shadow.card },
+  modeModal: {
+    backgroundColor: Colors.surface, borderRadius: Radius.cardLg,
+    padding: Spacing.base, ...Shadow.overlay,
+  },
   modeModalTitle: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.md },
   modeModalRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     padding: Spacing.md, borderRadius: Radius.card, marginBottom: Spacing.sm,
   },
-  modeModalRowActive: { backgroundColor: Colors.primaryLight },
-  modeModalIconWrap: {
-    width: 36, height: 36, borderRadius: 10,
+  modeModalRowActive: { backgroundColor: Colors.primaryBg },
+  modeModalIconBadge: {
+    width: 44, height: 44, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.bg,
   },
   modeModalLabel: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
   modeModalHint: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },

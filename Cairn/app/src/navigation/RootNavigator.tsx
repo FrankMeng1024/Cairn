@@ -13,6 +13,7 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { HikingScreen } from '../screens/HikingScreen';
 import { RunningScreen } from '../screens/RunningScreen';
 import { MapHistoryScreen } from '../screens/MapHistoryScreen';
+import { MapScreen } from '../screens/MapScreen';
 import { RoutesScreen } from '../screens/RoutesScreen';
 import { FriendsScreen } from '../screens/FriendsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -24,6 +25,7 @@ export type RootStackParamList = {
   Hiking: undefined;
   Running: undefined;
   MapHistory: undefined;
+  Map: undefined;
   Routes: undefined;
   Friends: undefined;
   Settings: undefined;
@@ -45,6 +47,7 @@ export function RootNavigator() {
         <Stack.Screen name="Hiking" component={HikingScreen} />
         <Stack.Screen name="Running" component={RunningScreen} />
         <Stack.Screen name="MapHistory" component={MapHistoryScreen} />
+        <Stack.Screen name="Map" component={MapScreen} />
         <Stack.Screen name="Routes" component={RoutesScreen} />
         <Stack.Screen name="Friends" component={FriendsScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />

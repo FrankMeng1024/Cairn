@@ -223,3 +223,21 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 - STORY-00092 (Create Account Name auto-focus): PASS HIGH
 - STORY-00093 (Settings hint pill animated fade): PASS HIGH
 - STORY-00094 (HomeScreen contextual subtitle): PASS HIGH
+
+## Sprint 31 Updates
+
+- MapScreen is now accessible via Home → Map (Tools grid). Back chip navigates to previous screen. Navigation regression TO/AWAY/BACK = 0 new errors.
+- MapScreen topo placeholder: sage-green (Colors.primaryBg) bg, 4 concentric rings at varying opacity, S-curve trail, 3 colored marker dots (red triangle, blue star, green drop), "Trail Map" title, "Download Map" CTA. No grid lines. Marker dots tappable.
+- CreateMarkerSheet (MapScreen FAB): 4-card grid (Danger/Scenic/Water/Junction), LinearGradient badges per type, 30-char note with 3-tier counter (grey <25, amber 25-29, red 30), Plant Flag button disabled until type selected. Permission pills: Only me / Friends / Public. Drag handle at top.
+- MarkerDetailSheet: LinearGradient type badge (pill), author + time-ago muted, title bold h3, note in body green, Helpful outlined pill + thumbs-up icon. Drag handle at top.
+- Tracking bar: white card, 3px green left-border, large bold stats (km/elapsed/elev), Stop button (red bg, white text). FAB badge shows marker count (hidden at 0). No overlap with FAB.
+- Activity modal: "Activity Mode" h3 title, Hiking Mode (green gradient badge, CircleCheck selected), Running Mode (blue gradient badge). Large border radius. 0 console errors on open.
+- Wake Lock count: 4 total from Hiking+Running visits. MapScreen itself adds 0 new errors.
+
+## Sprint 31 Verification Summary
+
+- STORY-00095 (MapScreen topo placeholder): PASS HIGH
+- STORY-00096 (CreateMarkerSheet premium): PASS HIGH
+- STORY-00097 (MarkerDetailSheet premium): PASS HIGH
+- STORY-00098 (Tracking bar + FAB): PASS HIGH
+- STORY-00099 (Top bar chips + activity modal): PASS MEDIUM

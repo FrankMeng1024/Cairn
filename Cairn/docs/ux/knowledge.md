@@ -23,6 +23,16 @@ The Cairn app helps users track hikes and runs, plant location flags, and share 
 - SettingsScreen mode selector: Explorer selected = green 2px border + green tinted bg + checkmark badge. Navigator = grey border + orange compass icon. Section headers are tiny muted caps.
 - Navigation regression Home→Hiking→Back and Home→Settings→Back clean. Pre-existing expo-keep-awake Wake Lock warnings unrelated to Sprint 23.
 
+## Sprint 31 Knowledge Updates
+- MapScreen has a stable 3-chip top bar (Back, GPS status, Activity mode) that persists across navigation and tracking states. All chips use rgba(255,255,255,0.95) semi-transparent backgrounds.
+- CreateMarkerSheet: 4-category card grid with visual selection feedback (green border + CircleCheck). Save button enables only after category selection — good progressive disclosure. Note field has 30-char limit with three-tier red/warning/normal counter.
+- MarkerDetailSheet: LinearGradient type badge + author attribution on same row. Description text in accent color. Helpful outlined pill.
+- Tracking bar appears below top chips with green left-border accent (3px) card — clean separation from map content, no z-index overlap.
+- Activity modal: gradient icon badges for Hiking (green) and Running (blue), CircleCheck for selected mode. Readable and self-explanatory.
+- Navigation round-trip (Back → Home → Map) preserves state perfectly, zero console errors.
+- Char counter truncation behavior: input is hard-limited at 30 chars. Red counter feedback is clear but no inline explanation — Medium friction item.
+- FAB badge shows nearby marker count (3 in test). Meaning requires tap to discover — Low friction.
+
 ## Sprint 24 Knowledge Updates
 - RunningScreen: gradient icon badges (green for Free Run, blue for named routes), blue left-border + tint selected state, h3 title "Running Mode", small subtitle "Select a route (optional)", green "Start Running" button. Consistent with other screens.
 - MapHistoryScreen: session cards upgraded to HomeScreen strip style — "Run"/"Hike" pill badge, bold duration primary stat, muted "date · -- km" secondary line, gradient icon badge. Tab selected = primaryBg pill + primary text (not white-on-green). "Route Map" placeholder with Map icon replaces old warning triangle feel.

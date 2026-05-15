@@ -7,7 +7,23 @@
 - [resolved: Sprint 28] Settings section headers 9px too small — increased to 11px (FontSize.small). Closed.
 - [pending] STORY-00062: distance > 10m km-display branch still untested. Future QA: seed session with distance > 100m.
 - [pending] STORY-00062: "Hike" badge variant still untested. Future QA: add hike session to store.
-- [pending] Low: Auth form does not auto-focus email on screen entry — user must tap before green focus appears. Not a blocker; candidate for Sprint 29.
+- [resolved: Sprint 29] Low: Auth form does not auto-focus email on screen entry — fixed in STORY-00087. Email now auto-focuses on Sign In mount via autoFocus prop.
+
+## Sprint 30 — 2026-05-16
+- [archived: CLAUDE.md §Integration] Sprint 30: clean Sprint, no retrospective actions. Zero QA bugs (5/5 stories PASS, 4 HIGH + 1 MEDIUM), no integration restart loops, no Spec Drift, no VU NOT ACCEPTED.
+- [resolved: Sprint 30] FlagPlantSheet char counter no warning state — fixed with amber at 25/30 threshold. Closed.
+- [resolved: Sprint 30] Create Account Name field auto-focus — implemented via autoFocus={isRegister}. Closed.
+- [pending] STORY-00062: distance > 10m km-display branch still untested. Future QA: seed session with distance > 100m.
+- [pending] STORY-00062: "Hike" badge variant still untested. Future QA: add hike session to store.
+- [pending] Medium: STORY-00082 named route gradient and routeCardSelected background still contain hardcoded rgba(61,122,181,...) blue values — should be tokenized. Non-blocking.
+- [pending] Low: Create Account Name field error on blur-without-input is slightly punitive. Pre-existing onBlur validation behavior.
+- [pending] Low: Char counter amber window is 5 characters (25-29). Tight for fast typists but functional.
+
+## Sprint 29 — 2026-05-15
+- [archived: CLAUDE.md §Integration] Sprint 29: clean Sprint, no retrospective actions. Zero QA bugs (5/5 stories PASS HIGH), no integration restart loops, no Spec Drift, no VU NOT ACCEPTED.
+- [pending] FlagPlantSheet char counter: only turns red at 30/30 (hard limit). No warning as user approaches limit. Candidate: yellow/orange warning state at 25/30.
+- [pending] STORY-00062: distance > 10m km-display branch still untested. Future QA: seed session with distance > 100m.
+- [pending] STORY-00062: "Hike" badge variant still untested. Future QA: add hike session to store.
 - [pending] Medium: STORY-00082 named route gradient and routeCardSelected background still contain hardcoded rgba(61,122,181,...) blue values — should be tokenized. Non-blocking.
 - [pending] Privacy checkbox click coordinates: x=35, y=400 (absolute). Container at x=24, text starts at x=54. Note: knowledge.md updated.
 
