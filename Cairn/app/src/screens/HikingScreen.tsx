@@ -280,8 +280,8 @@ export function HikingScreen() {
 
   const isTracking = status === 'tracking';
 
-  // Keep screen awake while tracking
-  useKeepAwake(isTracking ? undefined : 'HIKING_INACTIVE');
+  // Keep screen awake while on this screen (activity in progress)
+  useKeepAwake();
 
   const selectedMarker = markers.find(m => m.id === selectedMarkerId) ?? null;
 

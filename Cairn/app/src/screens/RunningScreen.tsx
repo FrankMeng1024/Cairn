@@ -29,8 +29,9 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 type RunState = 'pre' | 'running' | 'stopped';
 
 // ── Keep-awake guard ────────────────────────────────────────────────────────
-function useRunKeepAwake(active: boolean) {
-  useKeepAwake(active ? undefined : 'INACTIVE');
+function useRunKeepAwake() {
+  // Keep screen awake whenever RunningScreen is mounted
+  useKeepAwake();
 }
 
 // ── Stat item ───────────────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ export function RunningScreen() {
   const stopTracking = useTrackingStore(s => s.stopTracking);
 
   // Keep screen awake when running
-  useRunKeepAwake(status === 'tracking');
+  useRunKeepAwake();
 
   // Animated values
   const startBtnScale = useRef(new Animated.Value(1)).current;
