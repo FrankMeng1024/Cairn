@@ -4,7 +4,8 @@
 Mobile App (React Native + Expo)
 
 ## §acceptance
-`acceptance_mode: manual`
+`acceptance_mode: auto`
+`ui_only_sprints: 3` (Sprint 2–4 are UI-only per user instruction; stop after Sprint 4 for user review)
 
 ## §stack
 
