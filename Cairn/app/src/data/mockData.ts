@@ -2,8 +2,9 @@
 
 export const MOCK_FRIENDS = [
   { id: '1', name: 'Sam', initials: 'S', online: true, lastSeen: 'Just now', sharedMarkers: 12 },
-  { id: '2', name: 'Mika', initials: 'M', online: false, lastSeen: '3h ago', sharedMarkers: 7 },
-  { id: '3', name: 'Yuki', initials: 'Y', online: false, lastSeen: 'Yesterday', sharedMarkers: 3 },
+  { id: '2', name: 'Alex', initials: 'A', online: false, lastSeen: '45m ago', sharedMarkers: 5 },
+  { id: '3', name: 'Mika', initials: 'M', online: false, lastSeen: '3h ago', sharedMarkers: 7 },
+  { id: '4', name: 'Yuki', initials: 'Y', online: false, lastSeen: 'Yesterday', sharedMarkers: 3 },
 ];
 
 export const MOCK_ROUTES = [

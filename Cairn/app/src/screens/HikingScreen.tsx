@@ -654,11 +654,12 @@ const styles = StyleSheet.create({
 
   trackingBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.97)',
+    backgroundColor: 'rgba(255,255,255,0.98)',
     marginHorizontal: Spacing.base, marginTop: Spacing.sm,
     borderRadius: Radius.card, padding: Spacing.md,
-    gap: Spacing.sm, ...Shadow.card,
+    gap: Spacing.sm, ...Shadow.elevated,
     borderWidth: 1, borderColor: Colors.border,
+    borderLeftWidth: 3, borderLeftColor: Colors.primary,
   },
   trackingStat: { alignItems: 'center', flex: 1 },
   trackingValueLg: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary },

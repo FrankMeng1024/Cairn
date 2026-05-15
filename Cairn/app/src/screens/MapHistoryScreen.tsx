@@ -157,7 +157,8 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
     ? Colors.runningLight.replace('0.12', '0.24')
     : Colors.primaryLight.replace('0.15', '0.28');
   const actIcon: IconName = session.activityMode === 'running' ? 'PersonStanding' : 'Mountain';
-  const distStr = formatDistance(session.distanceM, 'km', 1);
+  const rawDistStr = formatDistance(session.distanceM, 'km', 1);
+  const distStr = rawDistStr === '--' ? 'No GPS' : `${rawDistStr} km`;
   const durationStr = formatDuration(session.durationS);
 
   const expandAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
@@ -167,7 +168,7 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
     }).start();
   }, [isExpanded]);
 
-  const expandedHeight = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 100] });
+  const expandedHeight = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 128] });
 
   return (
     <View style={{ marginBottom: Spacing.sm }}>
@@ -188,7 +189,7 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
             {/* Primary stat: duration */}
             <Text style={cardStyles.routePrimary}>{durationStr}</Text>
             {/* Secondary line: date · distance */}
-            <Text style={cardStyles.routeMeta}>{dateStr} · {distStr} km</Text>
+            <Text style={cardStyles.routeMeta}>{dateStr} · {distStr}</Text>
           </View>
           <View style={cardStyles.routeChevron}>
             <Icon
@@ -203,26 +204,26 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
       {/* Inline expanded stats */}
       <Animated.View style={[cardStyles.expandedArea, { height: expandedHeight, opacity: expandAnim }]}>
         <View style={cardStyles.expandedStats}>
-          <View style={cardStyles.expandedStat}>
+          <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.primary }]}>
             <Text style={cardStyles.expandedStatVal}>{formatDistance(session.distanceM, 'km', 2)}</Text>
             <Text style={cardStyles.expandedStatLbl}>km</Text>
           </View>
-          <View style={cardStyles.expandedStat}>
+          <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.running }]}>
             <Text style={cardStyles.expandedStatVal}>{durationStr}</Text>
             <Text style={cardStyles.expandedStatLbl}>time</Text>
           </View>
-          <View style={cardStyles.expandedStat}>
+          <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.warning }]}>
             <Text style={cardStyles.expandedStatVal}>+{session.elevationGainM ?? 0}m</Text>
             <Text style={cardStyles.expandedStatLbl}>elev</Text>
           </View>
-          <View style={cardStyles.expandedStat}>
+          <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.flag }]}>
             <Text style={cardStyles.expandedStatVal}>{session.markerIds?.length ?? 0}</Text>
             <Text style={cardStyles.expandedStatLbl}>flags</Text>
           </View>
         </View>
-        <TouchableOpacity style={[cardStyles.viewOnMapBtn, { borderColor: actColor }]} onPress={onViewOnMap}>
-          <Icon name="Map" size={14} color={actColor} strokeWidth={2} />
-          <Text style={[cardStyles.viewOnMapText, { color: actColor }]}>View on Map</Text>
+        <TouchableOpacity style={cardStyles.viewOnMapBtn} onPress={onViewOnMap}>
+          <Icon name="Map" size={14} color="#fff" strokeWidth={2} />
+          <Text style={cardStyles.viewOnMapText}>View on Map</Text>
         </TouchableOpacity>
       </Animated.View>
     </View>
@@ -682,19 +683,32 @@ const cardStyles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
   },
   expandedStats: {
-    flexDirection: 'row', justifyContent: 'space-around',
+    flexDirection: 'row', justifyContent: 'space-between',
     paddingTop: Spacing.md, paddingBottom: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  expandedCapsule: {
+    flex: 1, alignItems: 'center',
+    backgroundColor: Colors.bg,
+    borderRadius: Radius.card,
+    borderLeftWidth: 3,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.xs,
+    ...Shadow.card,
   },
   expandedStat: { alignItems: 'center' },
-  expandedStatVal: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary },
+  expandedStatVal: { fontSize: FontSize.caption, fontWeight: '800', color: Colors.textPrimary },
   expandedStatLbl: { fontSize: FontSize.tiny, color: Colors.textMuted, fontWeight: '600', marginTop: 1 },
   viewOnMapBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'center', borderWidth: 1, borderRadius: 20,
-    paddingHorizontal: Spacing.md, paddingVertical: 7,
+    alignSelf: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.lg, paddingVertical: 8,
     marginBottom: Spacing.sm,
+    ...Shadow.card,
   },
-  viewOnMapText: { fontSize: FontSize.small, fontWeight: '600' },
+  viewOnMapText: { fontSize: FontSize.small, fontWeight: '700', color: '#fff' },
 });
 
 const flagStyles = StyleSheet.create({

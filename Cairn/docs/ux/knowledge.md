@@ -36,3 +36,11 @@ The Cairn app helps users track hikes and runs, plant location flags, and share 
 - MapHistoryScreen placeholder persists when sessions visible below — could auto-select first route
 - Session cards show "-- km" when no GPS distance — ambiguous for new users
 - FriendsScreen instruction text between summary pill and cards could use more spacing
+
+## Sprint 25 Knowledge Updates
+- Run Complete screen: centered green checkmark (size 56, primary green) + "Session saved" subtitle + white summary card (3 stats: km/elapsed/pace with dividers) + Share pill (primary color) + green "New Run" button. Stats appear as placeholders when session has no GPS data — expected behavior but UX concern for zero-data sessions.
+- HikingScreen tracking bar: green 3px left-border accent, 4 fields (km/elapsed/elev/Stop button), GPS status pill top-left confirms connection quality. Flag FAB bottom-right with red badge count. Tracking bar has white background + Shadow.elevated — clearly elevated above map.
+- MapHistory expanded state: checkmark replaces chevron on selected card, capsule stat row (km/time/elev/flags) with colored left borders appears below card, green solid "View on Map" pill CTA. Map placeholder does NOT update on selection (pre-existing behavior).
+- MapHistory session cards: secondary line now shows "No GPS" instead of "-- km" for sessions without GPS distance — clarity improvement.
+- FriendsScreen: 3-tier status dots confirmed working (green=online, amber=recently active ~45m, grey=inactive 3h+). Sharing toggles functional. MOCK_FRIENDS now includes Alex (amber state) for amber dot coverage.
+- Warning triangle icon (red circle with exclamation) on map placeholders across MapHistory and HikingScreen — no label, purpose unclear to new users. Pre-existing.

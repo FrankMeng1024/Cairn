@@ -1,6 +1,12 @@
 # Lessons Learned
 
-## Sprint 23 — 2026-05-15
+## Sprint 24 — 2026-05-15
+- [archived: CLAUDE.md §Integration] Sprint 24: clean Sprint, no retrospective actions. Zero QA bugs (4/4 stories PASS HIGH), no integration restart loops, no Spec Drift (orphaned routeName style = acceptable dead code, Arch confirmed), no prior VU NOT ACCEPTED.
+- [pending] STORY-00065 amber status dot (Colors.warning, Recent <1h) — no test data friend with activity in 0-60min window. Future QA: add a friend with lastSeen='45m ago' to MOCK_FRIENDS test data.
+- [pending] UX: MapHistoryScreen placeholder persists when sessions visible — consider auto-selecting first route on load (Low, backlog).
+- [pending] UX: Session cards "-- km" when no GPS distance — ambiguous for new users. Consider "No GPS" label or omitting field (Low, backlog).
+
+
 - [archived: CLAUDE.md §Integration] Sprint 23: clean Sprint, no retrospective actions. Zero QA bugs, no integration restart loops, Arch flagged one non-blocking Medium spec drift (topo opacity string manipulation — deferred to future cleanup). No prior VU NOT ACCEPTED.
 - [pending] STORY-00062 AC2: distance > 10m km-display branch not tested in Sprint 23 (only duration fallback). Future QA should add a session with distance > 100m to test data.
 - [pending] STORY-00062 AC1: "Hike" badge variant not tested (no Hike sessions in test data). Future QA should add hike session to store data.

@@ -152,24 +152,42 @@ export function RunningScreen() {
     return (
       <SafeAreaView style={preStyles.container} edges={['top', 'bottom']}>
         <View style={preStyles.header}>
-          <Text style={preStyles.title}>Run Complete</Text>
+          <View style={preStyles.topBar}>
+            <View style={{ width: 60 }} />
+            <Text style={preStyles.title}>Run Complete</Text>
+            <View style={{ width: 60 }} />
+          </View>
           <Text style={preStyles.subtitle}>Session saved</Text>
         </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.xl }}>
-          <View style={runStyles.statsBar}>
-            <StatItem value={distKm} label="km" />
-            <StatItem value={durationDisplay} label="elapsed" />
-            <StatItem value={paceDisplay} label="pace" />
+          <Icon name="CircleCheck" size={56} color={Colors.primary} strokeWidth={1.5} />
+          <View style={preStyles.summaryCard}>
+            <View style={preStyles.summaryStatRow}>
+              <View style={preStyles.summaryStat}>
+                <Text style={preStyles.summaryStatVal}>{distKm}</Text>
+                <Text style={preStyles.summaryStatLbl}>km</Text>
+              </View>
+              <View style={preStyles.summaryDivider} />
+              <View style={preStyles.summaryStat}>
+                <Text style={preStyles.summaryStatVal}>{durationDisplay}</Text>
+                <Text style={preStyles.summaryStatLbl}>elapsed</Text>
+              </View>
+              <View style={preStyles.summaryDivider} />
+              <View style={preStyles.summaryStat}>
+                <Text style={preStyles.summaryStatVal}>{paceDisplay}</Text>
+                <Text style={preStyles.summaryStatLbl}>pace</Text>
+              </View>
+            </View>
           </View>
           <TouchableOpacity style={preStyles.shareBtn} onPress={handleShare}>
-            <Icon name="Send" size={16} color={Colors.running} strokeWidth={2} />
+            <Icon name="Send" size={16} color={Colors.primary} strokeWidth={2} />
             <Text style={preStyles.shareBtnText}>Share</Text>
           </TouchableOpacity>
         </View>
         <View style={preStyles.footer}>
           <TouchableOpacity style={preStyles.startBtn} onPress={() => { setRunState('pre'); }}>
             <Icon name="ChevronLeft" size={IconSize.md} color="#fff" strokeWidth={2} />
-            <Text style={preStyles.startBtnText}>Back</Text>
+            <Text style={preStyles.startBtnText}>New Run</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -405,10 +423,27 @@ const preStyles = StyleSheet.create({
   lockHint: { fontSize: FontSize.small, color: Colors.textMuted, textAlign: 'center' },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: Colors.running, borderRadius: 22,
+    borderWidth: 1, borderColor: Colors.primary, borderRadius: 22,
     paddingHorizontal: Spacing.lg, paddingVertical: 10,
   },
-  shareBtnText: { color: Colors.running, fontWeight: '600', fontSize: FontSize.caption },
+  shareBtnText: { color: Colors.primary, fontWeight: '600', fontSize: FontSize.caption },
+
+  summaryCard: {
+    backgroundColor: Colors.surface, borderRadius: Radius.card,
+    paddingVertical: Spacing.xl, paddingHorizontal: Spacing.base,
+    width: '100%', ...Shadow.card,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  summaryStatRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
+  },
+  summaryStat: { flex: 1, alignItems: 'center', gap: 4 },
+  summaryStatVal: {
+    fontSize: FontSize.h2, fontWeight: '800',
+    color: Colors.textPrimary, letterSpacing: -0.5,
+  },
+  summaryStatLbl: { fontSize: FontSize.small, color: Colors.textSecondary },
+  summaryDivider: { width: 1, height: 36, backgroundColor: Colors.border },
 });
 
 // ── Styles: running ─────────────────────────────────────────────────────────

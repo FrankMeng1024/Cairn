@@ -121,3 +121,20 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 - STORY-00064 (MapHistoryScreen session cards): PASS HIGH
 - STORY-00065 (FriendsScreen visual depth): PASS HIGH
 - STORY-00066 (Cross-screen typography): PASS HIGH
+
+## Sprint 25 Updates
+
+- Run Complete screen: light bg, CircleCheck icon (size 56, Colors.primary green), "Session saved" subtitle, white summaryCard (Shadow.elevated, Radius.card), 3-column stats (km/elapsed/pace) with 1px dividers, Share pill (outlined Colors.primary), solid green "New Run" CTA. Stats display "--" and "00:00" when no GPS data — expected for mock sessions, not a bug.
+- HikingScreen tracking bar: always-visible white card with Shadow.elevated elevation, 3px Colors.primary left-border accent, 4 stats (km/elapsed/elev/Stop). GPS status pill top-left confirms connection. Flag FAB bottom-right with red badge count (hidden at 0). Running lock screen: double-tap at (195, 400) within 100ms to unlock before Stop becomes interactive.
+- MapHistoryScreen expanded state: tapping session card expands inline accordion (200ms animated height). Expanded shows 4 capsule stats: km (green border), time (blue), elev (orange), flags (flag-color). Green solid "View on Map" pill (Colors.primary bg, white text, Map icon). Tapping same card collapses (toggle). Only one card expanded at a time. "View on Map" tap: shows route in map area; placeholder ("Select a route below") disappears on selection.
+- MapHistoryScreen distStr: `rawDistStr === '--' ? 'No GPS' : rawDistStr + ' km'` — all mock sessions show "Today · No GPS" in secondary line.
+- HomeScreen RecentActivityStrip: secondary line uses `date · duration` format. Never shows "-- km" — distance only shown when ≥10m, duration used as fallback. AC verified by design.
+- FriendsScreen: amber dot confirmed. MOCK_FRIENDS includes Alex (lastSeen: "45m ago", online: false) → getStatusDotColor regex matches "m ago" → Colors.warning (#b36b00). Confirmed in screenshot.
+- Navigation regression Sprint 25: PASS. Home↔Running, Home↔Hiking, Home↔MapHistory, Home↔Friends all 0 real errors. Pre-existing Wake Lock warnings only.
+
+## Sprint 25 Verification Summary
+
+- STORY-00067 (Run Complete post-session summary): PASS HIGH
+- STORY-00068 (HikingScreen tracking bar elevation): PASS HIGH
+- STORY-00069 (MapHistory expand + route view): PASS HIGH
+- STORY-00070 (Empty state labels + amber test data): PASS MEDIUM (AC2 satisfied by design — duration-only format means "-- km" never appears)

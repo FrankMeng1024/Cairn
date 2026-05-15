@@ -70,6 +70,13 @@ export const Shadow = {
     shadowRadius: 20,
     elevation: 4,
   },
+  elevated: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.13,
+    shadowRadius: 24,
+    elevation: 8,
+  },
   fab: {
     shadowColor: '#5d7c46',
     shadowOffset: { width: 0, height: 4 },
