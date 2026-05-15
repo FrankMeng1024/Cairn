@@ -14,6 +14,8 @@ import {
   Check, CircleCheck,
   // Sprint 9
   LogIn, Eye, EyeOff, Mail, KeyRound, UserPlus,
+  // Sprint 11
+  Info, Send,
 } from 'lucide-react-native';
 import { IconSize } from './tokens';
 
@@ -25,6 +27,7 @@ const ICON_MAP = {
   Droplets, X, Trash2, Navigation2, GitBranch,
   Check, CircleCheck,
   LogIn, Eye, EyeOff, Mail, KeyRound, UserPlus,
+  Info, Send,
 } as const;
 
 export type IconName = keyof typeof ICON_MAP;

@@ -1,63 +1,80 @@
 /**
- * FriendsScreen — design.jpg "好友页"
+ * FriendsScreen — Sprint 11 redesign
  *
- * - Friend list with per-friend "不分享" toggle (individual share control)
- * - Online status indicator
- * - Shared marker count
- * - "+ 添加好友" → email invite flow
- * - Back button (stack navigation)
+ * - SVG icons replace all text/emoji (ChevronLeft back, UserPlus add, Users illustration,
+ *   Info tip, Mail email prefix, Send submit)
+ * - Spring press on friend cards and add card
+ * - Switch component kept (native control)
  */
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Switch,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  TextInput, Alert, Switch, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { Colors, Spacing, Radius, FontSize, Shadow } from '../components/tokens';
+import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
+import { Icon } from '../components/Icon';
 import { MOCK_FRIENDS } from '../data/mockData';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-
 type Friend = typeof MOCK_FRIENDS[0] & { sharing: boolean };
 
-// ── Friend Card ───────────────────────────────────────────────────────────────
+// ── Spring press wrapper ────────────────────────────────────────────────────
+function PressCard({
+  onPress, style, children, scale = 0.98,
+}: {
+  onPress: () => void;
+  style?: object | object[];
+  children: React.ReactNode;
+  scale?: number;
+}) {
+  const anim = useRef(new Animated.Value(1)).current;
+  const onIn = () => Animated.spring(anim, { toValue: scale, useNativeDriver: true, tension: 300, friction: 10 }).start();
+  const onOut = () => Animated.spring(anim, { toValue: 1, useNativeDriver: true, tension: 300, friction: 8 }).start();
+  return (
+    <Animated.View style={[{ transform: [{ scale: anim }] }, style]}>
+      <TouchableOpacity onPress={onPress} onPressIn={onIn} onPressOut={onOut} activeOpacity={1}>
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// ── Friend Card ─────────────────────────────────────────────────────────────
 function FriendCard({ friend, onToggleShare }: {
   friend: Friend;
   onToggleShare: () => void;
 }) {
   return (
-    <View style={styles.friendCard}>
+    <View style={cardStyles.card}>
       {/* Avatar */}
-      <View style={styles.avatarWrap}>
-        <View style={[styles.avatar, { backgroundColor: friend.sharing ? Colors.primaryLight : Colors.border }]}>
-          <Text style={[styles.avatarText, { color: friend.sharing ? Colors.primary : Colors.textMuted }]}>
+      <View style={cardStyles.avatarWrap}>
+        <View style={[cardStyles.avatar, { backgroundColor: friend.sharing ? Colors.primaryLight : Colors.border }]}>
+          <Text style={[cardStyles.avatarText, { color: friend.sharing ? Colors.primary : Colors.textMuted }]}>
             {friend.initials}
           </Text>
         </View>
-        {/* Online dot */}
-        <View style={[
-          styles.onlineDot,
-          { backgroundColor: friend.online ? Colors.success : Colors.border },
-        ]} />
+        <View style={[cardStyles.onlineDot, { backgroundColor: friend.online ? Colors.success : Colors.border }]} />
       </View>
 
       {/* Info */}
-      <View style={styles.friendInfo}>
-        <Text style={styles.friendName}>{friend.name}</Text>
-        <Text style={styles.friendMeta}>
+      <View style={cardStyles.info}>
+        <Text style={cardStyles.name}>{friend.name}</Text>
+        <Text style={cardStyles.meta}>
           {friend.online ? '在线' : friend.lastSeen}
           {friend.sharedMarkers > 0 ? ` · ${friend.sharedMarkers}个共同旗帜` : ''}
         </Text>
         {!friend.sharing && (
-          <Text style={styles.noShareLabel}>旗帜不分享</Text>
+          <Text style={cardStyles.noShareLabel}>旗帜不分享</Text>
         )}
       </View>
 
       {/* Share toggle */}
-      <View style={styles.shareToggleCol}>
-        <Text style={styles.shareToggleLabel}>{friend.sharing ? '分享' : '不分享'}</Text>
+      <View style={cardStyles.toggleCol}>
+        <Text style={cardStyles.toggleLabel}>{friend.sharing ? '分享' : '不分享'}</Text>
         <Switch
           value={friend.sharing}
           onValueChange={onToggleShare}
@@ -70,7 +87,7 @@ function FriendCard({ friend, onToggleShare }: {
   );
 }
 
-// ── Add Friend Sheet ──────────────────────────────────────────────────────────
+// ── Add Friend View ──────────────────────────────────────────────────────────
 function AddFriendView({ onBack }: { onBack: () => void }) {
   const [email, setEmail] = useState('');
 
@@ -78,61 +95,65 @@ function AddFriendView({ onBack }: { onBack: () => void }) {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <Text style={styles.backText}>← 返回</Text>
+          <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
+          <Text style={styles.backText}>返回</Text>
         </TouchableOpacity>
         <Text style={styles.topTitle}>添加好友</Text>
-        <View style={{ width: 60 }} />
+        <View style={{ width: 72 }} />
       </View>
 
-      <View style={styles.addForm}>
-        <View style={styles.addIllustration}>
-          <Text style={styles.addIllustrationEmoji}>👥</Text>
-          <Text style={styles.addIllustrationText}>通过邮箱邀请好友{'\n'}对方确认后成为好友</Text>
+      <View style={addStyles.form}>
+        {/* Illustration */}
+        <View style={addStyles.illustration}>
+          <View style={addStyles.illustrationIcon}>
+            <Icon name="Users" size={48} color={Colors.primary} strokeWidth={1.5} />
+          </View>
+          <Text style={addStyles.illustrationText}>通过邮箱邀请好友{'\n'}对方确认后成为好友</Text>
         </View>
 
-        <Text style={styles.fieldLabel}>好友邮箱</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="对方注册Cairn时使用的邮箱"
-          placeholderTextColor={Colors.textMuted}
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoFocus
-        />
+        <Text style={addStyles.fieldLabel}>好友邮箱</Text>
+        <View style={addStyles.inputWrap}>
+          <Icon name="Mail" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
+          <TextInput
+            style={addStyles.input}
+            placeholder="对方注册Cairn时使用的邮箱"
+            placeholderTextColor={Colors.textMuted}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoFocus
+          />
+        </View>
 
         <TouchableOpacity
-          style={[styles.sendBtn, !email.trim() && styles.sendBtnDisabled]}
+          style={[addStyles.sendBtn, !email.trim() && addStyles.sendBtnDisabled]}
           onPress={() => {
             if (!email.trim()) return;
             Alert.alert('', `邀请已发送至 ${email}`, [{ text: '好的', onPress: onBack }]);
           }}
           activeOpacity={email.trim() ? 0.8 : 1}
         >
-          <Text style={styles.sendBtnText}>发送邀请</Text>
+          <Icon name="Send" size={IconSize.sm} color="#fff" strokeWidth={2} />
+          <Text style={addStyles.sendBtnText}>发送邀请</Text>
         </TouchableOpacity>
 
-        <Text style={styles.addHint}>对方会收到一封邮件邀请，确认后自动成为好友</Text>
+        <Text style={addStyles.hint}>对方会收到一封邮件邀请，确认后自动成为好友</Text>
       </View>
     </SafeAreaView>
   );
 }
 
-// ── Main FriendsScreen ────────────────────────────────────────────────────────
+// ── Main ─────────────────────────────────────────────────────────────────────
 export function FriendsScreen() {
   const nav = useNavigation<Nav>();
   const [showAdd, setShowAdd] = useState(false);
-
-  // Local share state per friend
   const [friends, setFriends] = useState<Friend[]>(
     MOCK_FRIENDS.map(f => ({ ...f, sharing: true }))
   );
 
   const toggleShare = (id: string) => {
-    setFriends(prev => prev.map(f =>
-      f.id === id ? { ...f, sharing: !f.sharing } : f
-    ));
+    setFriends(prev => prev.map(f => f.id === id ? { ...f, sharing: !f.sharing } : f));
   };
 
   if (showAdd) {
@@ -146,14 +167,13 @@ export function FriendsScreen() {
       {/* Top bar */}
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
-          <Text style={styles.backText}>← 返回</Text>
+          <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
+          <Text style={styles.backText}>返回</Text>
         </TouchableOpacity>
         <Text style={styles.topTitle}>好友</Text>
-        <TouchableOpacity
-          style={styles.addTopBtn}
-          onPress={() => setShowAdd(true)}
-        >
-          <Text style={styles.addTopBtnText}>+ 添加</Text>
+        <TouchableOpacity style={styles.addTopBtn} onPress={() => setShowAdd(true)}>
+          <Icon name="UserPlus" size={14} color="#fff" strokeWidth={2} />
+          <Text style={styles.addTopBtnText}>添加</Text>
         </TouchableOpacity>
       </View>
 
@@ -166,7 +186,6 @@ export function FriendsScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Friends list */}
         {friends.map(friend => (
           <FriendCard
             key={friend.id}
@@ -175,23 +194,24 @@ export function FriendsScreen() {
           />
         ))}
 
-        {/* Add friend button */}
-        <TouchableOpacity
-          style={styles.addCard}
-          onPress={() => setShowAdd(true)}
-          activeOpacity={0.75}
-        >
-          <Text style={styles.addCardIcon}>+</Text>
-          <View>
-            <Text style={styles.addCardLabel}>添加好友</Text>
-            <Text style={styles.addCardHint}>通过邮箱邀请</Text>
+        {/* Add friend card */}
+        <PressCard onPress={() => setShowAdd(true)} style={{ marginTop: Spacing.xs }}>
+          <View style={styles.addCard}>
+            <View style={styles.addCardIconWrap}>
+              <Icon name="UserPlus" size={IconSize.md} color={Colors.primary} strokeWidth={1.8} />
+            </View>
+            <View>
+              <Text style={styles.addCardLabel}>添加好友</Text>
+              <Text style={styles.addCardHint}>通过邮箱邀请</Text>
+            </View>
           </View>
-        </TouchableOpacity>
+        </PressCard>
 
-        {/* Info footer */}
+        {/* Info box */}
         <View style={styles.infoBox}>
+          <Icon name="Info" size={14} color={Colors.textSecondary} strokeWidth={1.8} />
           <Text style={styles.infoBoxText}>
-            💡 关闭分享后，该好友将看不到你新建的旗帜。已有的共同旗帜不受影响。
+            关闭分享后，该好友将看不到你新建的旗帜。已有的共同旗帜不受影响。
           </Text>
         </View>
       </ScrollView>
@@ -199,6 +219,7 @@ export function FriendsScreen() {
   );
 }
 
+// ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
 
@@ -208,10 +229,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.border,
     backgroundColor: Colors.bg,
   },
-  backBtn: { paddingVertical: 6, paddingRight: Spacing.sm },
+  backBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    paddingVertical: 6, paddingRight: Spacing.sm,
+  },
   backText: { fontSize: FontSize.caption, fontWeight: '600', color: Colors.primary },
-  topTitle: { flex: 1, textAlign: 'center', fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary },
+  topTitle: {
+    flex: 1, textAlign: 'center',
+    fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary,
+  },
   addTopBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: Colors.primary, borderRadius: Radius.pill,
     paddingHorizontal: Spacing.md, paddingVertical: 6,
   },
@@ -227,7 +255,34 @@ const styles = StyleSheet.create({
 
   scrollContent: { padding: Spacing.base, gap: Spacing.sm, paddingBottom: Spacing.xxl },
 
-  friendCard: {
+  addCard: {
+    backgroundColor: Colors.surface, borderRadius: Radius.card,
+    padding: Spacing.base, flexDirection: 'row', alignItems: 'center',
+    gap: Spacing.md, borderWidth: 1.5, borderColor: Colors.border,
+    borderStyle: 'dashed',
+  },
+  addCardIconWrap: {
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  addCardLabel: { fontSize: FontSize.body, fontWeight: '600', color: Colors.primary },
+  addCardHint: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 1 },
+
+  infoBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
+    backgroundColor: Colors.surface, borderRadius: Radius.card,
+    padding: Spacing.md, borderWidth: 1, borderColor: Colors.border,
+    marginTop: Spacing.xs,
+  },
+  infoBoxText: {
+    flex: 1, fontSize: FontSize.small,
+    color: Colors.textSecondary, lineHeight: 18,
+  },
+});
+
+const cardStyles = StyleSheet.create({
+  card: {
     backgroundColor: Colors.surface, borderRadius: Radius.card,
     padding: Spacing.base, flexDirection: 'row', alignItems: 'center',
     gap: Spacing.md, ...Shadow.card,
@@ -243,51 +298,54 @@ const styles = StyleSheet.create({
     width: 12, height: 12, borderRadius: 6,
     borderWidth: 2, borderColor: Colors.bg,
   },
-  friendInfo: { flex: 1 },
-  friendName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
-  friendMeta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+  info: { flex: 1 },
+  name: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  meta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
   noShareLabel: {
     fontSize: FontSize.tiny, fontWeight: '600', color: Colors.textMuted,
     marginTop: 3, backgroundColor: Colors.border,
     borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2,
     alignSelf: 'flex-start',
   },
-  shareToggleCol: { alignItems: 'center', gap: 2 },
-  shareToggleLabel: { fontSize: FontSize.tiny, color: Colors.textMuted, fontWeight: '500' },
+  toggleCol: { alignItems: 'center', gap: 2 },
+  toggleLabel: { fontSize: FontSize.tiny, color: Colors.textMuted, fontWeight: '500' },
+});
 
-  addCard: {
-    backgroundColor: Colors.surface, borderRadius: Radius.card,
-    padding: Spacing.base, flexDirection: 'row', alignItems: 'center',
-    gap: Spacing.md, borderWidth: 1.5, borderColor: Colors.border,
-    borderStyle: 'dashed',
+const addStyles = StyleSheet.create({
+  form: { padding: Spacing.xl, gap: Spacing.md },
+  illustration: {
+    alignItems: 'center', paddingVertical: Spacing.xl, gap: Spacing.md,
   },
-  addCardIcon: { fontSize: 22, color: Colors.primary, fontWeight: '700', width: 46, textAlign: 'center' },
-  addCardLabel: { fontSize: FontSize.body, fontWeight: '600', color: Colors.primary },
-  addCardHint: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 1 },
-
-  infoBox: {
-    backgroundColor: Colors.surface, borderRadius: Radius.card,
-    padding: Spacing.md, borderWidth: 1, borderColor: Colors.border,
-    marginTop: Spacing.sm,
+  illustrationIcon: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
   },
-  infoBoxText: { fontSize: FontSize.small, color: Colors.textSecondary, lineHeight: 18 },
-
-  // Add friend form
-  addForm: { padding: Spacing.xl, gap: Spacing.md },
-  addIllustration: { alignItems: 'center', paddingVertical: Spacing.xl, gap: Spacing.sm },
-  addIllustrationEmoji: { fontSize: 56 },
-  addIllustrationText: { fontSize: FontSize.caption, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  illustrationText: {
+    fontSize: FontSize.caption, color: Colors.textSecondary,
+    textAlign: 'center', lineHeight: 20,
+  },
   fieldLabel: { fontSize: FontSize.caption, fontWeight: '600', color: Colors.textSecondary },
-  input: {
+  inputWrap: {
+    flexDirection: 'row', alignItems: 'center',
     backgroundColor: Colors.surface, borderRadius: Radius.button,
-    padding: Spacing.md, fontSize: FontSize.body, color: Colors.textPrimary,
     borderWidth: 1.5, borderColor: Colors.border,
+    paddingHorizontal: Spacing.md, gap: Spacing.sm,
+  },
+  input: {
+    flex: 1, paddingVertical: Spacing.md,
+    fontSize: FontSize.body, color: Colors.textPrimary,
   },
   sendBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    justifyContent: 'center',
     backgroundColor: Colors.primary, borderRadius: Radius.button,
-    paddingVertical: Spacing.md, alignItems: 'center',
+    paddingVertical: Spacing.md,
   },
   sendBtnDisabled: { opacity: 0.4 },
   sendBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
-  addHint: { fontSize: FontSize.small, color: Colors.textMuted, textAlign: 'center', lineHeight: 18 },
+  hint: {
+    fontSize: FontSize.small, color: Colors.textMuted,
+    textAlign: 'center', lineHeight: 18,
+  },
 });
