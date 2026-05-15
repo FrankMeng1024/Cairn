@@ -68,7 +68,7 @@ function FriendCard({ friend, onToggleShare }: {
 }) {
   const statusColor = getStatusDotColor(friend.online, friend.lastSeen);
   const avatarGradStart = Colors.primaryLight;
-  const avatarGradEnd = Colors.primaryLight.replace('0.15', '0.30');
+  const avatarGradEnd = Colors.primaryDeep;
 
   return (
     <View style={cardStyles.card}>

@@ -1,7 +1,7 @@
 # PROJECT_STATE.md — Cairn
 
 **Status**: IN_PROGRESS
-**Current Sprint**: 21 (COMPLETE — next: Sprint 22)
+**Current Sprint**: 27 (COMPLETE — next: Sprint 28)
 **Last Updated**: 2026-05-15
 
 ## Key Decisions
@@ -29,7 +29,8 @@
 - Sprint 20: COMPLETE — HomeScreen QuickStats, HikingScreen polish, session badges, BackButton consistency
 - Sprint 21: COMPLETE — AuthScreen premium redesign, HomeScreen empty state, Running UX polish, cross-screen micro-interactions
 
-## Phase A Status (COMPLETE)
+- Sprint 27: COMPLETE — UX polish: PlayCircle icon, No GPS clean label, RoutesScreen premium uplift + nav fix, MapHistory auto-select, HikingScreen back button
+
 All core GPS tracking functionality wired. Real expo-location GPS, haversineM distance calc, Zustand stores persisted.
 
 ## VU Prerequisites Status

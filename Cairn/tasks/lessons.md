@@ -1,5 +1,13 @@
 # Lessons Learned
 
+## Sprint 27 — 2026-05-15
+- [archived: CLAUDE.md §Integration] Sprint 27: clean Sprint, no retrospective actions. Zero QA bugs (5/5 stories PASS HIGH), no integration restart loops, no Spec Drift, no VU NOT ACCEPTED.
+- [resolved: Sprint 27] RotateCcw → PlayCircle on New Run button. PlayCircle confirmed.
+- [resolved: Sprint 27] "No GPS | km" noisy label — km unit hidden when GPS unavailable.
+- [resolved: Sprint 27] RoutesScreen orphaned (not in RootNavigator) — fixed as part of STORY-00077. New process rule: grep screen name in RootNavigator before QA.
+- [resolved: Sprint 27] MapHistoryScreen placeholder persists when sessions visible — auto-select first session on mount.
+- [resolved: Sprint 27] HikingScreen back button top-right (convention violation) — moved to top-left.
+
 ## Sprint 26 — 2026-05-15
 - [archived: CLAUDE.md §Integration] Sprint 26: clean Sprint, no retrospective actions. Zero QA bugs (4/4 stories PASS HIGH), no integration restart loops, no Spec Drift, no VU NOT ACCEPTED.
 - [resolved: Sprint 26] UX: Explorer mode subtitle shows before user has established preference — Create Account now shows "You'll start in Explorer mode. Switch anytime in Settings." at form level. Resolved.

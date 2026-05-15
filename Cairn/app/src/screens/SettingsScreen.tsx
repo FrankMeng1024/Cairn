@@ -244,7 +244,7 @@ export function SettingsScreen() {
         <View style={styles.card}>
           <ToggleRow
             iconName="Moon"
-            iconColor="#5a4fcf"
+            iconColor={Colors.night}
             iconBg="rgba(90,79,207,0.1)"
             label="Night mode"
             hint="Dark theme, easier on the eyes at night"
@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: Spacing.xxl },
 
   sectionHeader: {
-    fontSize: FontSize.tiny, fontWeight: '700', color: Colors.textMuted,
+    fontSize: FontSize.small, fontWeight: '700', color: Colors.textMuted,
     textTransform: 'uppercase', letterSpacing: 1,
     marginHorizontal: Spacing.base, marginTop: Spacing.xl, marginBottom: 4,
   },
@@ -417,7 +417,7 @@ const modeStyles = StyleSheet.create({
     // Uses Icon name="CircleCheck" directly — no wrapper needed
   },
   title: { fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary, marginBottom: 2 },
-  desc: { fontSize: FontSize.small, color: Colors.textSecondary, lineHeight: 16 },
+  desc: { fontSize: FontSize.small, color: Colors.textSecondary, lineHeight: 18 },
 });
 
 const rowStyles = StyleSheet.create({

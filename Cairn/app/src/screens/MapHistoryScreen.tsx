@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
   trackStatBar: {
     position: 'absolute', bottom: 16, left: Spacing.base, right: Spacing.base,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: 'rgba(255,255,255,0.95)',
     borderRadius: Radius.card, paddingVertical: Spacing.sm,
     ...Shadow.card,
   },
@@ -610,7 +610,7 @@ const styles = StyleSheet.create({
 
   tabBar: {
     flexDirection: 'row', marginHorizontal: Spacing.base,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: 'rgba(255,255,255,0.95)',
     borderRadius: Radius.pill, padding: 3,
     ...Shadow.card,
   },

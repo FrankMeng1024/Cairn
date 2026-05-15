@@ -6,8 +6,17 @@ export const Colors = {
   primary: '#5d7c46',
   primaryLight: 'rgba(93,124,70,0.15)',
   primaryBg: 'rgba(93,124,70,0.08)',
+  // Pre-computed primary opacity variants — eliminates .replace() workarounds
+  primaryDark: '#4a6b38',         // darker shade for logos, accents
+  primaryMuted: 'rgba(93,124,70,0.40)', // medium transparency for borders/dividers
+  primaryDim: 'rgba(93,124,70,0.20)',   // topo ring layer 2
+  primaryDeep: 'rgba(93,124,70,0.30)',  // topo ring layer 3 (deepest)
   running: '#3d7ab5',
   runningLight: 'rgba(61,122,181,0.12)',
+  // Running dark screen tokens — locked dark mode for running activity
+  runningBg: '#0a1a0a',           // full-screen dark background
+  runningText: '#e8f5e8',         // light text on dark running screen
+  runningBorder: 'rgba(255,255,255,0.20)', // dividers on dark running screen
   flag: '#c87941',
   flagLight: 'rgba(200,121,65,0.12)',
   bg: '#faf7f2',
@@ -24,6 +33,7 @@ export const Colors = {
   infoBg: '#dce8f4',
   success: '#2e8c3a',
   successBg: '#dcf4de',
+  night: '#5a4fcf',               // night/sleep mode icon color
 } as const;
 
 export const Spacing = {

@@ -114,15 +114,15 @@ function HowItWorks() {
   const steps = [
     {
       icon: 'Flag' as IconName, label: 'Plant flags', color: Colors.primary,
-      gradStart: Colors.primaryLight, gradEnd: Colors.primaryLight.replace('0.15', '0.28'),
+      gradStart: Colors.primaryLight, gradEnd: Colors.primaryDeep,
     },
     {
       icon: 'Users' as IconName, label: 'Share with friends', color: Colors.running,
-      gradStart: Colors.runningLight, gradEnd: Colors.runningLight.replace('0.12', '0.24'),
+      gradStart: Colors.runningLight, gradEnd: 'rgba(61,122,181,0.24)',
     },
     {
       icon: 'Compass' as IconName, label: 'Guide others', color: Colors.flag,
-      gradStart: Colors.flagLight, gradEnd: Colors.flagLight.replace('0.12', '0.24'),
+      gradStart: Colors.flagLight, gradEnd: 'rgba(200,121,65,0.24)',
     },
   ];
   return (

@@ -74,10 +74,10 @@ function MapPlaceholder({ markers, onMarkerPress }: {
   return (
     <View style={styles.mapBg}>
       {/* Topo elevation rings — concentric, varying opacity */}
-      <View style={[styles.topoRing, { width: 320, height: 320, borderRadius: 160, top: 100, left: W / 2 - 160, borderColor: Colors.primaryLight.replace('0.15', '0.20') }]} />
-      <View style={[styles.topoRing, { width: 240, height: 240, borderRadius: 120, top: 140, left: W / 2 - 120, borderColor: Colors.primaryLight.replace('0.15', '0.30') }]} />
-      <View style={[styles.topoRing, { width: 165, height: 165, borderRadius: 83, top: 178, left: W / 2 - 83, borderColor: Colors.primaryLight.replace('0.15', '0.42') }]} />
-      <View style={[styles.topoRing, { width: 96, height: 96, borderRadius: 48, top: 212, left: W / 2 - 48, borderColor: Colors.primaryLight.replace('0.15', '0.60'), backgroundColor: 'rgba(93,124,70,0.06)' }]} />
+      <View style={[styles.topoRing, { width: 320, height: 320, borderRadius: 160, top: 100, left: W / 2 - 160, borderColor: Colors.primaryDim }]} />
+      <View style={[styles.topoRing, { width: 240, height: 240, borderRadius: 120, top: 140, left: W / 2 - 120, borderColor: Colors.primaryDeep }]} />
+      <View style={[styles.topoRing, { width: 165, height: 165, borderRadius: 83, top: 178, left: W / 2 - 83, borderColor: Colors.primaryMuted }]} />
+      <View style={[styles.topoRing, { width: 96, height: 96, borderRadius: 48, top: 212, left: W / 2 - 48, borderColor: Colors.primaryMuted, backgroundColor: 'rgba(93,124,70,0.06)' }]} />
       {/* Trail S-curve — three segments forming gentle S */}
       <View style={styles.trailLine} />
       <View style={styles.trailLine2} />
@@ -508,17 +508,17 @@ const styles = StyleSheet.create({
   },
   trailLine: {
     position: 'absolute', top: 240, left: 60, right: 80,
-    height: 2.5, backgroundColor: Colors.primary + '66', borderRadius: 2,
+    height: 2.5, backgroundColor: Colors.primaryMuted, borderRadius: 2,
   },
   trailLine2: {
     position: 'absolute', top: 240, left: 60, width: 140, height: 120,
     borderBottomWidth: 2.5, borderRightWidth: 2.5,
-    borderColor: Colors.primary + '66', borderBottomRightRadius: 20,
+    borderColor: Colors.primaryMuted, borderBottomRightRadius: 20,
   },
   trailLine3: {
     position: 'absolute', top: 360, left: 200, width: 100, height: 80,
     borderBottomWidth: 2.5, borderLeftWidth: 2.5,
-    borderColor: Colors.primary + '55', borderBottomLeftRadius: 20,
+    borderColor: Colors.primaryDeep, borderBottomLeftRadius: 20,
   },
   locationDot: {
     position: 'absolute', top: 290, left: W / 2 - 10,
@@ -530,7 +530,7 @@ const styles = StyleSheet.create({
   },
   locationPulse: {
     position: 'absolute', width: 28, height: 28, borderRadius: 14,
-    borderWidth: 1.5, borderColor: Colors.primary + '55',
+    borderWidth: 1.5, borderColor: Colors.primaryDeep,
   },
   mapLabelWrap: {
     position: 'absolute', bottom: 180, left: 0, right: 0,
@@ -545,10 +545,10 @@ const styles = StyleSheet.create({
   },
   downloadBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    borderWidth: 1.5, borderColor: Colors.primary + '60',
+    borderWidth: 1.5, borderColor: Colors.primaryMuted,
     borderRadius: Radius.pill,
     paddingHorizontal: 14, paddingVertical: 7, marginTop: 4,
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: 'rgba(255,255,255,0.85)',
   },
   downloadBtnText: { fontSize: FontSize.small, fontWeight: '700', color: Colors.primary },
   markerPin: {
@@ -583,7 +583,7 @@ const styles = StyleSheet.create({
 
   trackingBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.98)',
+    backgroundColor: Colors.surface,
     marginHorizontal: Spacing.base, marginTop: Spacing.sm,
     borderRadius: Radius.card, padding: Spacing.md,
     gap: Spacing.sm, ...Shadow.elevated,
@@ -610,10 +610,10 @@ const styles = StyleSheet.create({
   },
   trackBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
-    backgroundColor: 'rgba(255,255,255,0.97)',
+    backgroundColor: 'rgba(255,255,255,0.95)',
     borderRadius: Radius.pill,
     paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
-    borderWidth: 2, borderColor: Colors.primary + '60',
+    borderWidth: 2, borderColor: Colors.primaryMuted,
     ...Shadow.card,
   },
   trackBtnText: { fontSize: FontSize.body, fontWeight: '700', color: Colors.primary },

@@ -64,3 +64,11 @@ The Cairn app helps users track hikes and runs, plant location flags, and share 
 - HikingScreen layout corrected — Back button top-left, GPS pill top-right per iOS platform convention. All other screens already followed this pattern.
 - Home Tools section now has 4 buttons: Map, Routes, Friends, Settings. Each has flex:1 so they shrink proportionally at 390px — no overflow.
 - Navigation regression Sprint 27: zero new JS errors across all screen transitions. Only pre-existing Wake Lock errors from expo-keep-awake browser limitation.
+
+## Sprint 28 Knowledge Updates
+- Auth input focus state: focused field shows green border + green icon tint immediately on tap. Clear, unambiguous signal. Unfocused fields stay grey. Error state (red border) overrides focus state correctly.
+- Settings section headers upgraded from 9px (FontSize.tiny) to 11px (FontSize.small) — now comfortably legible. Visual hierarchy: uppercase caps → card/toggle content. Previously flagged as too small, now resolved.
+- Running route selection uses triple-signal system: colored left border + background tint + checkmark badge. Green for Free Run, blue for named routes. Switching routes gives instant, satisfying feedback. Selection state unambiguous even at a glance.
+- Overlay surfaces (MapHistory stat bar, tab bar, HikingScreen GPS chip, track button) now use consistent 0.95 opacity white semi-transparent treatment. HikingScreen trackingBar uses Colors.surface (opaque) as it's an elevated card, not a floating overlay.
+- Low friction: Auth form does not auto-focus email on screen entry — user must tap before green focus appears. Not a blocker.
+- Low friction: Free Run (green) vs named route (blue) selection color distinction may briefly puzzle first-time users. Triple-signal system compensates — functionally unambiguous.

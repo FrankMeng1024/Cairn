@@ -104,11 +104,12 @@ function PasswordInput({ value, onChangeText, placeholder, error, onBlur }: {
   error?: string; onBlur?: () => void;
 }) {
   const [show, setShow] = useState(false);
+  const [focused, setFocused] = useState(false);
   return (
     <>
-      <View style={[formStyles.inputWrap, !!error && formStyles.inputError]}>
+      <View style={[formStyles.inputWrap, !!error && formStyles.inputError, focused && !error && formStyles.inputFocused]}>
         <View style={formStyles.inputIcon}>
-          <Icon name="KeyRound" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
+          <Icon name="KeyRound" size={IconSize.sm} color={focused ? Colors.primary : Colors.textMuted} strokeWidth={1.8} />
         </View>
         <TextInput
           style={formStyles.inputInner}
@@ -117,7 +118,8 @@ function PasswordInput({ value, onChangeText, placeholder, error, onBlur }: {
           value={value}
           onChangeText={onChangeText}
           secureTextEntry={!show}
-          onBlur={onBlur}
+          onFocus={() => setFocused(true)}
+          onBlur={() => { setFocused(false); onBlur?.(); }}
         />
         <TouchableOpacity style={formStyles.eyeBtn} onPress={() => setShow(v => !v)}>
           <Icon name={show ? 'EyeOff' : 'Eye'} size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
@@ -133,11 +135,12 @@ function FieldInput({ icon, placeholder, value, onChangeText, error, onBlur, key
   icon: string; placeholder: string; value: string; onChangeText: (v: string) => void;
   error?: string; onBlur?: () => void; keyboardType?: any; autoCapitalize?: any;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <>
-      <View style={[formStyles.inputWrap, !!error && formStyles.inputError]}>
+      <View style={[formStyles.inputWrap, !!error && formStyles.inputError, focused && !error && formStyles.inputFocused]}>
         <View style={formStyles.inputIcon}>
-          <Icon name={icon as any} size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
+          <Icon name={icon as any} size={IconSize.sm} color={focused ? Colors.primary : Colors.textMuted} strokeWidth={1.8} />
         </View>
         <TextInput
           style={formStyles.inputInner}
@@ -147,7 +150,8 @@ function FieldInput({ icon, placeholder, value, onChangeText, error, onBlur, key
           onChangeText={onChangeText}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize ?? 'sentences'}
-          onBlur={onBlur}
+          onFocus={() => setFocused(true)}
+          onBlur={() => { setFocused(false); onBlur?.(); }}
         />
       </View>
       {!!error && <Text style={formStyles.fieldError}>{error}</Text>}
@@ -466,6 +470,7 @@ const formStyles = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.border, paddingHorizontal: Spacing.md,
   },
   inputError: { borderColor: Colors.danger },
+  inputFocused: { borderColor: Colors.primary },
   inputIcon: { marginRight: Spacing.xs },
   inputInner: { flex: 1, paddingVertical: Spacing.md, fontSize: FontSize.body, color: Colors.textPrimary },
   eyeBtn: { padding: Spacing.xs },

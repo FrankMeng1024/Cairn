@@ -212,12 +212,12 @@ export function RunningScreen() {
         <View style={preStyles.routeList}>
           {/* Free run */}
           <TouchableOpacity
-            style={[preStyles.routeCard, selectedRoute === null && preStyles.routeCardSelected]}
+            style={[preStyles.routeCard, selectedRoute === null && preStyles.routeCardSelectedGreen]}
             onPress={() => setSelectedRoute(null)}
             activeOpacity={0.85}
           >
             <LinearGradient
-              colors={[Colors.primaryLight, Colors.primaryLight.replace('0.15', '0.28')]}
+              colors={[Colors.primaryLight, Colors.primaryDeep]}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={preStyles.routeIconBadge}
             >
@@ -228,7 +228,7 @@ export function RunningScreen() {
               <Text style={preStyles.routeMeta}>GPS tracking · Any route</Text>
             </View>
             {selectedRoute === null && (
-              <View style={preStyles.checkBadge}>
+              <View style={[preStyles.checkBadge, { backgroundColor: Colors.primary }]}>
                 <Icon name="Check" size={14} color="#fff" strokeWidth={3} />
               </View>
             )}
@@ -242,7 +242,7 @@ export function RunningScreen() {
               activeOpacity={0.85}
             >
               <LinearGradient
-                colors={[Colors.runningLight, Colors.runningLight.replace('0.12', '0.24')]}
+                colors={[Colors.runningLight, 'rgba(61,122,181,0.24)']}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                 style={preStyles.routeIconBadge}
               >
@@ -400,7 +400,8 @@ const preStyles = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: 'transparent',
     ...Shadow.card,
   },
-  routeCardSelected: { borderLeftColor: Colors.running, backgroundColor: Colors.runningLight.replace('0.12', '0.06') },
+  routeCardSelected: { borderLeftColor: Colors.running, backgroundColor: 'rgba(61,122,181,0.08)' },
+  routeCardSelectedGreen: { borderLeftColor: Colors.primary, backgroundColor: Colors.primaryBg },
   routeIconBadge: {
     width: 48, height: 48, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
@@ -449,16 +450,16 @@ const preStyles = StyleSheet.create({
 // ── Styles: running ─────────────────────────────────────────────────────────
 const runStyles = StyleSheet.create({
   container: { flex: 1 },
-  bg: { flex: 1, backgroundColor: '#0a1a0a' },
+  bg: { flex: 1, backgroundColor: Colors.runningBg },
 
   statsBar: {
     flexDirection: 'row', paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.md, paddingBottom: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomWidth: 1, borderBottomColor: Colors.runningBorder,
     gap: Spacing.base,
   },
   statItem: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: FontSize.h2, fontWeight: '800', color: '#e8f5e8', letterSpacing: -0.5 },
+  statValue: { fontSize: FontSize.h2, fontWeight: '800', color: Colors.runningText, letterSpacing: -0.5 },
   statLabel: { fontSize: FontSize.tiny, color: 'rgba(255,255,255,0.4)', marginTop: 2, letterSpacing: 0.5 },
   gpsIndicator: { width: 8, height: 8, borderRadius: 4, marginBottom: 2 },
 

@@ -171,3 +171,22 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 - STORY-00077 (RoutesScreen premium uplift + nav wiring): PASS HIGH
 - STORY-00078 (MapHistory auto-select first session): PASS HIGH
 - STORY-00079 (HikingScreen back button top-left): PASS HIGH
+
+## Sprint 28 Updates
+
+- AuthScreen input focus: three distinct states per field — green border + green icon tint (focused), red border + red icon tint (error), grey border + grey icon (unfocused). Error overrides focus correctly. Green is immediate on tap — no delay.
+- Privacy checkbox: click at x=35, y=400 (container x=24, text starts at x=54, checkbox is in the 24-54 gap). Previous doc said box.x - 20 but more reliable is absolute coordinate x=35 at the midpoint y.
+- New design tokens in Colors: primaryDark (pressed states), primaryMuted (replaces opacity string patterns), primaryDim (subtle tinted backgrounds), primaryDeep (gradient stops), runningBg/runningText/runningBorder (Running accent system), night (#5a4fcf for night mode icon).
+- RunningScreen route selection: triple-signal system. Green (Free Run): 3px left border + Colors.primaryBg tint + green CircleCheck badge. Blue (named routes): 3px blue left border + rgba(61,122,181,0.08) tint + blue CircleCheck badge. Deselected: no border, white bg, no badge.
+- SettingsScreen section headers: 11px (FontSize.small), uppercase, 700 weight, letterSpacing 1. Legible. Previously 9px.
+- Night mode icon: Colors.night = #5a4fcf (purple/violet). Visible against white background.
+- Overlay opacity standard confirmed: floating surfaces = rgba(255,255,255,0.95); elevated cards = Colors.surface (opaque). Download Map button = 0.85 (intentional exception — map control needs contrast against tile backgrounds).
+- Navigation regression Sprint 28: PASS. All paths 0 new JS errors. Pre-existing 4 Wake Lock errors (r0 + r1, from Hiking and Running visits) persist unchanged.
+
+## Sprint 28 Verification Summary
+
+- STORY-00080 (Design token audit): PASS MEDIUM
+- STORY-00081 (AuthScreen input focus): PASS HIGH
+- STORY-00082 (RunningScreen triple-signal): PASS HIGH
+- STORY-00083 (SettingsScreen section headers + night token): PASS HIGH
+- STORY-00084 (Overlay opacity standardization): PASS HIGH
