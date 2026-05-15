@@ -70,8 +70,11 @@ export function HomeScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.logo}>Cairn</Text>
-          <Text style={styles.headerSub}>选择今天的活动 ↓</Text>
+          <View style={styles.logoRow}>
+            <Text style={styles.logo}>Cairn</Text>
+            <View style={styles.logoBadge}><Text style={styles.logoBadgeText}>β</Text></View>
+          </View>
+          <Text style={styles.headerSub}>选择今天的活动</Text>
         </View>
 
         {/* Activity Cards */}
@@ -120,12 +123,18 @@ const styles = StyleSheet.create({
   },
 
   header: { marginBottom: Spacing.xl },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   logo: {
     fontSize: 36,
     fontWeight: '900',
     color: Colors.textPrimary,
     letterSpacing: -1.5,
   },
+  logoBadge: {
+    backgroundColor: Colors.primary, borderRadius: Radius.pill,
+    paddingHorizontal: 7, paddingVertical: 2, marginBottom: 4,
+  },
+  logoBadgeText: { fontSize: FontSize.tiny, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
   headerSub: {
     fontSize: FontSize.body,
     color: Colors.textSecondary,

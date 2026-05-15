@@ -263,13 +263,15 @@ const runStyles = StyleSheet.create({
   unlockStopBtn: {
     flex: 2, backgroundColor: Colors.danger, borderRadius: Radius.button,
     paddingVertical: Spacing.lg, alignItems: 'center',
+    ...Shadow.fab,
   },
-  unlockStopText: { color: '#fff', fontWeight: '700', fontSize: FontSize.h3 },
+  unlockStopText: { color: '#fff', fontWeight: '800', fontSize: FontSize.h3 },
   relockBtn: {
     flex: 1, borderRadius: Radius.button, paddingVertical: Spacing.lg,
-    alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.35)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  relockText: { color: 'rgba(255,255,255,0.6)', fontWeight: '600', fontSize: FontSize.caption },
+  relockText: { color: 'rgba(255,255,255,0.75)', fontWeight: '700', fontSize: FontSize.caption },
 
   flagFab: {
     position: 'absolute', bottom: 60, right: Spacing.xl,

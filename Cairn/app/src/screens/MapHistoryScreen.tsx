@@ -186,10 +186,10 @@ const styles = StyleSheet.create({
 
   topBar: { position: 'absolute', top: 0, left: 0, right: 0 },
   topRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.base, paddingTop: Spacing.sm, paddingBottom: Spacing.xs, gap: Spacing.sm },
-  backBtn: { backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6, ...Shadow.card },
-  backText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.primary },
+  backBtn: { backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 7, ...Shadow.card },
+  backText: { fontSize: FontSize.small, fontWeight: '700', color: Colors.primary },
   topTitle: { flex: 1, textAlign: 'center', fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
-  planBtn: { backgroundColor: Colors.primary, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
+  planBtn: { backgroundColor: Colors.primary, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 7 },
   planBtnText: { fontSize: FontSize.small, fontWeight: '700', color: '#fff' },
   tabBar: { flexDirection: 'row', marginHorizontal: Spacing.base, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: Radius.pill, padding: 3, ...Shadow.card },
   tabItem: { flex: 1, borderRadius: Radius.pill, paddingVertical: 7, alignItems: 'center' },
@@ -197,8 +197,8 @@ const styles = StyleSheet.create({
   tabText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
   tabTextActive: { color: '#fff' },
 
-  listPanel: { backgroundColor: Colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: 380, paddingTop: Spacing.sm, paddingHorizontal: Spacing.base, paddingBottom: Spacing.xxl, ...Shadow.overlay },
-  panelHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: Spacing.md },
+  listPanel: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: 380, paddingTop: Spacing.sm, paddingHorizontal: Spacing.base, paddingBottom: Spacing.xxl, ...Shadow.overlay, borderTopWidth: 1, borderColor: Colors.border },
+  panelHandle: { width: 44, height: 5, borderRadius: 3, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: Spacing.md },
 
   routeCard: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.sm, backgroundColor: Colors.bg, borderRadius: Radius.card, overflow: 'hidden', ...Shadow.card, borderWidth: 1, borderColor: Colors.border },
   routeCardSelected: { backgroundColor: 'rgba(93,124,70,0.06)', borderColor: Colors.primary + '40' },
@@ -217,10 +217,10 @@ const styles = StyleSheet.create({
   deleteRouteBtn: { borderRadius: Radius.button, paddingVertical: Spacing.sm, alignItems: 'center', borderWidth: 1.5, borderColor: Colors.danger + '60', backgroundColor: Colors.dangerBg },
   deleteRouteBtnText: { color: Colors.danger, fontWeight: '600', fontSize: FontSize.caption },
 
-  flagRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  flagDot: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  flagDotIcon: { fontSize: 14, fontWeight: '800' },
-  flagTitle: { fontSize: FontSize.caption, fontWeight: '600', color: Colors.textPrimary },
-  flagNote: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
-  deleteIcon: { fontSize: 16, padding: Spacing.xs },
+  flagRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  flagDot: { width: 40, height: 40, borderRadius: 20, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center' },
+  flagDotIcon: { fontSize: 16, fontWeight: '800' },
+  flagTitle: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  flagNote: { fontSize: FontSize.caption, color: Colors.textSecondary, marginTop: 3 },
+  deleteIcon: { fontSize: 18, padding: Spacing.sm, color: Colors.textMuted },
 });

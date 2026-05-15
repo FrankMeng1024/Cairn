@@ -71,6 +71,7 @@ function MapPlaceholder({ onMarkerPress }: { onMarkerPress: (id: string) => void
       {/* Trail line (fake) */}
       <View style={styles.trailLine} />
       <View style={styles.trailLine2} />
+      <View style={styles.trailLine3} />
       {/* Location dot */}
       <View style={styles.locationDot}>
         <View style={styles.locationDotInner} />
@@ -414,13 +415,19 @@ const styles = StyleSheet.create({
   gridCell: { position: 'absolute', width: 50, height: 80, borderWidth: 0.5, borderColor: 'rgba(93,124,70,0.12)' },
   trailLine: {
     position: 'absolute', top: 240, left: 60, right: 60, height: 3,
-    backgroundColor: Colors.primary + '60', borderRadius: 2,
+    backgroundColor: Colors.primary + '70', borderRadius: 2,
   },
   trailLine2: {
-    position: 'absolute', top: 240, left: 60, width: 160, height: 120,
+    position: 'absolute', top: 240, left: 60, width: 160, height: 130,
     borderBottomWidth: 3, borderRightWidth: 3,
-    borderColor: Colors.primary + '60', borderRadius: 0,
-    borderBottomRightRadius: 12,
+    borderColor: Colors.primary + '70', borderRadius: 0,
+    borderBottomRightRadius: 16,
+  },
+  trailLine3: {
+    position: 'absolute', top: 370, left: 220, width: 120, height: 100,
+    borderBottomWidth: 3, borderLeftWidth: 3,
+    borderColor: Colors.primary + '50', borderRadius: 0,
+    borderBottomLeftRadius: 16,
   },
   locationDot: {
     position: 'absolute', top: 350, left: W / 2 - 10,
