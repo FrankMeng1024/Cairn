@@ -1,12 +1,11 @@
 /**
- * MapHistoryScreen — Sprint 10 redesign
+ * MapHistoryScreen — Sprint 16 real route history
  *
- * - SVG icons replace all emoji (Map, Flag, Trash2, ChevronLeft, Route, etc.)
- * - Spring press animations on route cards and flag rows
- * - Marker pins use SVG icons via Icon component
- * - Tab bar with Map / Flag icons
- * - Delete uses Trash2 SVG, back uses ChevronLeft SVG
- * - Plan button uses Route SVG
+ * - Routes tab: reads from useSessionStore (real completed tracking sessions)
+ * - Flags tab: reads from useMarkerStore (real planted markers, current region)
+ * - Sessions shown with real distance, duration, elevation, marker count
+ * - Marker delete calls useMarkerStore.deleteMarker
+ * - Empty states when no sessions/markers yet
  */
 import React, { useState, useRef } from 'react';
 import {
@@ -17,10 +16,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { useSessionStore } from '../store/useSessionStore';
+import { useMarkerStore } from '../store/useMarkerStore';
+import { getCurrentRegion } from '../config/regions';
+import { formatDistance, formatDuration } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
-import { MOCK_ROUTES, MOCK_MARKERS, MARKER_META } from '../data/mockData';
+import { MARKER_META } from '../data/mockData';
+import type { TrackingSession } from '../store/useSessionStore';
+import type { Marker } from '../store/useMarkerStore';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { width: W } = Dimensions.get('window');
@@ -46,19 +51,26 @@ function PressRow({
   );
 }
 
-// ── Route card ──────────────────────────────────────────────────────────────
-function RouteCard({ route, isSelected, onPress }: {
-  route: typeof MOCK_ROUTES[0];
+// ── Session card ─────────────────────────────────────────────────────────────
+function SessionCard({ session, isSelected, onPress }: {
+  session: TrackingSession;
   isSelected: boolean;
   onPress: () => void;
 }) {
+  const date = new Date(session.startedAt);
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const actLabel = session.activityMode === 'running' ? '跑步' : '徒步';
   return (
     <PressRow onPress={onPress} style={{ marginBottom: Spacing.sm }}>
       <View style={[cardStyles.routeCard, isSelected && cardStyles.routeCardSelected]}>
-        <View style={cardStyles.routeColorBar} />
+        <View style={[cardStyles.routeColorBar, { backgroundColor: session.activityMode === 'running' ? '#3d7ab5' : Colors.primary }]} />
         <View style={cardStyles.routeInfo}>
-          <Text style={cardStyles.routeName}>{route.name}</Text>
-          <Text style={cardStyles.routeMeta}>{route.date} · {route.distanceKm} km · {route.durationMin} 分钟</Text>
+          <Text style={cardStyles.routeName}>
+            {session.name ?? `${actLabel} · ${dateStr}`}
+          </Text>
+          <Text style={cardStyles.routeMeta}>
+            {dateStr} · {formatDistance(session.distanceM, 'km', 1)} km · {formatDuration(session.durationS)}
+          </Text>
         </View>
         <View style={cardStyles.routeChevron}>
           <Icon
@@ -76,16 +88,25 @@ function RouteCard({ route, isSelected, onPress }: {
 // ── Main ────────────────────────────────────────────────────────────────────
 export function MapHistoryScreen() {
   const nav = useNavigation<Nav>();
-  const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [tab, setTab] = useState<'routes' | 'flags'>('routes');
 
-  const currentRoute = MOCK_ROUTES.find(r => r.id === selectedRoute);
+  const region = getCurrentRegion();
+  const sessions = useSessionStore(s => s.sessions);
+  const deleteSession = useSessionStore(s => s.deleteSession);
+  const markers = useMarkerStore(s => s.getMarkersForRegion(region.code));
+  const deleteMarker = useMarkerStore(s => s.deleteMarker);
+
+  const selectedSession = sessions.find(s => s.id === selectedSessionId) ?? null;
+
+  // Show real markers on map; fall back to empty array
+  const mapMarkers: Marker[] = markers.slice(0, 8);
 
   return (
     <View style={styles.container}>
       {/* Map area */}
       <View style={styles.mapArea}>
-        {/* Route lines */}
+        {/* Route lines (decorative — real track rendering in Phase B) */}
         <View style={styles.routeLine1} />
         <View style={styles.routeLine2} />
         <View style={styles.routeLine3} />
@@ -97,8 +118,8 @@ export function MapHistoryScreen() {
           <Text style={styles.mapSubLabel}>历史路线 · 旗帜标记</Text>
         </View>
 
-        {/* Marker pins */}
-        {MOCK_MARKERS.map((m, i) => {
+        {/* Real marker pins */}
+        {mapMarkers.map((m, i) => {
           const meta = MARKER_META[m.type as keyof typeof MARKER_META] || MARKER_META.free;
           return (
             <View
@@ -106,8 +127,8 @@ export function MapHistoryScreen() {
               style={[
                 styles.markerPin,
                 {
-                  left: 60 + i * 100,
-                  top: 120 + (i % 2) * 90,
+                  left: 60 + (i % 4) * 75,
+                  top: 120 + (i % 3) * 70,
                   borderColor: meta.color,
                   backgroundColor: meta.bg,
                 },
@@ -153,7 +174,9 @@ export function MapHistoryScreen() {
               color={tab === 'routes' ? '#fff' : Colors.textSecondary}
               strokeWidth={2}
             />
-            <Text style={[styles.tabText, tab === 'routes' && styles.tabTextActive]}>路线历史</Text>
+            <Text style={[styles.tabText, tab === 'routes' && styles.tabTextActive]}>
+              路线历史{sessions.length > 0 ? ` (${sessions.length})` : ''}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tabItem, tab === 'flags' && styles.tabItemActive]}
@@ -165,7 +188,9 @@ export function MapHistoryScreen() {
               color={tab === 'flags' ? '#fff' : Colors.textSecondary}
               strokeWidth={2}
             />
-            <Text style={[styles.tabText, tab === 'flags' && styles.tabTextActive]}>我的旗帜</Text>
+            <Text style={[styles.tabText, tab === 'flags' && styles.tabTextActive]}>
+              我的旗帜{markers.length > 0 ? ` (${markers.length})` : ''}
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -176,80 +201,117 @@ export function MapHistoryScreen() {
 
         {tab === 'routes' ? (
           <ScrollView showsVerticalScrollIndicator={false}>
-            {MOCK_ROUTES.map(r => (
-              <RouteCard
-                key={r.id}
-                route={r}
-                isSelected={selectedRoute === r.id}
-                onPress={() => setSelectedRoute(selectedRoute === r.id ? null : r.id)}
-              />
-            ))}
-
-            {selectedRoute && currentRoute && (
-              <View style={cardStyles.routeDetail}>
-                <Text style={cardStyles.routeDetailTitle}>{currentRoute.name}</Text>
-                <View style={cardStyles.statsGrid}>
-                  {[
-                    { v: `${currentRoute.distanceKm}`, u: '公里' },
-                    { v: `${Math.floor(currentRoute.durationMin / 60)}h${currentRoute.durationMin % 60}m`, u: '用时' },
-                    { v: `${currentRoute.markerCount}`, u: '旗帜' },
-                  ].map((s, i) => (
-                    <View key={i} style={cardStyles.statChip}>
-                      <Text style={cardStyles.statValue}>{s.v}</Text>
-                      <Text style={cardStyles.statUnit}>{s.u}</Text>
-                    </View>
-                  ))}
-                </View>
-                <TouchableOpacity
-                  style={cardStyles.deleteBtn}
-                  onPress={() => Alert.alert(
-                    '删除路线',
-                    '确认删除此路线记录？',
-                    [
-                      { text: '取消', style: 'cancel' },
-                      { text: '删除', style: 'destructive', onPress: () => setSelectedRoute(null) },
-                    ]
-                  )}
-                >
-                  <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
-                  <Text style={cardStyles.deleteBtnText}>删除路线</Text>
-                </TouchableOpacity>
+            {sessions.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Icon name="Route" size={32} color={Colors.textMuted} strokeWidth={1.5} />
+                <Text style={styles.emptyTitle}>暂无路线记录</Text>
+                <Text style={styles.emptySubtitle}>完成一次徒步或跑步后将在此显示</Text>
               </View>
+            ) : (
+              <>
+                {sessions.map(s => (
+                  <SessionCard
+                    key={s.id}
+                    session={s}
+                    isSelected={selectedSessionId === s.id}
+                    onPress={() => setSelectedSessionId(selectedSessionId === s.id ? null : s.id)}
+                  />
+                ))}
+
+                {selectedSession && (
+                  <View style={cardStyles.routeDetail}>
+                    <Text style={cardStyles.routeDetailTitle}>
+                      {selectedSession.name ?? (selectedSession.activityMode === 'running' ? '跑步记录' : '徒步记录')}
+                    </Text>
+                    <View style={cardStyles.statsGrid}>
+                      {[
+                        { v: formatDistance(selectedSession.distanceM, 'km', 2), u: '公里' },
+                        { v: formatDuration(selectedSession.durationS), u: '用时' },
+                        { v: `${selectedSession.markerIds.length}`, u: '旗帜' },
+                        { v: `+${selectedSession.elevationGainM}`, u: '爬升m' },
+                      ].map((s, i) => (
+                        <View key={i} style={cardStyles.statChip}>
+                          <Text style={cardStyles.statValue}>{s.v}</Text>
+                          <Text style={cardStyles.statUnit}>{s.u}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <TouchableOpacity
+                      style={cardStyles.deleteBtn}
+                      onPress={() => Alert.alert(
+                        '删除路线',
+                        '确认删除此路线记录？',
+                        [
+                          { text: '取消', style: 'cancel' },
+                          {
+                            text: '删除', style: 'destructive', onPress: () => {
+                              deleteSession(selectedSession.id);
+                              setSelectedSessionId(null);
+                            },
+                          },
+                        ]
+                      )}
+                    >
+                      <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
+                      <Text style={cardStyles.deleteBtnText}>删除路线</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
             )}
           </ScrollView>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false}>
-            {MOCK_MARKERS.map(m => {
-              const meta = MARKER_META[m.type as keyof typeof MARKER_META] || MARKER_META.free;
-              return (
-                <PressRow key={m.id} onPress={() => {}} style={{ marginBottom: 0 }}>
-                  <View style={flagStyles.row}>
-                    <View style={[flagStyles.dot, { backgroundColor: meta.bg, borderColor: meta.color }]}>
-                      <Icon
-                        name={meta.iconName as IconName}
-                        size={16}
-                        color={meta.color}
-                        strokeWidth={2}
-                      />
+            {markers.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Icon name="Flag" size={32} color={Colors.textMuted} strokeWidth={1.5} />
+                <Text style={styles.emptyTitle}>暂无旗帜记录</Text>
+                <Text style={styles.emptySubtitle}>徒步中插旗后将在此显示</Text>
+              </View>
+            ) : (
+              markers.map(m => {
+                const meta = MARKER_META[m.type as keyof typeof MARKER_META] || MARKER_META.free;
+                const timeAgo = (() => {
+                  const diffMs = Date.now() - m.createdAt;
+                  const mins = Math.floor(diffMs / 60000);
+                  if (mins < 1) return '刚才';
+                  if (mins < 60) return `${mins}分钟前`;
+                  if (mins < 1440) return `${Math.floor(mins / 60)}小时前`;
+                  return `${Math.floor(mins / 1440)}天前`;
+                })();
+                return (
+                  <PressRow key={m.id} onPress={() => {}} style={{ marginBottom: 0 }}>
+                    <View style={flagStyles.row}>
+                      <View style={[flagStyles.dot, { backgroundColor: meta.bg, borderColor: meta.color }]}>
+                        <Icon
+                          name={meta.iconName as IconName}
+                          size={16}
+                          color={meta.color}
+                          strokeWidth={2}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={flagStyles.title}>{meta.label}</Text>
+                        <Text style={flagStyles.note}>{m.note || timeAgo}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={flagStyles.deleteBtn}
+                        onPress={() => Alert.alert(
+                          '删除旗帜',
+                          '确认删除此旗帜？',
+                          [
+                            { text: '取消', style: 'cancel' },
+                            { text: '删除', style: 'destructive', onPress: () => deleteMarker(m.id) },
+                          ]
+                        )}
+                      >
+                        <Icon name="Trash2" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
+                      </TouchableOpacity>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={flagStyles.title}>{m.title}</Text>
-                      <Text style={flagStyles.note}>{m.note}</Text>
-                    </View>
-                    <TouchableOpacity
-                      style={flagStyles.deleteBtn}
-                      onPress={() => Alert.alert(
-                        '删除旗帜',
-                        `删除"${m.title}"？`,
-                        [{ text: '取消', style: 'cancel' }, { text: '删除', style: 'destructive' }]
-                      )}
-                    >
-                      <Icon name="Trash2" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
-                    </TouchableOpacity>
-                  </View>
-                </PressRow>
-              );
-            })}
+                  </PressRow>
+                );
+              })
+            )}
           </ScrollView>
         )}
       </View>
@@ -337,6 +399,13 @@ const styles = StyleSheet.create({
     width: 44, height: 5, borderRadius: 3,
     backgroundColor: Colors.border, alignSelf: 'center', marginBottom: Spacing.md,
   },
+
+  emptyState: {
+    alignItems: 'center', justifyContent: 'center',
+    paddingVertical: Spacing.xxl, gap: Spacing.sm,
+  },
+  emptyTitle: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textSecondary },
+  emptySubtitle: { fontSize: FontSize.small, color: Colors.textMuted, textAlign: 'center' },
 });
 
 const cardStyles = StyleSheet.create({
@@ -362,9 +431,10 @@ const cardStyles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
   },
   routeDetailTitle: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
-  statsGrid: { flexDirection: 'row', gap: Spacing.sm },
+  statsGrid: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
   statChip: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.pill,
+    flex: 1, minWidth: '22%',
+    backgroundColor: Colors.surface, borderRadius: Radius.pill,
     paddingVertical: 8, alignItems: 'center', gap: 2,
     borderWidth: 1, borderColor: Colors.border,
   },

@@ -1,12 +1,13 @@
 /**
- * RunningScreen — Sprint 7 redesign
+ * RunningScreen — Sprint 15 real GPS tracking
  *
  * States:
  * 1. Pre-start: route selection with SVG icons, animated start button
- * 2. Running — LOCKED: stats bar, compass ring, lock indicator (SVG icons)
+ * 2. Running — LOCKED: real stats bar (distance/duration/pace), compass ring, lock indicator
  * 3. Running — UNLOCKED: stop/relock controls fade in
  *
- * expo-keep-awake: activates when runState === 'running'
+ * Uses useTrackingStore (real GPS via expo-location, graceful web fallback).
+ * activityMode set to 'running' before startTracking.
  */
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -17,6 +18,8 @@ import { useKeepAwake } from 'expo-keep-awake';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { useTrackingStore } from '../store/useTrackingStore';
+import { formatDistance, formatDuration } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { MOCK_ROUTES } from '../data/mockData';
@@ -27,7 +30,6 @@ type RunState = 'pre' | 'running' | 'stopped';
 
 // ── Keep-awake guard ────────────────────────────────────────────────────────
 function useRunKeepAwake(active: boolean) {
-  // expo-keep-awake: hook must be called unconditionally, we pass activation flag
   useKeepAwake(active ? undefined : 'INACTIVE');
 }
 
@@ -50,8 +52,17 @@ export function RunningScreen() {
   const [tapCount, setTapCount] = useState(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Real tracking store
+  const status = useTrackingStore(s => s.status);
+  const durationS = useTrackingStore(s => s.durationS);
+  const distanceM = useTrackingStore(s => s.distanceM);
+  const locationAvailable = useTrackingStore(s => s.locationAvailable);
+  const setActivityMode = useTrackingStore(s => s.setActivityMode);
+  const startTracking = useTrackingStore(s => s.startTracking);
+  const stopTracking = useTrackingStore(s => s.stopTracking);
+
   // Keep screen awake when running
-  useRunKeepAwake(runState === 'running');
+  useRunKeepAwake(status === 'tracking');
 
   // Animated values
   const startBtnScale = useRef(new Animated.Value(1)).current;
@@ -84,7 +95,56 @@ export function RunningScreen() {
     }
   };
 
+  async function handleStart() {
+    setActivityMode('running');
+    await startTracking();
+    setRunState('running');
+    setIsLocked(true);
+  }
+
+  function handleStop() {
+    stopTracking();
+    setRunState('stopped');
+  }
+
   const selectedRouteName = MOCK_ROUTES.find(r => r.id === selectedRoute)?.name;
+
+  // Format display values
+  const distDisplay = locationAvailable ? formatDistance(distanceM, 'km', 2) : '--';
+  const durationDisplay = formatDuration(durationS);
+  // Pace: min/km (seconds per meter → minutes per km)
+  const paceDisplay = (() => {
+    if (!locationAvailable || distanceM < 10) return '--';
+    const secPerKm = durationS / (distanceM / 1000);
+    const paceMin = Math.floor(secPerKm / 60);
+    const paceSec = Math.round(secPerKm % 60);
+    return `${paceMin}'${String(paceSec).padStart(2, '0')}"`;
+  })();
+
+  // ── Stopped state ──────────────────────────────────────────────────────────
+  if (runState === 'stopped') {
+    return (
+      <SafeAreaView style={preStyles.container} edges={['top', 'bottom']}>
+        <View style={preStyles.header}>
+          <Text style={preStyles.title}>跑步完成</Text>
+          <Text style={preStyles.subtitle}>会话已保存</Text>
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.xl }}>
+          <View style={runStyles.statsBar}>
+            <StatItem value={formatDistance(distanceM, 'km', 2)} label="公里" />
+            <StatItem value={durationDisplay} label="时长" />
+            <StatItem value={paceDisplay} label="配速" />
+          </View>
+        </View>
+        <View style={preStyles.footer}>
+          <TouchableOpacity style={preStyles.startBtn} onPress={() => { setRunState('pre'); }}>
+            <Icon name="ChevronLeft" size={IconSize.md} color="#fff" strokeWidth={2} />
+            <Text style={preStyles.startBtnText}>返回</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // ── Pre-start ─────────────────────────────────────────────────────────────
   if (runState === 'pre') {
@@ -151,7 +211,7 @@ export function RunningScreen() {
             <TouchableOpacity
               style={preStyles.startBtn}
               activeOpacity={1}
-              onPress={() => { setRunState('running'); setIsLocked(true); }}
+              onPress={handleStart}
               onPressIn={onStartPressIn}
               onPressOut={onStartPressOut}
             >
@@ -177,10 +237,13 @@ export function RunningScreen() {
           {/* Stats bar */}
           <SafeAreaView edges={['top']}>
             <View style={runStyles.statsBar}>
-              <StatItem value="3.2" label="公里" />
-              <StatItem value="18" label="分钟" />
-              <StatItem value="5'38&quot;" label="配速" />
-              <StatItem value="152" label="心率" />
+              <StatItem value={distDisplay} label="公里" />
+              <StatItem value={durationDisplay} label="时长" />
+              <StatItem value={paceDisplay} label="配速" />
+              <View style={[runStyles.statItem, { justifyContent: 'center' }]}>
+                <View style={[runStyles.gpsIndicator, { backgroundColor: locationAvailable ? Colors.success : Colors.textMuted }]} />
+                <Text style={runStyles.statLabel}>{locationAvailable ? 'GPS' : '离线'}</Text>
+              </View>
             </View>
           </SafeAreaView>
 
@@ -214,7 +277,7 @@ export function RunningScreen() {
               <View style={runStyles.unlockedRow}>
                 <TouchableOpacity
                   style={runStyles.stopBtn}
-                  onPress={() => setRunState('stopped')}
+                  onPress={handleStop}
                 >
                   <Icon name="Square" size={IconSize.sm} color="#fff" strokeWidth={2.5} />
                   <Text style={runStyles.stopBtnText}>停止</Text>
@@ -299,6 +362,7 @@ const runStyles = StyleSheet.create({
   statItem: { flex: 1, alignItems: 'center' },
   statValue: { fontSize: FontSize.h2, fontWeight: '800', color: '#e8f5e8', letterSpacing: -0.5 },
   statLabel: { fontSize: FontSize.tiny, color: 'rgba(255,255,255,0.4)', marginTop: 2, letterSpacing: 0.5 },
+  gpsIndicator: { width: 8, height: 8, borderRadius: 4, marginBottom: 2 },
 
   compassArea: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.lg },
   compassRing: {

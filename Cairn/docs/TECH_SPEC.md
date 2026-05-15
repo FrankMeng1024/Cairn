@@ -68,3 +68,21 @@ Sprint 1 required. System dependencies to spike:
 ## §ux-thresholds
 - Navigation friction: 3 taps max to any primary feature
 - Feedback delay: 2s (any action without visible response = bug)
+
+## §geo-extensibility
+**Mandatory constraint — enforced at every Arch Code Review.**
+
+All geography/region logic must be data-driven and extensible. Hard-coding NZ-specific values in application code is forbidden.
+
+| Concern | Rule |
+|---------|------|
+| Map regions | Configured in `src/config/regions.ts` — bounds, tile URLs, zoom levels per region. Never hardcoded in components. |
+| Safety data providers | `SafetyDataProvider` interface. NZ DOC = first implementation. AU/US/JP = new providers, zero code change in consumers. |
+| Trail IDs | Format: `{region_code}:{trail_id}` e.g. `nz:tongariro-alpine-crossing` |
+| Distance/elevation units | Read from user preference store. Never hardcoded km/m. |
+| Voice announcement strings | i18n keys only. No hardcoded ZH/EN strings in logic layer. |
+| Backend geo queries | All endpoints accept `region` param. No server-side NZ filter. |
+| Marker types | Global taxonomy (danger/scenic/supply/junction/free). No region-specific types in Phase 1. |
+
+## §acceptance
+`acceptance_mode: auto`

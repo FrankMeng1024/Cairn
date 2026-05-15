@@ -1,5 +1,5 @@
 /**
- * HikingScreen — Sprint 8 redesign
+ * HikingScreen — Sprint 14 real GPS tracking
  *
  * States:
  * 1. Map view: full-screen map placeholder, GPS chip, back chip, FAB
@@ -8,12 +8,13 @@
  * 4. Plant note sheet: optional note before saving
  * 5. Marker detail sheet: view / delete a marker
  *
- * expo-keep-awake: activates when trackingState === 'tracking'
+ * expo-keep-awake: activates when status === 'tracking'
+ * Real stores: useTrackingStore (GPS), useMarkerStore (flags)
  */
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions,
-  TextInput, Alert, Animated,
+  TextInput, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -21,9 +22,14 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore } from '../store/useAppStore';
+import { useTrackingStore } from '../store/useTrackingStore';
+import { useMarkerStore } from '../store/useMarkerStore';
+import { getCurrentRegion } from '../config/regions';
+import { formatDistance, formatDuration } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon, type IconName } from '../components/Icon';
-import { MOCK_MARKERS, MARKER_META, type MarkerType } from '../data/mockData';
+import { MARKER_META, type MarkerType } from '../data/mockData';
+import type { Marker } from '../store/useMarkerStore';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { width: W } = Dimensions.get('window');
@@ -66,8 +72,11 @@ function MarkerPin({ type, x, y, onPress }: {
   );
 }
 
-// ── Improved map placeholder ──────────────────────────────────────────────
-function MapPlaceholder({ onMarkerPress }: { onMarkerPress: (id: string) => void }) {
+// ── Map placeholder ──────────────────────────────────────────────────────
+function MapPlaceholder({ markers, onMarkerPress }: {
+  markers: Marker[];
+  onMarkerPress: (id: string) => void;
+}) {
   return (
     <View style={styles.mapBg}>
       {/* Topo-style grid */}
@@ -85,13 +94,13 @@ function MapPlaceholder({ onMarkerPress }: { onMarkerPress: (id: string) => void
         <View style={styles.locationDotInner} />
         <View style={styles.locationPulse} />
       </View>
-      {/* Marker pins */}
-      {MOCK_MARKERS.map((m, i) => (
+      {/* Real marker pins */}
+      {markers.map((m, i) => (
         <MarkerPin
           key={m.id}
           type={m.type}
-          x={80 + i * 95}
-          y={200 + (i % 2) * 120}
+          x={80 + (i % 5) * 55}
+          y={200 + (i % 3) * 100}
           onPress={() => onMarkerPress(m.id)}
         />
       ))}
@@ -185,11 +194,20 @@ function PlantNoteSheet({ flagType, onSave, onSkip }: {
 }
 
 // ── Marker Detail Sheet ────────────────────────────────────────────────────
-function MarkerDetailSheet({ markerId, onClose }: { markerId: string; onClose: () => void }) {
-  const marker = MOCK_MARKERS.find(m => m.id === markerId);
-  if (!marker) return null;
+function MarkerDetailSheet({ marker, onClose, onDelete }: {
+  marker: Marker;
+  onClose: () => void;
+  onDelete: () => void;
+}) {
   const meta = MARKER_META[marker.type] || MARKER_META.free;
   const flagType = FLAG_TYPES.find(f => f.id === marker.type);
+  const timeAgo = (() => {
+    const diffMs = Date.now() - marker.createdAt;
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return '刚才';
+    if (mins < 60) return `${mins}分钟前`;
+    return `${Math.floor(mins / 60)}小时前`;
+  })();
 
   return (
     <View style={detailStyles.container}>
@@ -205,17 +223,20 @@ function MarkerDetailSheet({ markerId, onClose }: { markerId: string; onClose: (
             <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.5} />
           </TouchableOpacity>
         </View>
-        <Text style={detailStyles.title}>{marker.title}</Text>
-        <Text style={detailStyles.note}>{marker.note}</Text>
+        {marker.note ? (
+          <Text style={detailStyles.note}>{marker.note}</Text>
+        ) : (
+          <Text style={[detailStyles.note, { color: Colors.textMuted, fontStyle: 'italic' }]}>（无备注）</Text>
+        )}
         <View style={detailStyles.metaRow}>
-          <Icon name="MapPin" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
-          <Text style={detailStyles.meta}>{marker.distanceM}m · {marker.timeAgo}</Text>
+          <Icon name="Timer" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
+          <Text style={detailStyles.meta}>{timeAgo}</Text>
         </View>
         <TouchableOpacity
           style={detailStyles.deleteBtn}
           onPress={() => Alert.alert('删除旗帜', '确认删除？', [
             { text: '取消', style: 'cancel' },
-            { text: '删除', style: 'destructive', onPress: onClose },
+            { text: '删除', style: 'destructive', onPress: onDelete },
           ])}
         >
           <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
@@ -231,26 +252,84 @@ type UIState = 'map' | 'ar' | 'note' | 'detail';
 
 export function HikingScreen() {
   const nav = useNavigation<Nav>();
-  const { uiMode, trackingState, setTrackingState } = useAppStore();
+  const { uiMode } = useAppStore();
   const isGuided = uiMode === 'guided';
+
+  // Real tracking store
+  const status = useTrackingStore(s => s.status);
+  const durationS = useTrackingStore(s => s.durationS);
+  const distanceM = useTrackingStore(s => s.distanceM);
+  const elevationGainM = useTrackingStore(s => s.elevationGainM);
+  const locationAvailable = useTrackingStore(s => s.locationAvailable);
+  const lastCoordinate = useTrackingStore(s => s.lastCoordinate);
+  const sessionId = useTrackingStore(s => s.sessionId);
+  const startTracking = useTrackingStore(s => s.startTracking);
+  const stopTracking = useTrackingStore(s => s.stopTracking);
+  const linkMarker = useTrackingStore(s => s.linkMarker);
+
+  // Real marker store
+  const addMarker = useMarkerStore(s => s.addMarker);
+  const deleteMarker = useMarkerStore(s => s.deleteMarker);
+  const getMarkersForRegion = useMarkerStore(s => s.getMarkersForRegion);
+  const region = getCurrentRegion();
+  const markers = getMarkersForRegion(region.code);
+
   const [ui, setUi] = useState<UIState>('map');
   const [plantedFlag, setPlantedFlag] = useState<MarkerType | null>(null);
-  const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
-  const isTracking = trackingState === 'tracking';
+  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+
+  const isTracking = status === 'tracking';
 
   // Keep screen awake while tracking
   useKeepAwake(isTracking ? undefined : 'HIKING_INACTIVE');
 
+  const selectedMarker = markers.find(m => m.id === selectedMarkerId) ?? null;
+
+  function handlePlantSave(note: string) {
+    if (!plantedFlag) return;
+    // Use last GPS coordinate if available, else region center
+    const lat = lastCoordinate?.lat ?? region.centerLat;
+    const lng = lastCoordinate?.lng ?? region.centerLng;
+    const marker = addMarker({
+      type: plantedFlag,
+      regionCode: region.code,
+      lat,
+      lng,
+      note,
+      authorId: 'local',
+      permission: 'personal',
+      sessionId: sessionId ?? undefined,
+    });
+    if (sessionId) linkMarker(marker.id);
+    setUi('map');
+  }
+
+  function handleDeleteMarker() {
+    if (selectedMarkerId) {
+      deleteMarker(selectedMarkerId);
+    }
+    setSelectedMarkerId(null);
+    setUi('map');
+  }
+
+  const distDisplay = formatDistance(distanceM, 'km', 1);
+  const durationDisplay = formatDuration(durationS);
+
   return (
     <View style={styles.container}>
-      <MapPlaceholder onMarkerPress={(id) => { setSelectedMarker(id); setUi('detail'); }} />
+      <MapPlaceholder
+        markers={markers}
+        onMarkerPress={(id) => { setSelectedMarkerId(id); setUi('detail'); }}
+      />
 
       {/* Top overlay: GPS chip + back button */}
       <SafeAreaView style={styles.topOverlay} edges={['top']} pointerEvents="box-none">
         <View style={styles.topRow}>
           <View style={styles.gpsChip}>
-            <View style={styles.gpsDot} />
-            <Text style={styles.gpsText}>{isGuided ? 'GPS已连接 ±5m' : 'GPS'}</Text>
+            <View style={[styles.gpsDot, { backgroundColor: locationAvailable ? Colors.success : Colors.textMuted }]} />
+            <Text style={styles.gpsText}>
+              {locationAvailable ? (isGuided ? 'GPS已连接 ±5m' : 'GPS') : 'GPS离线'}
+            </Text>
           </View>
           <View style={styles.topRight}>
             <TouchableOpacity style={styles.backChip} onPress={() => nav.goBack()}>
@@ -264,18 +343,18 @@ export function HikingScreen() {
         {isTracking && (
           <View style={styles.trackingBar}>
             <View style={styles.trackingStat}>
-              <Text style={styles.trackingValue}>2.4</Text>
+              <Text style={styles.trackingValue}>{distDisplay}</Text>
               <Text style={styles.trackingUnit}>公里</Text>
             </View>
             <View style={styles.trackingStat}>
-              <Text style={styles.trackingValue}>42</Text>
-              <Text style={styles.trackingUnit}>分钟</Text>
+              <Text style={styles.trackingValue}>{durationDisplay}</Text>
+              <Text style={styles.trackingUnit}>时长</Text>
             </View>
             <View style={styles.trackingStat}>
-              <Text style={styles.trackingValue}>+120</Text>
+              <Text style={styles.trackingValue}>+{elevationGainM}</Text>
               <Text style={styles.trackingUnit}>爬升m</Text>
             </View>
-            <TouchableOpacity style={styles.stopBtn} onPress={() => setTrackingState('idle')}>
+            <TouchableOpacity style={styles.stopBtn} onPress={stopTracking}>
               <Icon name="Square" size={12} color="#fff" strokeWidth={3} />
               {isGuided && <Text style={styles.stopBtnText}>停止</Text>}
             </TouchableOpacity>
@@ -287,7 +366,7 @@ export function HikingScreen() {
       <SafeAreaView style={styles.bottomOverlay} edges={['bottom']} pointerEvents="box-none">
         <View style={styles.bottomRow}>
           {!isTracking ? (
-            <TouchableOpacity style={styles.trackBtn} onPress={() => setTrackingState('tracking')}>
+            <TouchableOpacity style={styles.trackBtn} onPress={startTracking}>
               <Icon name="Play" size={IconSize.sm} color={Colors.textPrimary} strokeWidth={2.5} />
               {isGuided && <Text style={styles.trackBtnText}>开始徒步记录</Text>}
             </TouchableOpacity>
@@ -314,19 +393,17 @@ export function HikingScreen() {
       {ui === 'note' && plantedFlag && (
         <PlantNoteSheet
           flagType={plantedFlag}
-          onSave={(note) => {
-            setUi('map');
-            Alert.alert('旗帜已保存', note || '（无备注）');
-          }}
-          onSkip={() => setUi('map')}
+          onSave={handlePlantSave}
+          onSkip={() => { handlePlantSave(''); }}
         />
       )}
 
       {/* Marker Detail Sheet */}
       {ui === 'detail' && selectedMarker && (
         <MarkerDetailSheet
-          markerId={selectedMarker}
-          onClose={() => { setSelectedMarker(null); setUi('map'); }}
+          marker={selectedMarker}
+          onClose={() => { setSelectedMarkerId(null); setUi('map'); }}
+          onDelete={handleDeleteMarker}
         />
       )}
     </View>
@@ -386,7 +463,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,
     paddingHorizontal: Spacing.md, paddingVertical: 7, ...Shadow.card,
   },
-  gpsDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.success },
+  gpsDot: { width: 8, height: 8, borderRadius: 4 },
   gpsText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary },
   topRight: { flexDirection: 'row', gap: Spacing.sm },
   backChip: {
@@ -521,7 +598,6 @@ const detailStyles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16,
     backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center',
   },
-  title: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary },
   note: { fontSize: FontSize.body, color: Colors.textSecondary, lineHeight: 22 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   meta: { fontSize: FontSize.small, color: Colors.textMuted },
