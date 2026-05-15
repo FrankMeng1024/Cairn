@@ -22,6 +22,7 @@ import { useTrackingStore } from '../store/useTrackingStore';
 import { formatDistance, formatDuration } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
+import { BackButton } from '../components/BackButton';
 import { MOCK_ROUTES } from '../data/mockData';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -169,10 +170,7 @@ export function RunningScreen() {
       <SafeAreaView style={preStyles.container} edges={['top', 'bottom']}>
         {/* Header */}
         <View style={preStyles.header}>
-          <TouchableOpacity style={preStyles.backBtn} onPress={() => nav.goBack()}>
-            <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-            <Text style={preStyles.backText}>Back</Text>
-          </TouchableOpacity>
+          <BackButton variant="inline" />
           <Text style={preStyles.title}>Running Mode</Text>
           <Text style={preStyles.subtitle}>Select a route (optional)</Text>
         </View>

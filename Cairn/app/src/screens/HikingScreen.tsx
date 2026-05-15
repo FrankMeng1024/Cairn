@@ -25,9 +25,10 @@ import { useAppStore } from '../store/useAppStore';
 import { useTrackingStore } from '../store/useTrackingStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { getCurrentRegion } from '../config/regions';
-import { formatDistance, formatDuration } from '../utils/geo';
+import { formatDistance, formatDuration, haversineM } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon, type IconName } from '../components/Icon';
+import { BackButton } from '../components/BackButton';
 import { MARKER_META, type MarkerType } from '../data/mockData';
 import type { Marker } from '../store/useMarkerStore';
 
@@ -292,10 +293,11 @@ function PlantNoteSheet({ flagType, onSave, onSkip }: {
 }
 
 // ── Marker Detail Sheet ────────────────────────────────────────────────────
-function MarkerDetailSheet({ marker, onClose, onDelete }: {
+function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
   marker: Marker;
   onClose: () => void;
   onDelete: () => void;
+  lastCoordinate: { lat: number; lng: number } | null;
 }) {
   const meta = MARKER_META[marker.type] || MARKER_META.free;
   const flagType = FLAG_TYPES.find(f => f.id === marker.type);
@@ -306,6 +308,14 @@ function MarkerDetailSheet({ marker, onClose, onDelete }: {
     if (mins < 60) return `${mins}m ago`;
     return `${Math.floor(mins / 60)}h ago`;
   })();
+
+  const coordStr = `${marker.lat.toFixed(5)}, ${marker.lng.toFixed(5)}`;
+  const distToMarker = lastCoordinate
+    ? haversineM(lastCoordinate, { lat: marker.lat, lng: marker.lng })
+    : null;
+  const distStr = distToMarker != null
+    ? formatDistance(distToMarker, 'km', 1) + ' km away'
+    : '--';
 
   return (
     <View style={detailStyles.container}>
@@ -329,6 +339,14 @@ function MarkerDetailSheet({ marker, onClose, onDelete }: {
         <View style={detailStyles.metaRow}>
           <Icon name="Timer" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
           <Text style={detailStyles.meta}>{timeAgo}</Text>
+        </View>
+        <View style={detailStyles.metaRow}>
+          <Icon name="MapPin" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
+          <Text style={detailStyles.meta}>{coordStr}</Text>
+        </View>
+        <View style={detailStyles.metaRow}>
+          <Icon name="Route" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
+          <Text style={detailStyles.meta}>{distStr}</Text>
         </View>
         <TouchableOpacity
           style={detailStyles.deleteBtn}
@@ -377,6 +395,14 @@ export function HikingScreen() {
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
 
   const isTracking = status === 'tracking';
+
+  // Spring press scales
+  const trackBtnScale = useRef(new Animated.Value(1)).current;
+  const fabScale = useRef(new Animated.Value(1)).current;
+  const springIn = (val: Animated.Value) =>
+    Animated.spring(val, { toValue: 0.95, useNativeDriver: true, tension: 300, friction: 10 }).start();
+  const springOut = (val: Animated.Value) =>
+    Animated.spring(val, { toValue: 1, useNativeDriver: true, tension: 300, friction: 8 }).start();
 
   // Keep screen awake while on this screen (activity in progress)
   useKeepAwake();
@@ -430,10 +456,7 @@ export function HikingScreen() {
             </Text>
           </View>
           <View style={styles.topRight}>
-            <TouchableOpacity style={styles.backChip} onPress={() => nav.goBack()}>
-              <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-              <Text style={styles.backChipText}>Back</Text>
-            </TouchableOpacity>
+            <BackButton variant="pill" />
           </View>
         </View>
 
@@ -441,22 +464,27 @@ export function HikingScreen() {
         {isTracking && (
           <View style={styles.trackingBar}>
             <View style={styles.trackingStat}>
-              <Text style={styles.trackingValue}>{distDisplay}</Text>
+              <Text style={styles.trackingValueLg}>{distDisplay}</Text>
               <Text style={styles.trackingUnit}>km</Text>
             </View>
+            <View style={styles.statDivider} />
             <View style={styles.trackingStat}>
               <Text style={styles.trackingValue}>{durationDisplay}</Text>
               <Text style={styles.trackingUnit}>elapsed</Text>
             </View>
+            <View style={styles.statDivider} />
             <View style={styles.trackingStat}>
               <Text style={styles.trackingValue}>+{elevationGainM}m</Text>
               <Text style={styles.trackingUnit}>elev</Text>
             </View>
             {isExpert && (
-              <View style={styles.trackingStat}>
-                <Text style={styles.trackingValue}>--</Text>
-                <Text style={styles.trackingUnit}>brg</Text>
-              </View>
+              <>
+                <View style={styles.statDivider} />
+                <View style={styles.trackingStat}>
+                  <Text style={styles.trackingValue}>--</Text>
+                  <Text style={styles.trackingUnit}>brg</Text>
+                </View>
+              </>
             )}
             <TouchableOpacity style={styles.stopBtn} onPress={stopTracking}>
               <Icon name="Square" size={12} color="#fff" strokeWidth={3} />
@@ -470,17 +498,38 @@ export function HikingScreen() {
       <SafeAreaView style={styles.bottomOverlay} edges={['bottom']} pointerEvents="box-none">
         <View style={styles.bottomRow}>
           {!isTracking ? (
-            <TouchableOpacity style={styles.trackBtn} onPress={startTracking}>
-              <Icon name="Play" size={IconSize.sm} color={Colors.textPrimary} strokeWidth={2.5} />
-              <Text style={styles.trackBtnText}>Start Hiking</Text>
-            </TouchableOpacity>
+            <Animated.View style={[{ flex: 1 }, { transform: [{ scale: trackBtnScale }] }]}>
+              <TouchableOpacity
+                style={styles.trackBtn}
+                onPress={startTracking}
+                activeOpacity={1}
+                onPressIn={() => springIn(trackBtnScale)}
+                onPressOut={() => springOut(trackBtnScale)}
+              >
+                <Icon name="Play" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
+                <Text style={styles.trackBtnText}>Start Hiking</Text>
+              </TouchableOpacity>
+            </Animated.View>
           ) : (
             <View style={{ flex: 1 }} />
           )}
 
-          <TouchableOpacity style={styles.fab} onPress={() => setUi('ar')}>
-            <Icon name="Flag" size={IconSize.md} color="#fff" strokeWidth={2} />
-          </TouchableOpacity>
+          <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+            <TouchableOpacity
+              style={styles.fab}
+              onPress={() => setUi('ar')}
+              activeOpacity={1}
+              onPressIn={() => springIn(fabScale)}
+              onPressOut={() => springOut(fabScale)}
+            >
+              <Icon name="Flag" size={IconSize.md} color="#fff" strokeWidth={2} />
+              {markers.length > 0 && (
+                <View style={styles.fabBadge}>
+                  <Text style={styles.fabBadgeText}>{markers.length}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
         </View>
       </SafeAreaView>
 
@@ -508,6 +557,7 @@ export function HikingScreen() {
           marker={selectedMarker}
           onClose={() => { setSelectedMarkerId(null); setUi('map'); }}
           onDelete={handleDeleteMarker}
+          lastCoordinate={lastCoordinate}
         />
       )}
     </View>
@@ -608,12 +658,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.97)',
     marginHorizontal: Spacing.base, marginTop: Spacing.sm,
     borderRadius: Radius.card, padding: Spacing.md,
-    gap: Spacing.base, ...Shadow.card,
+    gap: Spacing.sm, ...Shadow.card,
     borderWidth: 1, borderColor: Colors.border,
   },
   trackingStat: { alignItems: 'center', flex: 1 },
-  trackingValue: { fontSize: FontSize.h3, fontWeight: '800', color: Colors.textPrimary },
+  trackingValueLg: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary },
+  trackingValue: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary },
   trackingUnit: { fontSize: FontSize.tiny, color: Colors.textSecondary, marginTop: 1 },
+  statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
   stopBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: Colors.danger, borderRadius: Radius.button,
@@ -628,18 +680,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.base, paddingBottom: Spacing.lg, gap: Spacing.sm,
   },
   trackBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    borderRadius: Radius.pill,
     paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+    borderWidth: 2, borderColor: Colors.primary + '60',
     ...Shadow.card,
   },
-  trackBtnText: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
+  trackBtnText: { fontSize: FontSize.body, fontWeight: '700', color: Colors.primary },
   fab: {
     backgroundColor: Colors.primary, borderRadius: Radius.circle,
     width: 60, height: 60, alignItems: 'center', justifyContent: 'center',
     ...Shadow.fab,
   },
   fabLabel: { fontSize: 8, color: '#fff', fontWeight: '700', marginTop: 1 },
+  fabBadge: {
+    position: 'absolute', top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: Colors.danger, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4, borderWidth: 2, borderColor: '#fff',
+  },
+  fabBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 });
 
 const arStyles = StyleSheet.create({

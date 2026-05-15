@@ -22,17 +22,77 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon, type IconName } from '../components/Icon';
+import { useAppStore } from '../store/useAppStore';
 import { useSessionStore } from '../store/useSessionStore';
+import { useMarkerStore } from '../store/useMarkerStore';
 import { formatDistance, formatDuration } from '../utils/geo';
+import { getCurrentRegion } from '../config/regions';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 // ── Time greeting ─────────────────────────────────────────────────────────────
-function getGreeting() {
+function getGreeting(mode: 'beginner' | 'expert') {
   const h = new Date().getHours();
-  if (h >= 5 && h < 12) return 'Good morning';
-  if (h >= 12 && h < 18) return 'Good afternoon';
-  return 'Good evening';
+  const modeLabel = mode === 'expert' ? 'Navigator' : 'Explorer';
+  if (h >= 5 && h < 12) return `Good morning, ${modeLabel}`;
+  if (h >= 12 && h < 18) return `Good afternoon, ${modeLabel}`;
+  return `Good evening, ${modeLabel}`;
+}
+
+// ── Quick Stats Row ───────────────────────────────────────────────────────────
+function QuickStats({ sessions, markerCount }: { sessions: any[]; markerCount: number }) {
+  const totalDistM = sessions.reduce((acc, s) => acc + s.distanceM, 0);
+  const stat1Anim = useRef(new Animated.Value(0)).current;
+  const stat2Anim = useRef(new Animated.Value(0)).current;
+  const stat3Anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.stagger(60, [
+      Animated.timing(stat1Anim, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(stat2Anim, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(stat3Anim, { toValue: 1, duration: 300, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const capsule = (anim: Animated.Value, icon: IconName, value: string, unit: string, color: string, bg: string) => (
+    <Animated.View style={[statsStyles.capsule, { opacity: anim }]}>
+      <View style={[statsStyles.capIcon, { backgroundColor: bg }]}>
+        <Icon name={icon} size={14} color={color} strokeWidth={1.8} />
+      </View>
+      <Text style={statsStyles.capValue}>{value}</Text>
+      <Text style={statsStyles.capUnit}>{unit}</Text>
+    </Animated.View>
+  );
+
+  return (
+    <View style={statsStyles.row}>
+      {capsule(stat1Anim, 'Route', String(sessions.length), sessions.length === 1 ? 'session' : 'sessions', Colors.primary, Colors.primaryLight)}
+      {capsule(stat2Anim, 'Map', formatDistance(totalDistM, 'km', 1), 'km', '#3d7ab5', 'rgba(61,122,181,0.12)')}
+      {capsule(stat3Anim, 'Flag', String(markerCount), markerCount === 1 ? 'flag' : 'flags', '#c87941', 'rgba(200,121,65,0.12)')}
+    </View>
+  );
+}
+
+// ── Empty State ───────────────────────────────────────────────────────────────
+function HomeEmptyState({ onPress }: { onPress: () => void }) {
+  return (
+    <View style={emptyStyles.card}>
+      <View style={emptyStyles.iconRow}>
+        <View style={[emptyStyles.iconCircle, { backgroundColor: Colors.primaryLight }]}>
+          <Icon name="Mountain" size={24} color={Colors.primary} strokeWidth={1.5} />
+        </View>
+        <View style={[emptyStyles.iconCircle, { backgroundColor: 'rgba(61,122,181,0.12)', marginLeft: -10 }]}>
+          <Icon name="Flag" size={20} color="#3d7ab5" strokeWidth={1.5} />
+        </View>
+      </View>
+      <Text style={emptyStyles.heading}>Your adventure begins here</Text>
+      <Text style={emptyStyles.body}>Start your first hike or run to see your stats and history</Text>
+      <TouchableOpacity style={emptyStyles.cta} onPress={onPress} activeOpacity={0.8}>
+        <Icon name="Play" size={14} color="#fff" strokeWidth={2.5} />
+        <Text style={emptyStyles.ctaText}>Start a Hike</Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 // ── Recent Activity Strip ─────────────────────────────────────────────────────
@@ -40,25 +100,38 @@ function RecentActivityStrip({ onPress }: { onPress: () => void }) {
   const sessions = useSessionStore(s => s.sessions);
   if (sessions.length === 0) return null;
 
-  const last = [...sessions].sort((a, b) => b.startedAt - a.startedAt)[0];
+  const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
+  const last = sorted[0];
   const isRun = last.activityMode === 'running';
   const date = new Date(last.startedAt);
   const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const label = last.name ?? `${isRun ? 'Run' : 'Hike'} · ${dateStr}`;
+  const flagCount = last.markerIds?.length ?? 0;
+  const elevStr = `+${last.elevationGainM ?? 0}m elev`;
+  const flagStr = `${flagCount} flag${flagCount !== 1 ? 's' : ''}`;
 
   return (
-    <TouchableOpacity style={recentStyles.strip} onPress={onPress} activeOpacity={0.8}>
-      <View style={[recentStyles.iconWrap, { backgroundColor: isRun ? 'rgba(61,122,181,0.12)' : Colors.primaryLight }]}>
-        <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={20} color={isRun ? '#3d7ab5' : Colors.primary} strokeWidth={1.8} />
-      </View>
-      <View style={recentStyles.info}>
-        <Text style={recentStyles.label} numberOfLines={1}>{label}</Text>
-        <Text style={recentStyles.stats}>
-          {formatDistance(last.distanceM, 'km', 1)} km · {formatDuration(last.durationS)}
-        </Text>
-      </View>
-      <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
-    </TouchableOpacity>
+    <View style={recentStyles.stripWrap}>
+      <TouchableOpacity style={recentStyles.strip} onPress={onPress} activeOpacity={0.8}>
+        <View style={[recentStyles.iconWrap, { backgroundColor: isRun ? 'rgba(61,122,181,0.12)' : Colors.primaryLight }]}>
+          <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={20} color={isRun ? '#3d7ab5' : Colors.primary} strokeWidth={1.8} />
+        </View>
+        <View style={recentStyles.info}>
+          <Text style={recentStyles.label} numberOfLines={1}>{label}</Text>
+          <Text style={recentStyles.stats}>
+            {formatDistance(last.distanceM, 'km', 1)} km · {formatDuration(last.durationS)}
+          </Text>
+          <Text style={recentStyles.statsExtra}>{elevStr} · {flagStr}</Text>
+        </View>
+        <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
+      </TouchableOpacity>
+      {sessions.length >= 2 && (
+        <TouchableOpacity style={recentStyles.viewAll} onPress={onPress}>
+          <Text style={recentStyles.viewAllText}>View all</Text>
+          <Icon name="ChevronRight" size={12} color={Colors.primary} strokeWidth={2.5} />
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 
@@ -133,6 +206,13 @@ function EntryButton({ iconName, label, onPress }: {
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function HomeScreen() {
   const nav = useNavigation<Nav>();
+  const uiMode = useAppStore(s => s.uiMode);
+  const sessions = useSessionStore(s => s.sessions);
+  const allMarkers = useMarkerStore(s => s.markers);
+  const region = getCurrentRegion();
+  const markerCount = allMarkers.filter(m => m.regionCode === region.code).length;
+  const hasData = sessions.length > 0 || markerCount > 0;
+
   const screenOpacity = useRef(new Animated.Value(0)).current;
   const card1Anim = useRef(new Animated.Value(0)).current;
   const card2Anim = useRef(new Animated.Value(0)).current;
@@ -159,9 +239,15 @@ export function HomeScreen() {
                 <Text style={styles.logoBadgeText}>β</Text>
               </View>
             </View>
-            <Text style={styles.greeting}>{getGreeting()}</Text>
+            <Text style={styles.greeting}>{getGreeting(uiMode)}</Text>
             <Text style={styles.headerSub}>Where are you headed today?</Text>
           </View>
+
+          {/* Quick Stats or Empty State */}
+          {hasData
+            ? <QuickStats sessions={sessions} markerCount={markerCount} />
+            : <HomeEmptyState onPress={() => nav.navigate('Hiking')} />
+          }
 
           {/* Activity Cards */}
           <RecentActivityStrip onPress={() => nav.navigate('MapHistory')} />
@@ -265,10 +351,11 @@ const styles = StyleSheet.create({
 });
 
 const recentStyles = StyleSheet.create({
+  stripWrap: { marginBottom: Spacing.md },
   strip: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     backgroundColor: Colors.surface, borderRadius: Radius.card,
-    padding: Spacing.md, marginBottom: Spacing.md,
+    padding: Spacing.md,
     borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
   },
   iconWrap: {
@@ -278,4 +365,47 @@ const recentStyles = StyleSheet.create({
   info: { flex: 1 },
   label: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary },
   stats: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+  statsExtra: { fontSize: FontSize.tiny, color: Colors.textMuted, marginTop: 1 },
+  viewAll: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    alignSelf: 'flex-end', paddingTop: Spacing.xs, paddingRight: 2,
+  },
+  viewAllText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.primary },
+});
+
+const statsStyles = StyleSheet.create({
+  row: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.xl },
+  capsule: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.surface, borderRadius: Radius.button ?? 12,
+    paddingVertical: 10, paddingHorizontal: 10,
+    borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
+  },
+  capIcon: {
+    width: 26, height: 26, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  capValue: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
+  capUnit: { fontSize: FontSize.tiny, color: Colors.textMuted, fontWeight: '500', marginTop: 1 },
+});
+
+const emptyStyles = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.surface, borderRadius: Radius.cardLg ?? 20,
+    alignItems: 'center', padding: Spacing.xl, marginBottom: Spacing.xl,
+    borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
+  },
+  iconRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.md },
+  iconCircle: {
+    width: 48, height: 48, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heading: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, marginBottom: 6, textAlign: 'center' },
+  body: { fontSize: FontSize.body, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: Spacing.lg },
+  cta: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.primary, borderRadius: Radius.button ?? 12,
+    paddingHorizontal: Spacing.lg, paddingVertical: 10,
+  },
+  ctaText: { fontSize: FontSize.caption, fontWeight: '700', color: '#fff' },
 });

@@ -20,6 +20,7 @@ import { useAppStore, UIMode } from '../store/useAppStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
+import { BackButton } from '../components/BackButton';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -160,10 +161,7 @@ export function SettingsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
-          <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
+        <BackButton variant="inline" />
         <Text style={styles.topTitle}>Settings</Text>
         <TouchableOpacity
           style={[styles.saveBtn, hasChanges && styles.saveBtnActive]}

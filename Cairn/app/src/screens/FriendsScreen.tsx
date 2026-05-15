@@ -16,6 +16,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
+import { BackButton } from '../components/BackButton';
 import { MOCK_FRIENDS } from '../data/mockData';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -225,10 +226,7 @@ export function FriendsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
-          <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
+        <BackButton variant="inline" />
         <Text style={styles.topTitle}>Friends</Text>
         <TouchableOpacity style={styles.addTopBtn} onPress={() => setShowAdd(true)}>
           <Icon name="UserPlus" size={14} color="#fff" strokeWidth={2} />

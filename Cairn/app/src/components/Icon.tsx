@@ -6,7 +6,7 @@
 import React from 'react';
 import {
   Mountain, PersonStanding, Map, Users, Settings2,
-  ChevronRight, ChevronLeft, Play, Square, Flag,
+  ChevronRight, ChevronLeft, ChevronDown, Play, Square, Flag,
   TriangleAlert, Star, Navigation, Lock, Unlock,
   Target, Timer, Heart, Zap, MapPin, Route,
   // Sprint 8
@@ -27,7 +27,7 @@ import { IconSize } from './tokens';
 
 const ICON_MAP = {
   Mountain, PersonStanding, Map, Users, Settings2,
-  ChevronRight, ChevronLeft, Play, Square, Flag,
+  ChevronRight, ChevronLeft, ChevronDown, Play, Square, Flag,
   TriangleAlert, Star, Navigation, Lock, Unlock,
   Target, Timer, Heart, Zap, MapPin, Route,
   Droplets, X, Trash2, Navigation2, GitBranch,

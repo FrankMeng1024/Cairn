@@ -20,6 +20,7 @@ import { formatDistance, formatDuration } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
+import { BackButton } from '../components/BackButton';
 import { MARKER_META } from '../data/mockData';
 import type { TrackingSession } from '../store/useSessionStore';
 import type { Marker } from '../store/useMarkerStore';
@@ -149,16 +150,20 @@ function SessionCard({ session, isSelected, onPress }: {
   const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const actLabel = session.activityMode === 'running' ? 'Run' : 'Hike';
   const actColor = session.activityMode === 'running' ? '#3d7ab5' : Colors.primary;
+  const actIconBg = session.activityMode === 'running' ? 'rgba(61,122,181,0.12)' : Colors.primaryLight;
+  const actIcon: IconName = session.activityMode === 'running' ? 'PersonStanding' : 'Mountain';
   return (
     <PressRow onPress={onPress} style={{ marginBottom: Spacing.sm }}>
       <View style={[cardStyles.routeCard, isSelected && cardStyles.routeCardSelected]}>
-        <View style={[cardStyles.routeColorBar, { backgroundColor: actColor }]} />
+        <View style={[cardStyles.activityBadge, { backgroundColor: actIconBg }]}>
+          <Icon name={actIcon} size={20} color={actColor} strokeWidth={1.8} />
+        </View>
         <View style={cardStyles.routeInfo}>
           <Text style={cardStyles.routeName}>
             {session.name ?? `${actLabel} · ${dateStr}`}
           </Text>
           <Text style={cardStyles.routeMeta}>
-            {dateStr} · {formatDistance(session.distanceM, 'km', 1)} km · {formatDuration(session.durationS)}
+            {dateStr} · {formatDistance(session.distanceM, 'km', 1)} km · {formatDuration(session.durationS)} · +{session.elevationGainM}m
           </Text>
         </View>
         <View style={cardStyles.routeChevron}>
@@ -328,10 +333,7 @@ export function MapHistoryScreen() {
       {/* Top bar — overlays map */}
       <SafeAreaView style={styles.topBar} edges={['top']}>
         <View style={styles.topRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
-            <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
+          <BackButton variant="pill" />
           <Text style={styles.topTitle}>Route Map</Text>
           <TouchableOpacity
             style={styles.planBtn}
@@ -376,6 +378,10 @@ export function MapHistoryScreen() {
                 <Icon name="Route" size={40} color={Colors.textMuted} strokeWidth={1.2} />
                 <Text style={styles.emptyTitle}>No sessions yet</Text>
                 <Text style={styles.emptySubtitle}>Start hiking or running to see your routes here</Text>
+                <TouchableOpacity style={styles.emptyCta} onPress={() => nav.navigate('Hiking')}>
+                  <Icon name="Play" size={14} color="#fff" strokeWidth={2.5} />
+                  <Text style={styles.emptyCtaText}>Start a Hike</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               sessions.map(s => (
@@ -567,6 +573,12 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textSecondary },
   emptySubtitle: { fontSize: FontSize.small, color: Colors.textMuted, textAlign: 'center', maxWidth: 260 },
+  emptyCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: Spacing.sm,
+    backgroundColor: Colors.primary, borderRadius: Radius.button ?? 12,
+    paddingHorizontal: Spacing.lg, paddingVertical: 10,
+  },
+  emptyCtaText: { fontSize: FontSize.caption, fontWeight: '700', color: '#fff' },
 });
 
 const cardStyles = StyleSheet.create({
@@ -575,16 +587,21 @@ const cardStyles = StyleSheet.create({
     backgroundColor: Colors.bg, borderRadius: Radius.card,
     overflow: 'hidden', ...Shadow.card,
     borderWidth: 1, borderColor: Colors.border,
+    padding: Spacing.md, gap: Spacing.md,
   },
   routeCardSelected: {
     backgroundColor: 'rgba(93,124,70,0.06)',
     borderColor: Colors.primary + '50',
   },
-  routeColorBar: { width: 5, alignSelf: 'stretch', backgroundColor: Colors.primary },
-  routeInfo: { flex: 1, padding: Spacing.md },
+  activityBadge: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  routeInfo: { flex: 1 },
   routeName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
   routeMeta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
-  routeChevron: { paddingRight: Spacing.md },
+  routeChevron: {},
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     borderRadius: Radius.button, paddingVertical: Spacing.sm,
