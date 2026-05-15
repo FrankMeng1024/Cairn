@@ -155,3 +155,19 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 - STORY-00072 (SettingsScreen premium uplift): PASS HIGH
 - STORY-00073 (Run Complete + MapHistory polish): PASS HIGH
 - STORY-00074 (Create Account + HowItWorks UX): PASS HIGH
+
+## Sprint 27 Updates
+
+- RoutesScreen was orphaned — not in RootNavigator, not reachable from Home. Fixed in Sprint 27 as part of STORY-00077: added to RootNavigator.tsx, Routes entry button added to Home Tools section. **Process gap**: new screens must be registered in RootNavigator AND have a Home entry point before QA validation. Future QA: grep for screen name in RootNavigator as first step.
+- MapHistoryScreen auto-select: first session is now expanded on mount. Standard pattern for list-with-detail screens. Always test with sessions present (auto-select only fires when sessions.length > 0).
+- Home Tools grid: 4 buttons (Map, Routes, Friends, Settings), flex:1 each. Confirmed no overflow at 390px.
+- Wake Lock errors pre-existing and expected on all screens. r0/r1 variants. Do not flag.
+- Navigation regression Sprint 27: PASS. All paths (Home↔Hiking/Running/MapHistory/Routes/Friends/Settings) 0 new JS errors. Pre-existing Wake Lock only.
+
+## Sprint 27 Verification Summary
+
+- STORY-00075 (Run Complete PlayCircle icon): PASS HIGH
+- STORY-00076 (MapHistory No GPS — hide bare km): PASS HIGH
+- STORY-00077 (RoutesScreen premium uplift + nav wiring): PASS HIGH
+- STORY-00078 (MapHistory auto-select first session): PASS HIGH
+- STORY-00079 (HikingScreen back button top-left): PASS HIGH

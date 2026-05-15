@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAppStore } from '../store/useAppStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
+import { BackButton } from '../components/BackButton';
 import { MOCK_ROUTES } from '../data/mockData';
 
 function formatDuration(min: number) {
@@ -27,6 +28,7 @@ export function RoutesScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
+        <BackButton variant="pill" />
         <Text style={styles.title}>{isBeginner ? 'Route History' : 'Routes'}</Text>
         {isBeginner && <Text style={styles.subtitle}>Every trail you've walked, saved here</Text>}
       </View>

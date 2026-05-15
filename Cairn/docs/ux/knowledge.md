@@ -54,3 +54,13 @@ The Cairn app helps users track hikes and runs, plant location flags, and share 
 - Navigation regression Sprint 26: flags persist across screen transitions, Settings state resets on unsaved exit. Zero new JS runtime errors from Sprint 26 changes.
 - Medium friction: RotateCcw icon on "New Run" button (run complete screen) conventionally means "refresh/retry" not "start new". Label compensates but icon creates momentary cognitive mismatch. Consider PlusCircle or PlayCircle icon in future Sprint.
 - Low friction: "No GPS | km" in MapHistoryScreen expanded capsule — bare "km" unit label without a number is visually noisy. Consider hiding distance chip entirely when GPS unavailable.
+
+## Sprint 27 Knowledge Updates
+- PlayCircle icon confirmed on RunningScreen New Run button — replaces RotateCcw. No cognitive mismatch.
+- MapHistoryScreen "No GPS" sessions now show "No GPS" chip only — bare "km" unit successfully hidden when distance unavailable. Clean and clear.
+- MapHistoryScreen auto-select working — first session expanded on load AND on re-mount after navigation away/back. Placeholder text "Select a route below to view" no longer appears when sessions exist.
+- RoutesScreen premium uplift complete — gradient icon badges (sage green Mountain icon), shadow cards, stat chips with colored left-border, h1/800 title, consistent typography hierarchy. Matches Sprint 24+ design language.
+- RoutesScreen was orphaned (not in navigator) — now wired: Home Tools section has "Routes" button (Route icon), BackButton pill added to RoutesScreen header, RootNavigator updated.
+- HikingScreen layout corrected — Back button top-left, GPS pill top-right per iOS platform convention. All other screens already followed this pattern.
+- Home Tools section now has 4 buttons: Map, Routes, Friends, Settings. Each has flex:1 so they shrink proportionally at 390px — no overflow.
+- Navigation regression Sprint 27: zero new JS errors across all screen transitions. Only pre-existing Wake Lock errors from expo-keep-awake browser limitation.

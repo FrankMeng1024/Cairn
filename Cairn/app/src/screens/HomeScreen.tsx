@@ -347,6 +347,7 @@ export function HomeScreen() {
           {/* Entry Buttons */}
           <View style={styles.entriesRow}>
             <EntryButton iconName="Map" label="Map" onPress={() => nav.navigate('MapHistory')} />
+            <EntryButton iconName="Route" label="Routes" onPress={() => nav.navigate('Routes')} />
             <EntryButton iconName="Users" label="Friends" onPress={() => nav.navigate('Friends')} />
             <EntryButton iconName="Settings2" label="Settings" onPress={() => nav.navigate('Settings')} />
           </View>
