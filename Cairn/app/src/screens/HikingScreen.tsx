@@ -149,12 +149,13 @@ const arStyles = StyleSheet.create({
   },
   dropZoneText: { color: 'rgba(255,255,255,0.5)', fontSize: FontSize.small },
   cornerFlag: {
-    position: 'absolute', width: 72, height: 72,
-    borderRadius: 18, borderWidth: 2,
-    alignItems: 'center', justifyContent: 'center', gap: 2,
+    position: 'absolute', width: 80, height: 80,
+    borderRadius: 20, borderWidth: 2.5,
+    alignItems: 'center', justifyContent: 'center', gap: 3,
+    ...Shadow.card,
   },
-  cornerEmoji: { fontSize: 26 },
-  cornerLabel: { fontSize: FontSize.tiny, fontWeight: '700' },
+  cornerEmoji: { fontSize: 28 },
+  cornerLabel: { fontSize: FontSize.small, fontWeight: '800' },
   closeBtn: {
     position: 'absolute', bottom: 48, alignSelf: 'center',
     backgroundColor: 'rgba(255,255,255,0.15)',
@@ -425,8 +426,8 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 350, left: W / 2 - 10,
     width: 20, height: 20, alignItems: 'center', justifyContent: 'center',
   },
-  locationDotInner: { width: 14, height: 14, borderRadius: 7, backgroundColor: Colors.primary, borderWidth: 2.5, borderColor: '#fff' },
-  locationPulse: { position: 'absolute', width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: Colors.primary + '50' },
+  locationDotInner: { width: 16, height: 16, borderRadius: 8, backgroundColor: Colors.primary, borderWidth: 3, borderColor: '#fff' },
+  locationPulse: { position: 'absolute', width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: Colors.primary + '60' },
   markerPin: {
     position: 'absolute', width: 32, height: 32,
     borderRadius: 16, borderWidth: 2.5,
@@ -448,10 +449,11 @@ const styles = StyleSheet.create({
 
   trackingBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255,255,255,0.97)',
     marginHorizontal: Spacing.base, marginTop: Spacing.sm,
     borderRadius: Radius.card, padding: Spacing.md,
     gap: Spacing.base, ...Shadow.card,
+    borderWidth: 1, borderColor: Colors.border,
   },
   trackingStat: { alignItems: 'center', flex: 1 },
   trackingValue: { fontSize: FontSize.h3, fontWeight: '800', color: Colors.textPrimary },

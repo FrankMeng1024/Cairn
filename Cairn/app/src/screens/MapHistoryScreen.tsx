@@ -200,9 +200,9 @@ const styles = StyleSheet.create({
   listPanel: { backgroundColor: Colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: 380, paddingTop: Spacing.sm, paddingHorizontal: Spacing.base, paddingBottom: Spacing.xxl, ...Shadow.overlay },
   panelHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: Spacing.md },
 
-  routeCard: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.sm, backgroundColor: Colors.bg, borderRadius: Radius.card, overflow: 'hidden', ...Shadow.card },
-  routeCardSelected: { backgroundColor: 'rgba(93,124,70,0.06)' },
-  routeColorBar: { width: 4, alignSelf: 'stretch', backgroundColor: Colors.primary },
+  routeCard: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.sm, backgroundColor: Colors.bg, borderRadius: Radius.card, overflow: 'hidden', ...Shadow.card, borderWidth: 1, borderColor: Colors.border },
+  routeCardSelected: { backgroundColor: 'rgba(93,124,70,0.06)', borderColor: Colors.primary + '40' },
+  routeColorBar: { width: 5, alignSelf: 'stretch', backgroundColor: Colors.primary },
   routeInfo: { flex: 1, padding: Spacing.md },
   routeName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
   routeMeta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },

@@ -76,8 +76,8 @@ function AnimatedCairn() {
 }
 
 const cairnStyles = StyleSheet.create({
-  container: { alignItems: 'center', gap: 3 },
-  stone: { height: 10, borderRadius: 5 },
+  container: { alignItems: 'center', gap: 4 },
+  stone: { height: 11, borderRadius: 6 },
 });
 
 // ── Auth Screen ────────────────────────────────────────────────────────────────

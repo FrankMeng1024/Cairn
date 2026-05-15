@@ -30,14 +30,16 @@ function ActivityCard({
       onPress={onPress}
       activeOpacity={0.82}
     >
-      <View style={[styles.activityEmojiBg, { backgroundColor: accent + '1a' }]}>
+      <View style={[styles.activityEmojiBg, { backgroundColor: accent + '22' }]}>
         <Text style={styles.activityEmoji}>{emoji}</Text>
       </View>
       <View style={styles.activityText}>
         <Text style={styles.activityTitle}>{title}</Text>
         <Text style={styles.activitySubtitle}>{subtitle}</Text>
       </View>
-      <Text style={styles.activityChevron}>›</Text>
+      <View style={[styles.activityArrow, { backgroundColor: accent + '18' }]}>
+        <Text style={[styles.activityChevron, { color: accent }]}>›</Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -69,7 +71,7 @@ export function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.logo}>Cairn</Text>
-          <Text style={styles.headerSub}>选择今天的活动</Text>
+          <Text style={styles.headerSub}>选择今天的活动 ↓</Text>
         </View>
 
         {/* Activity Cards */}
@@ -134,7 +136,7 @@ const styles = StyleSheet.create({
   activityCard: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.cardLg,
-    borderLeftWidth: 4,
+    borderLeftWidth: 5,
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.base,
@@ -142,13 +144,13 @@ const styles = StyleSheet.create({
     ...Shadow.card,
   },
   activityEmojiBg: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  activityEmoji: { fontSize: 28 },
+  activityEmoji: { fontSize: 30 },
   activityText: { flex: 1 },
   activityTitle: {
     fontSize: FontSize.h2,
@@ -161,10 +163,13 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 18,
   },
+  activityArrow: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+  },
   activityChevron: {
-    fontSize: 26,
-    color: Colors.textMuted,
-    marginRight: 4,
+    fontSize: 22,
+    fontWeight: '700',
   },
 
   divider: {
