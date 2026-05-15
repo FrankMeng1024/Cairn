@@ -7,11 +7,12 @@
  * - ChevronLeft back, ChevronRight on action rows
  * - uiMode persisted via storage (localStorage on web, AsyncStorage-ready on native)
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Switch, Alert, Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -107,8 +108,8 @@ function ToggleRow({
       <Switch
         value={value}
         onValueChange={onToggle}
-        trackColor={{ false: Colors.border, true: Colors.primaryLight }}
-        thumbColor={value ? Colors.primary : Colors.textMuted}
+        trackColor={{ false: '#E0E0E0', true: Colors.primary }}
+        thumbColor="#FFFFFF"
       />
     </View>
   );
@@ -151,6 +152,20 @@ export function SettingsScreen() {
   const hasChanges = pendingMode !== uiMode
     || shareAfterAdd !== true
     || nightMode !== false;
+
+  // Shimmer animation — active only when hasChanges
+  const shimmerX = useRef(new Animated.Value(-200)).current;
+  useEffect(() => {
+    if (!hasChanges) {
+      shimmerX.setValue(-200);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.timing(shimmerX, { toValue: 300, duration: 2000, useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [hasChanges]);
 
   const handleSave = () => {
     setUIMode(pendingMode);
@@ -268,7 +283,7 @@ export function SettingsScreen() {
           />
         </View>
 
-        {/* Save button (bottom) */}
+        {/* Save button (bottom) with shimmer when active */}
         <TouchableOpacity
           style={[styles.saveBtnBottom, hasChanges && styles.saveBtnBottomActive]}
           onPress={handleSave}
@@ -276,6 +291,19 @@ export function SettingsScreen() {
         >
           <Icon name="Save" size={IconSize.sm} color={hasChanges ? '#fff' : Colors.textMuted} strokeWidth={2} />
           <Text style={[styles.saveBtnBottomText, !hasChanges && { color: Colors.textMuted }]}>Save Settings</Text>
+          {hasChanges && (
+            <Animated.View
+              style={[styles.shimmerOverlay, { transform: [{ translateX: shimmerX }] }]}
+              pointerEvents="none"
+            >
+              <LinearGradient
+                colors={['transparent', 'rgba(255,255,255,0.25)', 'transparent']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{ width: 100, height: '100%' }}
+              />
+            </Animated.View>
+          )}
         </TouchableOpacity>
 
         <Text style={styles.version}>Cairn v0.1.0</Text>
@@ -344,10 +372,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, justifyContent: 'center',
     marginHorizontal: Spacing.base, marginTop: Spacing.xl,
     backgroundColor: Colors.border, borderRadius: Radius.button,
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.md, overflow: 'hidden',
   },
   saveBtnBottomActive: { backgroundColor: Colors.primary },
   saveBtnBottomText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
+  shimmerOverlay: {
+    position: 'absolute', top: 0, bottom: 0, left: 0,
+  },
 
   version: {
     textAlign: 'center', fontSize: FontSize.small, color: Colors.textMuted,

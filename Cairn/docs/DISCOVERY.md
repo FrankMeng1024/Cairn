@@ -105,7 +105,7 @@ Mobile App (React Native + Expo, iOS priority)
 
 ## Acceptance Mode
 
-`acceptance_mode: manual` — 用户每Sprint验收。
+`acceptance_mode: auto` — Autonomous iteration until Virtual User verdict >= 9.5/10.
 
 ---
 

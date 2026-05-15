@@ -31,7 +31,8 @@ import { getCurrentRegion } from '../config/regions';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 // ── Time greeting ─────────────────────────────────────────────────────────────
-function getGreeting(mode: 'beginner' | 'expert') {
+function getGreeting(mode: 'beginner' | 'expert', hasData: boolean) {
+  if (!hasData) return 'Welcome to Cairn';
   const h = new Date().getHours();
   const modeLabel = mode === 'expert' ? 'Navigator' : 'Explorer';
   if (h >= 5 && h < 12) return `Good morning, ${modeLabel}`;
@@ -75,12 +76,23 @@ function QuickStats({ sessions, markerCount }: { sessions: any[]; markerCount: n
 
 // ── Empty State ───────────────────────────────────────────────────────────────
 function HomeEmptyState({ onPress }: { onPress: () => void }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.05, duration: 1500, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1.0, duration: 1500, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
   return (
     <View style={emptyStyles.card}>
       <View style={emptyStyles.iconRow}>
-        <View style={[emptyStyles.iconCircle, { backgroundColor: Colors.primaryLight }]}>
+        <Animated.View style={[emptyStyles.iconCircle, { backgroundColor: Colors.primaryLight, transform: [{ scale: pulse }] }]}>
           <Icon name="Mountain" size={24} color={Colors.primary} strokeWidth={1.5} />
-        </View>
+        </Animated.View>
         <View style={[emptyStyles.iconCircle, { backgroundColor: 'rgba(61,122,181,0.12)', marginLeft: -10 }]}>
           <Icon name="Flag" size={20} color="#3d7ab5" strokeWidth={1.5} />
         </View>
@@ -91,6 +103,27 @@ function HomeEmptyState({ onPress }: { onPress: () => void }) {
         <Icon name="Play" size={14} color="#fff" strokeWidth={2.5} />
         <Text style={emptyStyles.ctaText}>Start a Hike</Text>
       </TouchableOpacity>
+    </View>
+  );
+}
+
+// ── How It Works Row ──────────────────────────────────────────────────────────
+function HowItWorks() {
+  const steps = [
+    { icon: 'Flag' as IconName, label: 'Plant flags', color: Colors.primary, bg: Colors.primaryLight },
+    { icon: 'Users' as IconName, label: 'Share with friends', color: '#3d7ab5', bg: 'rgba(61,122,181,0.15)' },
+    { icon: 'Compass' as IconName, label: 'Guide others', color: '#c87941', bg: 'rgba(200,121,65,0.12)' },
+  ];
+  return (
+    <View style={howStyles.row}>
+      {steps.map((s, i) => (
+        <View key={i} style={howStyles.step}>
+          <View style={[howStyles.iconCircle, { backgroundColor: s.bg }]}>
+            <Icon name={s.icon} size={18} color={s.color} strokeWidth={1.8} />
+          </View>
+          <Text style={howStyles.label}>{s.label}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -167,9 +200,14 @@ function ActivityCard({
           end={{ x: 1, y: 1 }}
           style={styles.activityCard}
         >
-          <View style={[styles.activityIconBadge, { backgroundColor: accentColor + '20' }]}>
+          <LinearGradient
+            colors={[accentColor + '33', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.activityIconBadge}
+          >
             <Icon name={iconName} size={IconSize.xl} color={accentColor} strokeWidth={1.8} />
-          </View>
+          </LinearGradient>
           <View style={styles.activityText}>
             <Text style={styles.activityTitle}>{title}</Text>
             <Text style={styles.activitySubtitle}>{subtitle}</Text>
@@ -239,14 +277,17 @@ export function HomeScreen() {
                 <Text style={styles.logoBadgeText}>β</Text>
               </View>
             </View>
-            <Text style={styles.greeting}>{getGreeting(uiMode)}</Text>
+            <Text style={styles.greeting}>{getGreeting(uiMode, hasData)}</Text>
             <Text style={styles.headerSub}>Where are you headed today?</Text>
           </View>
 
           {/* Quick Stats or Empty State */}
           {hasData
             ? <QuickStats sessions={sessions} markerCount={markerCount} />
-            : <HomeEmptyState onPress={() => nav.navigate('Hiking')} />
+            : <>
+                <HomeEmptyState onPress={() => nav.navigate('Hiking')} />
+                <HowItWorks />
+              </>
           }
 
           {/* Activity Cards */}
@@ -408,4 +449,17 @@ const emptyStyles = StyleSheet.create({
     paddingHorizontal: Spacing.lg, paddingVertical: 10,
   },
   ctaText: { fontSize: FontSize.caption, fontWeight: '700', color: '#fff' },
+});
+
+const howStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.xl,
+    justifyContent: 'space-between',
+  },
+  step: { flex: 1, alignItems: 'center', gap: 6 },
+  iconCircle: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  label: { fontSize: FontSize.tiny, color: Colors.textSecondary, textAlign: 'center', fontWeight: '500', lineHeight: 14 },
 });

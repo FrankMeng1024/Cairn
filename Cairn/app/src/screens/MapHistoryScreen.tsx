@@ -4,7 +4,7 @@
  * - STORY-00043: session track polyline on map when session selected
  * - STORY-00046: flag detail bottom sheet, richer flag list items, improved empty states
  */
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert,
   Dimensions, Animated,
@@ -141,10 +141,12 @@ function TrackPolyline({ session }: { session: TrackingSession }) {
 }
 
 // ── Session card ─────────────────────────────────────────────────────────────
-function SessionCard({ session, isSelected, onPress }: {
+function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: {
   session: TrackingSession;
   isSelected: boolean;
+  isExpanded: boolean;
   onPress: () => void;
+  onViewOnMap: () => void;
 }) {
   const date = new Date(session.startedAt);
   const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -152,30 +154,67 @@ function SessionCard({ session, isSelected, onPress }: {
   const actColor = session.activityMode === 'running' ? '#3d7ab5' : Colors.primary;
   const actIconBg = session.activityMode === 'running' ? 'rgba(61,122,181,0.12)' : Colors.primaryLight;
   const actIcon: IconName = session.activityMode === 'running' ? 'PersonStanding' : 'Mountain';
+
+  const expandAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(expandAnim, {
+      toValue: isExpanded ? 1 : 0, duration: 200, useNativeDriver: false,
+    }).start();
+  }, [isExpanded]);
+
+  const expandedHeight = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 100] });
+
   return (
-    <PressRow onPress={onPress} style={{ marginBottom: Spacing.sm }}>
-      <View style={[cardStyles.routeCard, isSelected && cardStyles.routeCardSelected]}>
-        <View style={[cardStyles.activityBadge, { backgroundColor: actIconBg }]}>
-          <Icon name={actIcon} size={20} color={actColor} strokeWidth={1.8} />
+    <View style={{ marginBottom: Spacing.sm }}>
+      <PressRow onPress={onPress}>
+        <View style={[cardStyles.routeCard, (isSelected || isExpanded) && cardStyles.routeCardSelected]}>
+          <View style={[cardStyles.activityBadge, { backgroundColor: actIconBg }]}>
+            <Icon name={actIcon} size={20} color={actColor} strokeWidth={1.8} />
+          </View>
+          <View style={cardStyles.routeInfo}>
+            <Text style={cardStyles.routeName}>
+              {session.name ?? `${actLabel} · ${dateStr}`}
+            </Text>
+            <Text style={cardStyles.routeMeta}>
+              {dateStr} · {formatDistance(session.distanceM, 'km', 1)} km · {formatDuration(session.durationS)}
+            </Text>
+          </View>
+          <View style={cardStyles.routeChevron}>
+            <Icon
+              name={isExpanded ? 'ChevronDown' : 'ChevronRight'}
+              size={IconSize.sm}
+              color={isExpanded ? actColor : Colors.textMuted}
+              strokeWidth={2.5}
+            />
+          </View>
         </View>
-        <View style={cardStyles.routeInfo}>
-          <Text style={cardStyles.routeName}>
-            {session.name ?? `${actLabel} · ${dateStr}`}
-          </Text>
-          <Text style={cardStyles.routeMeta}>
-            {dateStr} · {formatDistance(session.distanceM, 'km', 1)} km · {formatDuration(session.durationS)} · +{session.elevationGainM}m
-          </Text>
+      </PressRow>
+      {/* Inline expanded stats */}
+      <Animated.View style={[cardStyles.expandedArea, { height: expandedHeight, opacity: expandAnim }]}>
+        <View style={cardStyles.expandedStats}>
+          <View style={cardStyles.expandedStat}>
+            <Text style={cardStyles.expandedStatVal}>{formatDistance(session.distanceM, 'km', 2)}</Text>
+            <Text style={cardStyles.expandedStatLbl}>km</Text>
+          </View>
+          <View style={cardStyles.expandedStat}>
+            <Text style={cardStyles.expandedStatVal}>{formatDuration(session.durationS)}</Text>
+            <Text style={cardStyles.expandedStatLbl}>time</Text>
+          </View>
+          <View style={cardStyles.expandedStat}>
+            <Text style={cardStyles.expandedStatVal}>+{session.elevationGainM ?? 0}m</Text>
+            <Text style={cardStyles.expandedStatLbl}>elev</Text>
+          </View>
+          <View style={cardStyles.expandedStat}>
+            <Text style={cardStyles.expandedStatVal}>{session.markerIds?.length ?? 0}</Text>
+            <Text style={cardStyles.expandedStatLbl}>flags</Text>
+          </View>
         </View>
-        <View style={cardStyles.routeChevron}>
-          <Icon
-            name={isSelected ? 'ChevronDown' : 'ChevronRight'}
-            size={IconSize.sm}
-            color={isSelected ? actColor : Colors.textMuted}
-            strokeWidth={2.5}
-          />
-        </View>
-      </View>
-    </PressRow>
+        <TouchableOpacity style={[cardStyles.viewOnMapBtn, { borderColor: actColor }]} onPress={onViewOnMap}>
+          <Icon name="Map" size={14} color={actColor} strokeWidth={2} />
+          <Text style={[cardStyles.viewOnMapText, { color: actColor }]}>View on Map</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -242,6 +281,7 @@ function FlagDetailSheet({ marker, onClose, onDelete }: {
 export function MapHistoryScreen() {
   const nav = useNavigation<Nav>();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
   const [tab, setTab] = useState<'routes' | 'flags'>('routes');
 
@@ -389,7 +429,12 @@ export function MapHistoryScreen() {
                   key={s.id}
                   session={s}
                   isSelected={selectedSessionId === s.id}
-                  onPress={() => setSelectedSessionId(selectedSessionId === s.id ? null : s.id)}
+                  isExpanded={expandedSessionId === s.id}
+                  onPress={() => setExpandedSessionId(expandedSessionId === s.id ? null : s.id)}
+                  onViewOnMap={() => {
+                    setSelectedSessionId(s.id);
+                    setExpandedSessionId(null);
+                  }}
                 />
               ))
             )}
@@ -610,6 +655,28 @@ const cardStyles = StyleSheet.create({
     backgroundColor: Colors.dangerBg,
   },
   deleteBtnText: { color: Colors.danger, fontWeight: '600', fontSize: FontSize.caption },
+  expandedArea: {
+    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.card,
+    marginTop: -4,
+    borderWidth: 1, borderTopWidth: 0, borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+  },
+  expandedStats: {
+    flexDirection: 'row', justifyContent: 'space-around',
+    paddingTop: Spacing.md, paddingBottom: Spacing.sm,
+  },
+  expandedStat: { alignItems: 'center' },
+  expandedStatVal: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
+  expandedStatLbl: { fontSize: FontSize.tiny, color: Colors.textMuted, marginTop: 1 },
+  viewOnMapBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'center', borderWidth: 1, borderRadius: 20,
+    paddingHorizontal: Spacing.md, paddingVertical: 7,
+    marginBottom: Spacing.sm,
+  },
+  viewOnMapText: { fontSize: FontSize.small, fontWeight: '600' },
 });
 
 const flagStyles = StyleSheet.create({

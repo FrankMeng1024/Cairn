@@ -11,7 +11,7 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated,
+  View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -141,6 +141,13 @@ export function RunningScreen() {
 
   // ── Stopped state ──────────────────────────────────────────────────────────
   if (runState === 'stopped') {
+    const distKm = formatDistance(distanceM, 'km', 2);
+    const handleShare = async () => {
+      try {
+        await Share.share({ message: `I completed a ${distKm} km run on Cairn!` });
+      } catch (_) { /* sharing unavailable */ }
+    };
+
     return (
       <SafeAreaView style={preStyles.container} edges={['top', 'bottom']}>
         <View style={preStyles.header}>
@@ -149,10 +156,14 @@ export function RunningScreen() {
         </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.xl }}>
           <View style={runStyles.statsBar}>
-            <StatItem value={formatDistance(distanceM, 'km', 2)} label="km" />
+            <StatItem value={distKm} label="km" />
             <StatItem value={durationDisplay} label="elapsed" />
             <StatItem value={paceDisplay} label="pace" />
           </View>
+          <TouchableOpacity style={preStyles.shareBtn} onPress={handleShare}>
+            <Icon name="Send" size={16} color="#3d7ab5" strokeWidth={2} />
+            <Text style={preStyles.shareBtnText}>Share</Text>
+          </TouchableOpacity>
         </View>
         <View style={preStyles.footer}>
           <TouchableOpacity style={preStyles.startBtn} onPress={() => { setRunState('pre'); }}>
@@ -234,7 +245,10 @@ export function RunningScreen() {
               <Text style={preStyles.startBtnText}>Start Running</Text>
             </TouchableOpacity>
           </Animated.View>
-          <Text style={preStyles.lockHint}>Screen locks on start · Double-tap to unlock</Text>
+          <View style={preStyles.lockHintRow}>
+            <Icon name="Lock" size={16} color={Colors.textMuted} strokeWidth={2} />
+            <Text style={preStyles.lockHint}>Double-tap to unlock</Text>
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -347,10 +361,11 @@ const preStyles = StyleSheet.create({
     backgroundColor: Colors.surface, borderRadius: Radius.card,
     flexDirection: 'row', alignItems: 'center',
     padding: Spacing.base, gap: Spacing.md,
-    borderWidth: 2, borderColor: 'transparent',
+    borderWidth: 1, borderColor: Colors.border,
+    borderLeftWidth: 3, borderLeftColor: 'transparent',
     ...Shadow.card,
   },
-  routeCardSelected: { borderColor: '#3d7ab5', backgroundColor: 'rgba(61,122,181,0.04)' },
+  routeCardSelected: { borderLeftColor: Colors.primary },
   routeIconBadge: {
     width: 48, height: 48, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
@@ -370,7 +385,14 @@ const preStyles = StyleSheet.create({
     flexDirection: 'row', gap: Spacing.sm, justifyContent: 'center',
   },
   startBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.h3 },
+  lockHintRow: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center' },
   lockHint: { fontSize: FontSize.small, color: Colors.textMuted, textAlign: 'center' },
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderColor: '#3d7ab5', borderRadius: 22,
+    paddingHorizontal: Spacing.lg, paddingVertical: 10,
+  },
+  shareBtnText: { color: '#3d7ab5', fontWeight: '600', fontSize: FontSize.caption },
 });
 
 // ── Styles: running ─────────────────────────────────────────────────────────
