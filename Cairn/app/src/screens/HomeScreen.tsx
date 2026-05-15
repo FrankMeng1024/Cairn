@@ -40,6 +40,46 @@ function getGreeting(mode: 'beginner' | 'expert', hasData: boolean) {
   return `Good evening, ${modeLabel}`;
 }
 
+const SUBTITLES: Record<string, string[]> = {
+  morning: [
+    'The hills are calling — will you answer?',
+    'Best trails start with early boots.',
+    'Catch the light before the crowds do.',
+    'Every summit earns its view.',
+    'Fresh air waits just past the trailhead.',
+  ],
+  afternoon: [
+    'Where are you headed today?',
+    'The ridge won\'t hike itself.',
+    'Great routes are made, not found.',
+    'Afternoon light hits the peaks just right.',
+    'Pick a trail. Any trail. Go.',
+  ],
+  evening: [
+    'Golden hour on the track — don\'t miss it.',
+    'One last stretch before the stars come out.',
+    'Twilight trails are trails remembered.',
+    'Wind down with a walk, not a screen.',
+    'Even short routes leave big footprints.',
+  ],
+  night: [
+    'Rest up. Tomorrow\'s trail is ready.',
+    'Log today. Plan tomorrow.',
+    'The mountains will wait for morning.',
+    'Good nights make great mornings on the track.',
+    'Recover well. The outdoors isn\'t going anywhere.',
+  ],
+};
+
+function getSubtitle(hour: number): string {
+  let pool: string[];
+  if (hour >= 5 && hour < 12) pool = SUBTITLES.morning;
+  else if (hour >= 12 && hour < 18) pool = SUBTITLES.afternoon;
+  else if (hour >= 18 && hour < 24) pool = SUBTITLES.evening;
+  else pool = SUBTITLES.night;
+  return pool[hour % pool.length];
+}
+
 // ── Quick Stats Row ───────────────────────────────────────────────────────────
 function QuickStats({ sessions, markerCount }: { sessions: any[]; markerCount: number }) {
   const totalDistM = sessions.reduce((acc, s) => acc + s.distanceM, 0);
@@ -300,7 +340,7 @@ export function HomeScreen() {
               </View>
             </View>
             <Text style={styles.greeting}>{getGreeting(uiMode, hasData)}</Text>
-            <Text style={styles.headerSub}>Where are you headed today?</Text>
+            <Text style={styles.headerSub}>{getSubtitle(new Date().getHours())}</Text>
           </View>
 
           {/* Quick Stats or Empty State */}

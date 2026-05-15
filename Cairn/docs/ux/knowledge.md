@@ -80,3 +80,13 @@ The Cairn app helps users track hikes and runs, plant location flags, and share 
 - FlagPlantSheet char counter: visible immediately on focus ("0/30"), turns red at 30/30 hard limit. Good progressive disclosure — sets expectations before typing. Improvement: a warning state at ~25/30 would give breathing room before hard cutoff.
 - Settings switches: green fill = on, light grey (#E0E0E0) = off. Unambiguous visual distinction, zero learning curve.
 - Navigation regression Sprint 29: 2 Wake Lock errors pre-existing (same as Sprint 28). Zero new JS errors introduced.
+
+## Sprint 30 Knowledge Updates
+- Sprint 30 introduced auto-focus on Create Account Name field — green border signals active input immediately on mount, consistent across re-navigation. Meaningful reduction in first-interaction friction.
+- Character counter uses three-state color system: grey (safe) → amber at 25/30 → red at 30/30. Border also turns red at limit. Color escalation communicates urgency without requiring number-reading.
+- Routes screen now displays human-readable dates ("12 May", "3 May", "28 Apr") instead of ISO strings. Zero cognitive load to parse.
+- Settings dirty-state tracking is precise: hint pill appears only when unsaved changes exist, disappears on revert or save. Save button color (grey/green) reinforces the state. No false positives across multiple toggles.
+- HomeScreen time-of-day greeting persists correctly across navigation and does not flicker. Personality mode (Navigator/Explorer) is reflected in the greeting subtitle alongside the time-of-day variant.
+- Navigation regression Sprint 30: zero new console errors across all paths. Only pre-existing Wake Lock warnings (browser limitation, not app bug).
+- Low friction (existing): Create Account Name field error on blur-without-input is slightly punitive for users exploring the form. Pre-existing onBlur validation behavior.
+- Low friction (new): Char counter amber window is 5 characters (25-29). Adequate for a 30-char field but tight for fast typists.

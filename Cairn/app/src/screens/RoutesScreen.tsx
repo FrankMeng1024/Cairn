@@ -21,6 +21,22 @@ function formatDuration(min: number) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+function formatRouteDate(isoStr: string): string {
+  const today = new Date();
+  const date = new Date(isoStr);
+  const todayStr = today.toDateString();
+  const dateStr = date.toDateString();
+  if (dateStr === todayStr) return 'Today';
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (dateStr === yesterday.toDateString()) return 'Yesterday';
+  const day = date.getDate();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const month = months[date.getMonth()];
+  if (date.getFullYear() === today.getFullYear()) return `${day} ${month}`;
+  return `${day} ${month} ${date.getFullYear()}`;
+}
+
 export function RoutesScreen() {
   const { uiMode } = useAppStore();
   const isBeginner = uiMode === 'beginner';
@@ -55,7 +71,7 @@ export function RoutesScreen() {
 
               <View style={styles.routeContent}>
                 <Text style={styles.routeName}>{item.name}</Text>
-                <Text style={styles.routeDate}>{item.date}</Text>
+                <Text style={styles.routeDate}>{formatRouteDate(item.date)}</Text>
                 {isBeginner ? (
                   <View style={styles.statsRow}>
                     <View style={[styles.statChip, { borderLeftColor: iconColor }]}>

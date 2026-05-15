@@ -197,7 +197,7 @@ function FlagPlantSheet({ onClose, onSave }: {
             onBlur={() => setNoteFocused(false)}
           />
           {(noteFocused || charCount > 0) && (
-            <Text style={[sheetStyles.charCount, charCount >= 30 && { color: Colors.danger }]}>{charCount}/30</Text>
+            <Text style={[sheetStyles.charCount, charCount >= 30 ? { color: Colors.danger } : charCount >= 25 ? { color: Colors.warning } : null]}>{charCount}/30</Text>
           )}
         </View>
         {/* Save button */}

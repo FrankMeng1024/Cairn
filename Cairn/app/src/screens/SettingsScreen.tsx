@@ -163,6 +163,16 @@ export function SettingsScreen() {
     || shareAfterAdd !== true
     || nightMode !== false;
 
+  // Hint fade animation — fades in (200ms) when hasChanges, out when not
+  const hintOpacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(hintOpacity, {
+      toValue: hasChanges ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [hasChanges]);
+
   // Shimmer animation — active only when hasChanges
   const shimmerX = useRef(new Animated.Value(-200)).current;
   useEffect(() => {
@@ -206,12 +216,10 @@ export function SettingsScreen() {
           <ModeCard mode="beginner" selected={pendingMode === 'beginner'} onSelect={() => setPendingMode('beginner')} />
           <ModeCard mode="expert" selected={pendingMode === 'expert'} onSelect={() => setPendingMode('expert')} />
         </View>
-        {pendingMode !== uiMode && (
-          <View style={styles.pendingHint}>
-            <Icon name="ArrowUp" size={12} color={Colors.primary} strokeWidth={2.5} />
-            <Text style={styles.pendingHintText}>Tap "Save" to apply</Text>
-          </View>
-        )}
+        <Animated.View style={[styles.pendingHint, { opacity: hintOpacity }]} pointerEvents="none">
+          <Icon name="ArrowUp" size={12} color={Colors.primary} strokeWidth={2.5} />
+          <Text style={styles.pendingHintText}>Tap "Save" to apply</Text>
+        </Animated.View>
 
         {/* ── Sharing ── */}
         <SectionHeader title="Sharing" />

@@ -206,3 +206,20 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 - STORY-00087 (Sign In auto-focus email): PASS HIGH
 - STORY-00088 (RoutesScreen Download affordance): PASS HIGH
 - STORY-00089 (FlagPlantSheet note focus + char count): PASS HIGH
+
+## Sprint 30 Updates
+
+- FlagPlantSheet char counter: three-tier color system — default/muted (<25 chars), amber Colors.warning at 25-29, red Colors.danger at 30. Input BORDER turns red only at 30 (hard limit); border is green (focus) at 25-29. Use getComputedStyle on parent div (not native input) to confirm border color.
+- Settings hint pill: Animated.View with opacity 0→1 on hasChanges. pointerEvents="none" prevents invisible pill intercepting taps. Evaluate parent element opacity (not child text) — child opacity is always 1. Confirmed: opacity=0 on load, 1 after change, 0 after revert.
+- RoutesScreen date formatting: `formatRouteDate(isoStr)` — same-year dates shown as "D Mon" (e.g. "12 May"), prior-year as "D Mon YYYY". "Today"/"Yesterday" labels for recent dates. No ISO strings visible.
+- Create Account Name auto-focus: `autoFocus={isRegister}` — active on mount AND re-navigation. Accessibility tree shows `[active]` state. Email does NOT auto-focus on Create Account screen (only on Sign In).
+- HomeScreen subtitle: pool-based `getSubtitle(hour)` — deterministic per hour, no random. Morning pool at this time of day. Persists across navigation with no flicker.
+- Navigation regression Sprint 30 baseline: 4 Wake Lock errors total (r0 + r1 from Hiking + Running visits). All pre-existing. Zero new JS errors introduced by Sprint 30. Full screen coverage: Auth/Create Account/Sign In/Home/Settings/Hiking/Running/MapHistory/Friends/Routes.
+
+## Sprint 30 Verification Summary
+
+- STORY-00090 (RoutesScreen date formatting): PASS MEDIUM
+- STORY-00091 (FlagPlantSheet char counter warning): PASS HIGH
+- STORY-00092 (Create Account Name auto-focus): PASS HIGH
+- STORY-00093 (Settings hint pill animated fade): PASS HIGH
+- STORY-00094 (HomeScreen contextual subtitle): PASS HIGH
