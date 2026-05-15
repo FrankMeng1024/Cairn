@@ -6,7 +6,7 @@
  * - Empty state matches HomeScreen / MapHistory pattern
  */
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppStore } from '../store/useAppStore';
@@ -40,8 +40,8 @@ export function RoutesScreen() {
         renderItem={({ item }) => {
           const isRunRoute = item.activityMode === 'running';
           const badgeColors: [string, string] = isRunRoute
-            ? [Colors.runningLight, 'rgba(61,122,181,0.25)']
-            : [Colors.primaryLight, 'rgba(93,124,70,0.30)'];
+            ? [Colors.runningLight, Colors.runningGrad]
+            : [Colors.primaryLight, Colors.primaryDeep];
           const iconColor = isRunRoute ? Colors.running : Colors.primary;
           return (
             <TouchableOpacity style={styles.routeCard} activeOpacity={0.85}>
@@ -76,6 +76,14 @@ export function RoutesScreen() {
                     {item.distanceKm}km · {formatDuration(item.durationMin)} · {item.markerCount}pts
                   </Text>
                 )}
+                <TouchableOpacity
+                  style={styles.downloadBtn}
+                  activeOpacity={0.7}
+                  onPress={() => Alert.alert('Download Route', `"${item.name}" saved for offline use.`)}
+                >
+                  <Icon name="Download" size={12} color={Colors.primary} strokeWidth={2} />
+                  <Text style={styles.downloadBtnText}>Download</Text>
+                </TouchableOpacity>
               </View>
 
               <View style={styles.chevronWrap}>
@@ -172,6 +180,24 @@ const styles = StyleSheet.create({
   routeCompact: {
     fontSize: FontSize.caption,
     color: Colors.textSecondary,
+  },
+
+  downloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    marginTop: Spacing.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  downloadBtnText: {
+    fontSize: FontSize.tiny,
+    fontWeight: '600',
+    color: Colors.primary,
   },
 
   chevronWrap: { paddingLeft: Spacing.xs },

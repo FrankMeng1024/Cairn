@@ -478,7 +478,7 @@ const styles = StyleSheet.create({
 
   // Sheets
   sheetOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', zIndex: 100 },
-  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.overlayDark },
   sheet: {
     backgroundColor: Colors.surface, borderTopLeftRadius: Radius.sheet,
     borderTopRightRadius: Radius.sheet, padding: Spacing.base,
@@ -539,7 +539,7 @@ const styles = StyleSheet.create({
   helpfulBtnText: { fontSize: FontSize.caption, color: Colors.textSecondary },
 
   // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: Spacing.xl },
+  modalOverlay: { flex: 1, backgroundColor: Colors.overlayDark, justifyContent: 'center', padding: Spacing.xl },
   modeModal: { backgroundColor: Colors.surface, borderRadius: Radius.cardLg, padding: Spacing.base, ...Shadow.card },
   modeModalTitle: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.md },
   modeModalRow: {

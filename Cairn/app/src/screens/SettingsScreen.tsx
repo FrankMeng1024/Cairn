@@ -118,8 +118,8 @@ function ToggleRow({
       <Switch
         value={value}
         onValueChange={onToggle}
-        trackColor={{ false: '#E0E0E0', true: Colors.primary }}
-        thumbColor="#FFFFFF"
+        trackColor={{ false: Colors.switchTrack, true: Colors.primary }}
+        thumbColor={Colors.surface}
       />
     </View>
   );

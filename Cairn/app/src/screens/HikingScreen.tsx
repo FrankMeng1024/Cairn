@@ -14,7 +14,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions,
-  TextInput, Alert, Animated,
+  TextInput, Alert, Animated, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -118,6 +118,7 @@ function FlagPlantSheet({ onClose, onSave }: {
 }) {
   const [selectedType, setSelectedType] = useState<MarkerType | null>(null);
   const [note, setNote] = useState('');
+  const [noteFocused, setNoteFocused] = useState(false);
   const charCount = note.length;
   const canSave = selectedType !== null;
 
@@ -149,6 +150,7 @@ function FlagPlantSheet({ onClose, onSave }: {
   return (
     <Animated.View style={[sheetStyles.backdrop, { opacity }]}>
       <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={handleClose} activeOpacity={1} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: slideY }] }]}>
         {/* Handle */}
         <View style={sheetStyles.handle} />
@@ -184,15 +186,19 @@ function FlagPlantSheet({ onClose, onSave }: {
         {/* Note input */}
         <View style={sheetStyles.noteWrap}>
           <TextInput
-            style={sheetStyles.noteInput}
+            style={[sheetStyles.noteInput, noteFocused && sheetStyles.noteInputFocused, charCount >= 30 && sheetStyles.noteInputError]}
             placeholder="Describe this spot… (optional)"
             placeholderTextColor={Colors.textMuted}
             value={note}
             onChangeText={t => setNote(t.slice(0, 30))}
             multiline
             numberOfLines={2}
+            onFocus={() => setNoteFocused(true)}
+            onBlur={() => setNoteFocused(false)}
           />
-          <Text style={sheetStyles.charCount}>{charCount}/30</Text>
+          {(noteFocused || charCount > 0) && (
+            <Text style={[sheetStyles.charCount, charCount >= 30 && { color: Colors.danger }]}>{charCount}/30</Text>
+          )}
         </View>
         {/* Save button */}
         <TouchableOpacity
@@ -204,6 +210,7 @@ function FlagPlantSheet({ onClose, onSave }: {
           <Text style={[sheetStyles.saveBtnText, !canSave && { color: Colors.textMuted }]}>Save Flag</Text>
         </TouchableOpacity>
       </Animated.View>
+      </KeyboardAvoidingView>
     </Animated.View>
   );
 }
@@ -635,7 +642,7 @@ const styles = StyleSheet.create({
 const sheetStyles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: Colors.overlayDark,
     justifyContent: 'flex-end',
   },
   sheet: {
@@ -672,6 +679,12 @@ const sheetStyles = StyleSheet.create({
     padding: Spacing.md, fontSize: FontSize.body, color: Colors.textPrimary,
     borderWidth: 1.5, borderColor: Colors.border, minHeight: 70,
     textAlignVertical: 'top',
+  },
+  noteInputFocused: {
+    borderColor: Colors.primary,
+  },
+  noteInputError: {
+    borderColor: Colors.danger,
   },
   charCount: {
     position: 'absolute', bottom: 8, right: Spacing.sm,

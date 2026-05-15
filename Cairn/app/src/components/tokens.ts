@@ -34,6 +34,16 @@ export const Colors = {
   success: '#2e8c3a',
   successBg: '#dcf4de',
   night: '#5a4fcf',               // night/sleep mode icon color
+  // Gradient stops — pre-computed for activity cards and running route badges
+  runningGrad: 'rgba(61,122,181,0.24)',  // running blue deep gradient stop
+  runningCardBg: 'rgba(61,122,181,0.08)', // running selected card background tint
+  flagGrad: 'rgba(200,121,65,0.24)',     // flag orange deep gradient stop
+  // Map / outdoor surface tokens
+  mapBg: '#e8f0e0',               // topo map background (sage green)
+  trail: '#b5823d',               // route trail line color (warm brown)
+  // UI utility tokens
+  overlayDark: 'rgba(0,0,0,0.4)',  // modal/bottom-sheet dark scrim
+  switchTrack: '#E0E0E0',          // toggle switch inactive track
 } as const;
 
 export const Spacing = {

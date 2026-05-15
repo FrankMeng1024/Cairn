@@ -131,9 +131,9 @@ function PasswordInput({ value, onChangeText, placeholder, error, onBlur }: {
 }
 
 // ── Inline text input with error ───────────────────────────────────────────
-function FieldInput({ icon, placeholder, value, onChangeText, error, onBlur, keyboardType, autoCapitalize }: {
+function FieldInput({ icon, placeholder, value, onChangeText, error, onBlur, keyboardType, autoCapitalize, autoFocus }: {
   icon: string; placeholder: string; value: string; onChangeText: (v: string) => void;
-  error?: string; onBlur?: () => void; keyboardType?: any; autoCapitalize?: any;
+  error?: string; onBlur?: () => void; keyboardType?: any; autoCapitalize?: any; autoFocus?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -150,6 +150,7 @@ function FieldInput({ icon, placeholder, value, onChangeText, error, onBlur, key
           onChangeText={onChangeText}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize ?? 'sentences'}
+          autoFocus={autoFocus}
           onFocus={() => setFocused(true)}
           onBlur={() => { setFocused(false); onBlur?.(); }}
         />
@@ -319,6 +320,7 @@ export function AuthScreen() {
             onBlur={() => setEmailError(validateEmail(email))}
             keyboardType="email-address"
             autoCapitalize="none"
+            autoFocus={!isRegister}
           />
 
           <Text style={formStyles.label}>Password</Text>

@@ -242,7 +242,7 @@ export function RunningScreen() {
               activeOpacity={0.85}
             >
               <LinearGradient
-                colors={[Colors.runningLight, 'rgba(61,122,181,0.24)']}
+                colors={[Colors.runningLight, Colors.runningGrad]}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                 style={preStyles.routeIconBadge}
               >
@@ -400,7 +400,7 @@ const preStyles = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: 'transparent',
     ...Shadow.card,
   },
-  routeCardSelected: { borderLeftColor: Colors.running, backgroundColor: 'rgba(61,122,181,0.08)' },
+  routeCardSelected: { borderLeftColor: Colors.running, backgroundColor: Colors.runningCardBg },
   routeCardSelectedGreen: { borderLeftColor: Colors.primary, backgroundColor: Colors.primaryBg },
   routeIconBadge: {
     width: 48, height: 48, borderRadius: 14,

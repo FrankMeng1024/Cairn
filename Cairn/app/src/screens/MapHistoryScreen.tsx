@@ -544,9 +544,9 @@ export function MapHistoryScreen() {
 
 // ── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#e8f0e0' },
+  container: { flex: 1, backgroundColor: Colors.mapBg },
 
-  mapArea: { flex: 1, backgroundColor: '#e8f0e0', position: 'relative', overflow: 'hidden' },
+  mapArea: { flex: 1, backgroundColor: Colors.mapBg, position: 'relative', overflow: 'hidden' },
   routeLine1: {
     position: 'absolute', top: 160, left: 40, width: W - 80,
     height: 3, backgroundColor: Colors.primary + '70', borderRadius: 2,
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
   },
   routeLine3: {
     position: 'absolute', top: 180, right: 40, width: W * 0.4,
-    height: 3, backgroundColor: '#b5823d' + '70', borderRadius: 2,
+    height: 3, backgroundColor: Colors.trail + '70', borderRadius: 2,
   },
   mapLabelWrap: {
     position: 'absolute', alignItems: 'center',
@@ -766,7 +766,7 @@ const trackStyles = StyleSheet.create({
 const sheetStyles = StyleSheet.create({
   scrim: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: Colors.overlayDark,
     zIndex: 10,
   },
   sheet: {

@@ -72,3 +72,11 @@ The Cairn app helps users track hikes and runs, plant location flags, and share 
 - Overlay surfaces (MapHistory stat bar, tab bar, HikingScreen GPS chip, track button) now use consistent 0.95 opacity white semi-transparent treatment. HikingScreen trackingBar uses Colors.surface (opaque) as it's an elevated card, not a floating overlay.
 - Low friction: Auth form does not auto-focus email on screen entry — user must tap before green focus appears. Not a blocker.
 - Low friction: Free Run (green) vs named route (blue) selection color distinction may briefly puzzle first-time users. Triple-signal system compensates — functionally unambiguous.
+
+## Sprint 29 Knowledge Updates
+- Sprint 29 established a consistent three-state interaction language app-wide: green border (#5d7c46) = focused/active, grey = unfocused, red (#c53d2e) = error/limit exceeded. Learnable and coherent. Auth forms, FlagPlantSheet, and Settings switches all follow this system.
+- Auth Sign In auto-focus: email field now has green border immediately on screen mount — no tap required. Resolves previous Low friction item "user must tap before green focus appears." Net positive UX.
+- Routes Download buttons: outlined pill (primary green border + text) below stat chips. Discoverable, clearly actionable. Download tap triggers Alert confirmation — user gets immediate feedback.
+- FlagPlantSheet char counter: visible immediately on focus ("0/30"), turns red at 30/30 hard limit. Good progressive disclosure — sets expectations before typing. Improvement: a warning state at ~25/30 would give breathing room before hard cutoff.
+- Settings switches: green fill = on, light grey (#E0E0E0) = off. Unambiguous visual distinction, zero learning curve.
+- Navigation regression Sprint 29: 2 Wake Lock errors pre-existing (same as Sprint 28). Zero new JS errors introduced.

@@ -190,3 +190,19 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 - STORY-00082 (RunningScreen triple-signal): PASS HIGH
 - STORY-00083 (SettingsScreen section headers + night token): PASS HIGH
 - STORY-00084 (Overlay opacity standardization): PASS HIGH
+
+## Sprint 29 Updates
+
+- Colors.switchTrack = #E0E0E0 confirmed visually on inactive Switch components in SettingsScreen. Active Switch = Colors.primary (#5d7c46), thumb = Colors.surface (#ffffff = white).
+- Sign In auto-focus: email field receives focus on mount. DOM activeElement confirms focused:true without user interaction. RN border color applied on parent wrapper div (not native input border) — evaluate parent div, not native input, to confirm color.
+- RoutesScreen: 3 mock routes present by default. Download pill button uses outlined style with Colors.primary border. Alert fires on tap (no navigation, no crash). Empty state (Map icon + "No routes yet") not exercised with mock data present.
+- FlagPlantSheet note input: dual-state border — green (Colors.primary, rgb(93,124,70)) when focused AND under 30 chars; red (Colors.danger, rgb(197,61,46)) when at 30/30 limit. Character counter appears on focus or when charCount > 0. maxLength=30 enforced (text truncated at limit).
+- Navigation regression Sprint 29 baseline: Auth → Home → Hiking → FlagPlantSheet → Routes → Settings — all paths 0 new JS errors. Only pre-existing Wake Lock r0/r1 (2 total).
+
+## Sprint 29 Verification Summary
+
+- STORY-00085 (Token consolidation): PASS HIGH
+- STORY-00086 (Create Account focus — pre-existing): PASS HIGH
+- STORY-00087 (Sign In auto-focus email): PASS HIGH
+- STORY-00088 (RoutesScreen Download affordance): PASS HIGH
+- STORY-00089 (FlagPlantSheet note focus + char count): PASS HIGH

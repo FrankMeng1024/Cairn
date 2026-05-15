@@ -118,11 +118,11 @@ function HowItWorks() {
     },
     {
       icon: 'Users' as IconName, label: 'Share with friends', color: Colors.running,
-      gradStart: Colors.runningLight, gradEnd: 'rgba(61,122,181,0.24)',
+      gradStart: Colors.runningLight, gradEnd: Colors.runningGrad,
     },
     {
       icon: 'Compass' as IconName, label: 'Guide others', color: Colors.flag,
-      gradStart: Colors.flagLight, gradEnd: 'rgba(200,121,65,0.24)',
+      gradStart: Colors.flagLight, gradEnd: Colors.flagGrad,
     },
   ];
   return (

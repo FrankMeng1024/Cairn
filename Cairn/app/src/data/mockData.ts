@@ -8,9 +8,9 @@ export const MOCK_FRIENDS = [
 ];
 
 export const MOCK_ROUTES = [
-  { id: '1', name: 'Tongariro Alpine Crossing', date: '2026-05-12', distanceKm: 19.4, durationMin: 387, markerCount: 5 },
-  { id: '2', name: 'Kepler Track Day 1', date: '2026-05-03', distanceKm: 14.6, durationMin: 280, markerCount: 3 },
-  { id: '3', name: 'Routeburn Flats', date: '2026-04-28', distanceKm: 8.1, durationMin: 142, markerCount: 1 },
+  { id: '1', name: 'Tongariro Alpine Crossing', date: '2026-05-12', distanceKm: 19.4, durationMin: 387, markerCount: 5, activityMode: 'hiking' },
+  { id: '2', name: 'Kepler Track Day 1', date: '2026-05-03', distanceKm: 14.6, durationMin: 280, markerCount: 3, activityMode: 'hiking' },
+  { id: '3', name: 'Routeburn Flats', date: '2026-04-28', distanceKm: 8.1, durationMin: 142, markerCount: 1, activityMode: 'hiking' },
 ];
 
 export type MarkerType = 'danger' | 'scenic' | 'supply' | 'junction' | 'free';
