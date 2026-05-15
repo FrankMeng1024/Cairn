@@ -9,9 +9,11 @@ import {
   ChevronRight, ChevronLeft, Play, Square, Flag,
   TriangleAlert, Star, Navigation, Lock, Unlock,
   Target, Timer, Heart, Zap, MapPin, Route,
-  // Sprint 8 additions
+  // Sprint 8
   Droplets, X, Trash2, Navigation2, GitBranch,
   Check, CircleCheck,
+  // Sprint 9
+  LogIn, Eye, EyeOff, Mail, KeyRound, UserPlus,
 } from 'lucide-react-native';
 import { IconSize } from './tokens';
 
@@ -22,6 +24,7 @@ const ICON_MAP = {
   Target, Timer, Heart, Zap, MapPin, Route,
   Droplets, X, Trash2, Navigation2, GitBranch,
   Check, CircleCheck,
+  LogIn, Eye, EyeOff, Mail, KeyRound, UserPlus,
 } as const;
 
 export type IconName = keyof typeof ICON_MAP;
