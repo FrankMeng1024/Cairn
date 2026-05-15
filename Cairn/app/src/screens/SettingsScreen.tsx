@@ -67,8 +67,8 @@ function ModeCard({
             </View>
           )}
         </View>
-        <Text style={modeStyles.title}>{isGuided ? '说明模式' : '简易模式'}</Text>
-        <Text style={modeStyles.desc}>{isGuided ? '操作说明 · 新手友好' : '图标优先 · 极简'}</Text>
+        <Text style={modeStyles.title}>{isGuided ? 'Guided Mode' : 'Simple Mode'}</Text>
+        <Text style={modeStyles.desc}>{isGuided ? 'Labels everywhere · Beginner-friendly' : 'Icons only · Minimal'}</Text>
       </View>
     </PressCard>
   );
@@ -141,7 +141,7 @@ export function SettingsScreen() {
 
   const handleSave = () => {
     setUIMode(pendingMode);
-    Alert.alert('', '设置已保存', [{ text: '好的' }]);
+    Alert.alert('', 'Settings saved', [{ text: 'OK' }]);
   };
 
   return (
@@ -150,23 +150,23 @@ export function SettingsScreen() {
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
           <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-          <Text style={styles.backText}>返回</Text>
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.topTitle}>设置</Text>
+        <Text style={styles.topTitle}>Settings</Text>
         <TouchableOpacity
           style={[styles.saveBtn, hasChanges && styles.saveBtnActive]}
           onPress={handleSave}
         >
           <Icon name="Save" size={14} color={hasChanges ? '#fff' : Colors.textMuted} strokeWidth={2} />
-          <Text style={[styles.saveBtnText, hasChanges && styles.saveBtnTextActive]}>保存</Text>
+          <Text style={[styles.saveBtnText, hasChanges && styles.saveBtnTextActive]}>Save</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
         {/* ── Interface Mode ── */}
-        <SectionHeader title="界面模式" />
-        <Text style={styles.sectionNote}>选择你偏好的操作界面风格</Text>
+        <SectionHeader title="Interface Mode" />
+        <Text style={styles.sectionNote}>Choose your preferred UI style</Text>
         <View style={styles.modeRow}>
           <ModeCard mode="guided" selected={pendingMode === 'guided'} onSelect={() => setPendingMode('guided')} />
           <ModeCard mode="simple" selected={pendingMode === 'simple'} onSelect={() => setPendingMode('simple')} />
@@ -174,19 +174,19 @@ export function SettingsScreen() {
         {pendingMode !== uiMode && (
           <View style={styles.pendingHint}>
             <Icon name="ArrowUp" size={12} color={Colors.primary} strokeWidth={2.5} />
-            <Text style={styles.pendingHintText}>点击"保存"后生效</Text>
+            <Text style={styles.pendingHintText}>Tap "Save" to apply</Text>
           </View>
         )}
 
         {/* ── Sharing ── */}
-        <SectionHeader title="分享设置" />
+        <SectionHeader title="Sharing" />
         <View style={styles.card}>
           <ToggleRow
             iconName="Flag"
             iconColor={Colors.primary}
             iconBg={Colors.primaryLight}
-            label="添加好友后默认分享旗帜"
-            hint="新好友可以自动看到你的公开旗帜"
+            label="Share flags with new friends by default"
+            hint="New friends automatically see your public flags"
             value={shareAfterAdd}
             onToggle={() => setShareAfterAdd(!shareAfterAdd)}
             pending={shareAfterAdd !== true}
@@ -196,8 +196,8 @@ export function SettingsScreen() {
             iconName="MapPin"
             iconColor={Colors.info}
             iconBg={Colors.infoBg}
-            label="位置实时共享"
-            hint="让好友看到你当前的实时位置"
+            label="Live location sharing"
+            hint="Let friends see your current location in real time"
             value={locationShare}
             onToggle={() => setLocationShare(!locationShare)}
             pending={locationShare !== false}
@@ -205,14 +205,14 @@ export function SettingsScreen() {
         </View>
 
         {/* ── Display ── */}
-        <SectionHeader title="显示" />
+        <SectionHeader title="Display" />
         <View style={styles.card}>
           <ToggleRow
             iconName="Moon"
             iconColor="#5a4fcf"
             iconBg="rgba(90,79,207,0.1)"
-            label="夜间模式"
-            hint="深色界面，减少夜间用眼疲劳"
+            label="Night mode"
+            hint="Dark theme, easier on the eyes at night"
             value={nightMode}
             onToggle={() => setNightMode(!nightMode)}
             pending={nightMode !== false}
@@ -220,14 +220,14 @@ export function SettingsScreen() {
         </View>
 
         {/* ── Audio ── */}
-        <SectionHeader title="语音播报" />
+        <SectionHeader title="Voice Guidance" />
         <View style={styles.card}>
           <ToggleRow
             iconName="Volume2"
             iconColor={Colors.success}
             iconBg={Colors.successBg}
-            label="路线播报"
-            hint="跑步/徒步时播报距离和偏离提醒"
+            label="Route announcements"
+            hint="Announce distance and off-route warnings while active"
             value={broadcastEnabled}
             onToggle={() => setBroadcastEnabled(!broadcastEnabled)}
             pending={broadcastEnabled !== true}
@@ -235,25 +235,25 @@ export function SettingsScreen() {
         </View>
 
         {/* ── Account ── */}
-        <SectionHeader title="账号" />
+        <SectionHeader title="Account" />
         <View style={styles.card}>
           <ActionRow
             iconName="User"
             iconColor={Colors.textSecondary}
             iconBg={Colors.border}
-            label="个人信息"
-            onPress={() => Alert.alert('个人信息', '即将开放')}
+            label="Profile"
+            onPress={() => Alert.alert('Profile', 'Coming soon')}
           />
           <View style={styles.divider} />
           <ActionRow
             iconName="LogOut"
             iconColor={Colors.danger}
             iconBg={Colors.dangerBg}
-            label="退出登录"
+            label="Sign Out"
             labelColor={Colors.danger}
-            onPress={() => Alert.alert('退出登录', '确认退出账号？', [
-              { text: '取消', style: 'cancel' },
-              { text: '退出', style: 'destructive' },
+            onPress={() => Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Sign Out', style: 'destructive' },
             ])}
           />
         </View>
@@ -265,7 +265,7 @@ export function SettingsScreen() {
           activeOpacity={hasChanges ? 0.8 : 1}
         >
           <Icon name="Save" size={IconSize.sm} color={hasChanges ? '#fff' : Colors.textMuted} strokeWidth={2} />
-          <Text style={[styles.saveBtnBottomText, !hasChanges && { color: Colors.textMuted }]}>保存设置</Text>
+          <Text style={[styles.saveBtnBottomText, !hasChanges && { color: Colors.textMuted }]}>Save Settings</Text>
         </TouchableOpacity>
 
         <Text style={styles.version}>Cairn v0.1.0</Text>

@@ -43,10 +43,10 @@ const FLAG_TYPES: {
   bg: string;
   corner: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
 }[] = [
-  { id: 'danger',   icon: 'TriangleAlert', label: '危险', color: Colors.danger,   bg: Colors.dangerBg,  corner: 'topLeft' },
-  { id: 'scenic',   icon: 'Star',          label: '风景', color: Colors.info,     bg: Colors.infoBg,    corner: 'topRight' },
-  { id: 'supply',   icon: 'Droplets',      label: '补给', color: Colors.success,  bg: Colors.successBg, corner: 'bottomLeft' },
-  { id: 'junction', icon: 'Navigation2',   label: '路口', color: Colors.warning,  bg: Colors.warningBg, corner: 'bottomRight' },
+  { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: Colors.danger,   bg: Colors.dangerBg,  corner: 'topLeft' },
+  { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: Colors.info,     bg: Colors.infoBg,    corner: 'topRight' },
+  { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: Colors.success,  bg: Colors.successBg, corner: 'bottomLeft' },
+  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg, corner: 'bottomRight' },
 ];
 
 const CORNER_POSITIONS: Record<string, { top?: number; bottom?: number; left?: number; right?: number }> = {
@@ -118,14 +118,14 @@ function ARFlagPicker({ onClose, onPlant }: {
   return (
     <View style={arStyles.overlay}>
       <View style={arStyles.cameraBg}>
-        <Text style={arStyles.hint}>选择旗帜类型并点击</Text>
+        <Text style={arStyles.hint}>Tap a flag type to plant</Text>
         <View style={arStyles.dropZone}>
           {planted ? (
             <Icon name="CircleCheck" size={40} color={Colors.success} strokeWidth={1.5} />
           ) : (
             <Icon name="Flag" size={32} color="rgba(255,255,255,0.3)" strokeWidth={1.5} />
           )}
-          <Text style={arStyles.dropZoneText}>{planted ? '插旗成功' : '目标区域'}</Text>
+          <Text style={arStyles.dropZoneText}>{planted ? 'Flag planted!' : 'Target zone'}</Text>
         </View>
       </View>
 
@@ -146,7 +146,7 @@ function ARFlagPicker({ onClose, onPlant }: {
 
       <TouchableOpacity style={arStyles.closeBtn} onPress={onClose}>
         <Icon name="X" size={IconSize.sm} color="rgba(255,255,255,0.8)" strokeWidth={2.5} />
-        <Text style={arStyles.closeBtnText}>取消</Text>
+        <Text style={arStyles.closeBtnText}>Cancel</Text>
       </TouchableOpacity>
     </View>
   );
@@ -168,10 +168,10 @@ function PlantNoteSheet({ flagType, onSave, onSkip }: {
           <Icon name={flag.icon} size={IconSize.sm} color={flag.color} strokeWidth={2} />
           <Text style={[noteStyles.flagLabel, { color: flag.color }]}>{flag.label}</Text>
         </View>
-        <Text style={noteStyles.title}>添加备注（可选）</Text>
+        <Text style={noteStyles.title}>Add a note (optional)</Text>
         <TextInput
           style={noteStyles.input}
-          placeholder="描述这个地点... （如：小心滑石，水源清澈）"
+          placeholder="Describe this spot... (e.g. Slippery rocks, clean water source)"
           placeholderTextColor={Colors.textMuted}
           value={note}
           onChangeText={setNote}
@@ -181,11 +181,11 @@ function PlantNoteSheet({ flagType, onSave, onSkip }: {
         />
         <View style={noteStyles.btnRow}>
           <TouchableOpacity style={noteStyles.skipBtn} onPress={onSkip}>
-            <Text style={noteStyles.skipBtnText}>跳过</Text>
+            <Text style={noteStyles.skipBtnText}>Skip</Text>
           </TouchableOpacity>
           <TouchableOpacity style={noteStyles.saveBtn} onPress={() => onSave(note)}>
             <Icon name="Flag" size={IconSize.sm} color="#fff" strokeWidth={2} />
-            <Text style={noteStyles.saveBtnText}>保存旗帜</Text>
+            <Text style={noteStyles.saveBtnText}>Save Flag</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -204,9 +204,9 @@ function MarkerDetailSheet({ marker, onClose, onDelete }: {
   const timeAgo = (() => {
     const diffMs = Date.now() - marker.createdAt;
     const mins = Math.floor(diffMs / 60000);
-    if (mins < 1) return '刚才';
-    if (mins < 60) return `${mins}分钟前`;
-    return `${Math.floor(mins / 60)}小时前`;
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    return `${Math.floor(mins / 60)}h ago`;
   })();
 
   return (
@@ -226,7 +226,7 @@ function MarkerDetailSheet({ marker, onClose, onDelete }: {
         {marker.note ? (
           <Text style={detailStyles.note}>{marker.note}</Text>
         ) : (
-          <Text style={[detailStyles.note, { color: Colors.textMuted, fontStyle: 'italic' }]}>（无备注）</Text>
+          <Text style={[detailStyles.note, { color: Colors.textMuted, fontStyle: 'italic' }]}>(No note)</Text>
         )}
         <View style={detailStyles.metaRow}>
           <Icon name="Timer" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
@@ -234,13 +234,13 @@ function MarkerDetailSheet({ marker, onClose, onDelete }: {
         </View>
         <TouchableOpacity
           style={detailStyles.deleteBtn}
-          onPress={() => Alert.alert('删除旗帜', '确认删除？', [
-            { text: '取消', style: 'cancel' },
-            { text: '删除', style: 'destructive', onPress: onDelete },
+          onPress={() => Alert.alert('Delete Flag', 'Are you sure?', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: onDelete },
           ])}
         >
           <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
-          <Text style={detailStyles.deleteBtnText}>删除旗帜</Text>
+          <Text style={detailStyles.deleteBtnText}>Delete Flag</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -328,13 +328,13 @@ export function HikingScreen() {
           <View style={styles.gpsChip}>
             <View style={[styles.gpsDot, { backgroundColor: locationAvailable ? Colors.success : Colors.textMuted }]} />
             <Text style={styles.gpsText}>
-              {locationAvailable ? (isGuided ? 'GPS已连接 ±5m' : 'GPS') : 'GPS离线'}
+              {locationAvailable ? 'GPS Connected ±5m' : 'GPS Offline'}
             </Text>
           </View>
           <View style={styles.topRight}>
             <TouchableOpacity style={styles.backChip} onPress={() => nav.goBack()}>
               <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-              <Text style={styles.backChipText}>返回</Text>
+              <Text style={styles.backChipText}>Back</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -344,19 +344,19 @@ export function HikingScreen() {
           <View style={styles.trackingBar}>
             <View style={styles.trackingStat}>
               <Text style={styles.trackingValue}>{distDisplay}</Text>
-              <Text style={styles.trackingUnit}>公里</Text>
+              <Text style={styles.trackingUnit}>km</Text>
             </View>
             <View style={styles.trackingStat}>
               <Text style={styles.trackingValue}>{durationDisplay}</Text>
-              <Text style={styles.trackingUnit}>时长</Text>
+              <Text style={styles.trackingUnit}>elapsed</Text>
             </View>
             <View style={styles.trackingStat}>
-              <Text style={styles.trackingValue}>+{elevationGainM}</Text>
-              <Text style={styles.trackingUnit}>爬升m</Text>
+              <Text style={styles.trackingValue}>+{elevationGainM}m</Text>
+              <Text style={styles.trackingUnit}>elev</Text>
             </View>
             <TouchableOpacity style={styles.stopBtn} onPress={stopTracking}>
               <Icon name="Square" size={12} color="#fff" strokeWidth={3} />
-              {isGuided && <Text style={styles.stopBtnText}>停止</Text>}
+              <Text style={styles.stopBtnText}>Stop</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -368,7 +368,7 @@ export function HikingScreen() {
           {!isTracking ? (
             <TouchableOpacity style={styles.trackBtn} onPress={startTracking}>
               <Icon name="Play" size={IconSize.sm} color={Colors.textPrimary} strokeWidth={2.5} />
-              {isGuided && <Text style={styles.trackBtnText}>开始徒步记录</Text>}
+              <Text style={styles.trackBtnText}>Start Hiking</Text>
             </TouchableOpacity>
           ) : (
             <View style={{ flex: 1 }} />
@@ -376,7 +376,6 @@ export function HikingScreen() {
 
           <TouchableOpacity style={styles.fab} onPress={() => setUi('ar')}>
             <Icon name="Flag" size={IconSize.md} color="#fff" strokeWidth={2} />
-            {isGuided && <Text style={styles.fabLabel}>插旗</Text>}
           </TouchableOpacity>
         </View>
       </SafeAreaView>

@@ -59,7 +59,7 @@ function SessionCard({ session, isSelected, onPress }: {
 }) {
   const date = new Date(session.startedAt);
   const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const actLabel = session.activityMode === 'running' ? '跑步' : '徒步';
+  const actLabel = session.activityMode === 'running' ? 'Run' : 'Hike';
   return (
     <PressRow onPress={onPress} style={{ marginBottom: Spacing.sm }}>
       <View style={[cardStyles.routeCard, isSelected && cardStyles.routeCardSelected]}>
@@ -94,7 +94,8 @@ export function MapHistoryScreen() {
   const region = getCurrentRegion();
   const sessions = useSessionStore(s => s.sessions);
   const deleteSession = useSessionStore(s => s.deleteSession);
-  const markers = useMarkerStore(s => s.getMarkersForRegion(region.code));
+  const allMarkers = useMarkerStore(s => s.markers);
+  const markers = allMarkers.filter(m => m.regionCode === region.code);
   const deleteMarker = useMarkerStore(s => s.deleteMarker);
 
   const selectedSession = sessions.find(s => s.id === selectedSessionId) ?? null;
@@ -114,8 +115,8 @@ export function MapHistoryScreen() {
         {/* Map placeholder label */}
         <View style={styles.mapLabelWrap}>
           <Icon name="Map" size={28} color={Colors.textMuted} strokeWidth={1.5} />
-          <Text style={styles.mapLabel}>步道地图</Text>
-          <Text style={styles.mapSubLabel}>历史路线 · 旗帜标记</Text>
+          <Text style={styles.mapLabel}>Trail Map</Text>
+          <Text style={styles.mapSubLabel}>Route history · Flag markers</Text>
         </View>
 
         {/* Real marker pins */}
@@ -150,15 +151,15 @@ export function MapHistoryScreen() {
         <View style={styles.topRow}>
           <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
             <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-            <Text style={styles.backText}>返回</Text>
+            <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
-          <Text style={styles.topTitle}>地图记录</Text>
+          <Text style={styles.topTitle}>Route Map</Text>
           <TouchableOpacity
             style={styles.planBtn}
-            onPress={() => Alert.alert('规划路线', '路线规划功能即将上线')}
+            onPress={() => Alert.alert('Plan Route', 'Route planning coming soon')}
           >
             <Icon name="Route" size={14} color="#fff" strokeWidth={2} />
-            <Text style={styles.planBtnText}>规划</Text>
+            <Text style={styles.planBtnText}>Plan</Text>
           </TouchableOpacity>
         </View>
 
@@ -175,7 +176,7 @@ export function MapHistoryScreen() {
               strokeWidth={2}
             />
             <Text style={[styles.tabText, tab === 'routes' && styles.tabTextActive]}>
-              路线历史{sessions.length > 0 ? ` (${sessions.length})` : ''}
+              Route History{sessions.length > 0 ? ` (${sessions.length})` : ''}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -189,7 +190,7 @@ export function MapHistoryScreen() {
               strokeWidth={2}
             />
             <Text style={[styles.tabText, tab === 'flags' && styles.tabTextActive]}>
-              我的旗帜{markers.length > 0 ? ` (${markers.length})` : ''}
+              My Flags{markers.length > 0 ? ` (${markers.length})` : ''}
             </Text>
           </TouchableOpacity>
         </View>
@@ -204,8 +205,8 @@ export function MapHistoryScreen() {
             {sessions.length === 0 ? (
               <View style={styles.emptyState}>
                 <Icon name="Route" size={32} color={Colors.textMuted} strokeWidth={1.5} />
-                <Text style={styles.emptyTitle}>暂无路线记录</Text>
-                <Text style={styles.emptySubtitle}>完成一次徒步或跑步后将在此显示</Text>
+                <Text style={styles.emptyTitle}>No routes yet</Text>
+                <Text style={styles.emptySubtitle}>Your hikes and runs will appear here</Text>
               </View>
             ) : (
               <>
@@ -221,14 +222,14 @@ export function MapHistoryScreen() {
                 {selectedSession && (
                   <View style={cardStyles.routeDetail}>
                     <Text style={cardStyles.routeDetailTitle}>
-                      {selectedSession.name ?? (selectedSession.activityMode === 'running' ? '跑步记录' : '徒步记录')}
+                      {selectedSession.name ?? (selectedSession.activityMode === 'running' ? 'Run' : 'Hike')}
                     </Text>
                     <View style={cardStyles.statsGrid}>
                       {[
-                        { v: formatDistance(selectedSession.distanceM, 'km', 2), u: '公里' },
-                        { v: formatDuration(selectedSession.durationS), u: '用时' },
-                        { v: `${selectedSession.markerIds.length}`, u: '旗帜' },
-                        { v: `+${selectedSession.elevationGainM}`, u: '爬升m' },
+                        { v: formatDistance(selectedSession.distanceM, 'km', 2), u: 'km' },
+                        { v: formatDuration(selectedSession.durationS), u: 'time' },
+                        { v: `${selectedSession.markerIds.length}`, u: 'flags' },
+                        { v: `+${selectedSession.elevationGainM}m`, u: 'elev' },
                       ].map((s, i) => (
                         <View key={i} style={cardStyles.statChip}>
                           <Text style={cardStyles.statValue}>{s.v}</Text>
@@ -239,12 +240,12 @@ export function MapHistoryScreen() {
                     <TouchableOpacity
                       style={cardStyles.deleteBtn}
                       onPress={() => Alert.alert(
-                        '删除路线',
-                        '确认删除此路线记录？',
+                        'Delete Route',
+                        'Are you sure you want to delete this route?',
                         [
-                          { text: '取消', style: 'cancel' },
+                          { text: 'Cancel', style: 'cancel' },
                           {
-                            text: '删除', style: 'destructive', onPress: () => {
+                            text: 'Delete', style: 'destructive', onPress: () => {
                               deleteSession(selectedSession.id);
                               setSelectedSessionId(null);
                             },
@@ -253,7 +254,7 @@ export function MapHistoryScreen() {
                       )}
                     >
                       <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
-                      <Text style={cardStyles.deleteBtnText}>删除路线</Text>
+                      <Text style={cardStyles.deleteBtnText}>Delete Route</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -265,8 +266,8 @@ export function MapHistoryScreen() {
             {markers.length === 0 ? (
               <View style={styles.emptyState}>
                 <Icon name="Flag" size={32} color={Colors.textMuted} strokeWidth={1.5} />
-                <Text style={styles.emptyTitle}>暂无旗帜记录</Text>
-                <Text style={styles.emptySubtitle}>徒步中插旗后将在此显示</Text>
+                <Text style={styles.emptyTitle}>No flags yet</Text>
+                <Text style={styles.emptySubtitle}>Plant flags while hiking to see them here</Text>
               </View>
             ) : (
               markers.map(m => {
@@ -274,10 +275,10 @@ export function MapHistoryScreen() {
                 const timeAgo = (() => {
                   const diffMs = Date.now() - m.createdAt;
                   const mins = Math.floor(diffMs / 60000);
-                  if (mins < 1) return '刚才';
-                  if (mins < 60) return `${mins}分钟前`;
-                  if (mins < 1440) return `${Math.floor(mins / 60)}小时前`;
-                  return `${Math.floor(mins / 1440)}天前`;
+                  if (mins < 1) return 'Just now';
+                  if (mins < 60) return `${mins}m ago`;
+                  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
+                  return `${Math.floor(mins / 1440)}d ago`;
                 })();
                 return (
                   <PressRow key={m.id} onPress={() => {}} style={{ marginBottom: 0 }}>
@@ -297,11 +298,11 @@ export function MapHistoryScreen() {
                       <TouchableOpacity
                         style={flagStyles.deleteBtn}
                         onPress={() => Alert.alert(
-                          '删除旗帜',
-                          '确认删除此旗帜？',
+                          'Delete Flag',
+                          'Are you sure?',
                           [
-                            { text: '取消', style: 'cancel' },
-                            { text: '删除', style: 'destructive', onPress: () => deleteMarker(m.id) },
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Delete', style: 'destructive', onPress: () => deleteMarker(m.id) },
                           ]
                         )}
                       >

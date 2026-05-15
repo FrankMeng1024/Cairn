@@ -1,9 +1,9 @@
 /** Mock data for all screens */
 
 export const MOCK_FRIENDS = [
-  { id: '1', name: 'Sam', initials: 'S', online: true, lastSeen: '刚刚', sharedMarkers: 12 },
-  { id: '2', name: 'Mika', initials: 'M', online: false, lastSeen: '3小时前', sharedMarkers: 7 },
-  { id: '3', name: 'Yuki', initials: 'Y', online: false, lastSeen: '昨天', sharedMarkers: 3 },
+  { id: '1', name: 'Sam', initials: 'S', online: true, lastSeen: 'Just now', sharedMarkers: 12 },
+  { id: '2', name: 'Mika', initials: 'M', online: false, lastSeen: '3h ago', sharedMarkers: 7 },
+  { id: '3', name: 'Yuki', initials: 'Y', online: false, lastSeen: 'Yesterday', sharedMarkers: 3 },
 ];
 
 export const MOCK_ROUTES = [
@@ -15,27 +15,27 @@ export const MOCK_ROUTES = [
 export type MarkerType = 'danger' | 'scenic' | 'supply' | 'junction' | 'free';
 
 export const MARKER_META: Record<MarkerType, { label: string; icon: string; iconName: string; color: string; bg: string }> = {
-  danger:   { label: '危险',   icon: '!',  iconName: 'TriangleAlert', color: '#c53d2e', bg: '#f4e0dc' },
-  scenic:   { label: '风景',   icon: '★',  iconName: 'Star',          color: '#2e6cc5', bg: '#dce8f4' },
-  supply:   { label: '补给',   icon: '+',  iconName: 'Droplets',      color: '#2e8c3a', bg: '#dcf4de' },
-  junction: { label: '路口',   icon: '→',  iconName: 'Navigation2',   color: '#b36b00', bg: '#fff3e0' },
-  free:     { label: '自由',   icon: '○',  iconName: 'MapPin',        color: '#8c7e72', bg: '#ffffff' },
+  danger:   { label: 'Danger',   icon: '!',  iconName: 'TriangleAlert', color: '#c53d2e', bg: '#f4e0dc' },
+  scenic:   { label: 'Scenic',   icon: '★',  iconName: 'Star',          color: '#2e6cc5', bg: '#dce8f4' },
+  supply:   { label: 'Water',    icon: '+',  iconName: 'Droplets',      color: '#2e8c3a', bg: '#dcf4de' },
+  junction: { label: 'Junction', icon: '→',  iconName: 'Navigation2',   color: '#b36b00', bg: '#fff3e0' },
+  free:     { label: 'Free',     icon: '○',  iconName: 'MapPin',        color: '#8c7e72', bg: '#ffffff' },
 };
 
 export const MOCK_MARKERS = [
   {
     id: '1', type: 'danger' as MarkerType,
-    text: '路面湿滑，注意脚下', author: 'Sam', minutesAgo: 45, x: 0.3, y: 0.4,
-    title: '安全警告', note: '路面湿滑，注意脚下，建议放慢速度', distanceM: 340, timeAgo: '45分钟前',
+    text: 'Wet surface, watch your step', author: 'Sam', minutesAgo: 45, x: 0.3, y: 0.4,
+    title: 'Safety Warning', note: 'Slippery trail, slow down', distanceM: 340, timeAgo: '45m ago',
   },
   {
     id: '2', type: 'scenic' as MarkerType,
-    text: '绝美火山口，值得停留', author: 'Mika', minutesAgo: 120, x: 0.6, y: 0.35,
-    title: '景观点', note: '绝美火山口全景，值得停留拍照', distanceM: 1200, timeAgo: '2小时前',
+    text: 'Stunning crater view, worth stopping', author: 'Mika', minutesAgo: 120, x: 0.6, y: 0.35,
+    title: 'Viewpoint', note: 'Panoramic crater views, great photo spot', distanceM: 1200, timeAgo: '2h ago',
   },
   {
     id: '3', type: 'supply' as MarkerType,
-    text: '干净水源，可直接饮用', author: 'Yuki', minutesAgo: 300, x: 0.45, y: 0.65,
-    title: '水源补给', note: '干净山泉水，可直接饮用，旁边有平地休息', distanceM: 2800, timeAgo: '5小时前',
+    text: 'Clean water source, drinkable', author: 'Yuki', minutesAgo: 300, x: 0.45, y: 0.65,
+    title: 'Water Source', note: 'Clean spring water, flat ground nearby for rest', distanceM: 2800, timeAgo: '5h ago',
   },
 ];

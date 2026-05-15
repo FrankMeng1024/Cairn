@@ -127,20 +127,20 @@ export function RunningScreen() {
     return (
       <SafeAreaView style={preStyles.container} edges={['top', 'bottom']}>
         <View style={preStyles.header}>
-          <Text style={preStyles.title}>跑步完成</Text>
-          <Text style={preStyles.subtitle}>会话已保存</Text>
+          <Text style={preStyles.title}>Run Complete</Text>
+          <Text style={preStyles.subtitle}>Session saved</Text>
         </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.xl }}>
           <View style={runStyles.statsBar}>
-            <StatItem value={formatDistance(distanceM, 'km', 2)} label="公里" />
-            <StatItem value={durationDisplay} label="时长" />
-            <StatItem value={paceDisplay} label="配速" />
+            <StatItem value={formatDistance(distanceM, 'km', 2)} label="km" />
+            <StatItem value={durationDisplay} label="elapsed" />
+            <StatItem value={paceDisplay} label="pace" />
           </View>
         </View>
         <View style={preStyles.footer}>
           <TouchableOpacity style={preStyles.startBtn} onPress={() => { setRunState('pre'); }}>
             <Icon name="ChevronLeft" size={IconSize.md} color="#fff" strokeWidth={2} />
-            <Text style={preStyles.startBtnText}>返回</Text>
+            <Text style={preStyles.startBtnText}>Back</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -155,10 +155,10 @@ export function RunningScreen() {
         <View style={preStyles.header}>
           <TouchableOpacity style={preStyles.backBtn} onPress={() => nav.goBack()}>
             <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-            <Text style={preStyles.backText}>返回</Text>
+            <Text style={preStyles.backText}>Back</Text>
           </TouchableOpacity>
-          <Text style={preStyles.title}>跑步模式</Text>
-          <Text style={preStyles.subtitle}>选择路线（可选）</Text>
+          <Text style={preStyles.title}>Running Mode</Text>
+          <Text style={preStyles.subtitle}>Select a route (optional)</Text>
         </View>
 
         {/* Route list */}
@@ -173,8 +173,8 @@ export function RunningScreen() {
               <Icon name="Target" size={IconSize.md} color={Colors.primary} strokeWidth={1.8} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={preStyles.routeName}>自由跑步</Text>
-              <Text style={preStyles.routeMeta}>GPS追踪 · 不限路线</Text>
+              <Text style={preStyles.routeName}>Free Run</Text>
+              <Text style={preStyles.routeMeta}>GPS tracking · Any route</Text>
             </View>
             {selectedRoute === null && (
               <View style={preStyles.checkBadge}>
@@ -217,10 +217,10 @@ export function RunningScreen() {
               onPressOut={onStartPressOut}
             >
               <Icon name="Play" size={IconSize.md} color="#fff" strokeWidth={2} />
-              <Text style={preStyles.startBtnText}>开始跑步</Text>
+              <Text style={preStyles.startBtnText}>Start Running</Text>
             </TouchableOpacity>
           </Animated.View>
-          <Text style={preStyles.lockHint}>启动后屏幕锁定 · 双击解锁</Text>
+          <Text style={preStyles.lockHint}>Screen locks on start · Double-tap to unlock</Text>
         </View>
       </SafeAreaView>
     );
@@ -238,12 +238,12 @@ export function RunningScreen() {
           {/* Stats bar */}
           <SafeAreaView edges={['top']}>
             <View style={runStyles.statsBar}>
-              <StatItem value={distDisplay} label="公里" />
-              <StatItem value={durationDisplay} label="时长" />
-              <StatItem value={paceDisplay} label="配速" />
+              <StatItem value={distDisplay} label="km" />
+              <StatItem value={durationDisplay} label="elapsed" />
+              <StatItem value={paceDisplay} label="pace" />
               <View style={[runStyles.statItem, { justifyContent: 'center' }]}>
                 <View style={[runStyles.gpsIndicator, { backgroundColor: locationAvailable ? Colors.success : Colors.textMuted }]} />
-                <Text style={runStyles.statLabel}>{locationAvailable ? 'GPS' : '离线'}</Text>
+                <Text style={runStyles.statLabel}>{locationAvailable ? 'GPS' : 'Offline'}</Text>
               </View>
             </View>
           </SafeAreaView>
@@ -252,7 +252,7 @@ export function RunningScreen() {
           <View style={runStyles.compassArea}>
             <View style={runStyles.compassRing}>
               <Icon name="Navigation" size={72} color={Colors.primary} strokeWidth={1.5} />
-              <Text style={runStyles.compassDir}>继续前进</Text>
+              <Text style={runStyles.compassDir}>Keep going</Text>
             </View>
             {selectedRouteName && (
               <Text style={runStyles.routeLabel}>{selectedRouteName}</Text>
@@ -263,7 +263,7 @@ export function RunningScreen() {
           {isLocked && (
             <View style={runStyles.lockIndicator}>
               <Icon name="Lock" size={IconSize.lg} color="rgba(255,255,255,0.5)" strokeWidth={1.8} />
-              <Text style={runStyles.lockText}>双击屏幕解锁</Text>
+              <Text style={runStyles.lockText}>Double-tap to unlock</Text>
               <View style={runStyles.tapDots}>
                 {[0, 1].map(i => (
                   <View key={i} style={[runStyles.tapDot, i < tapCount && runStyles.tapDotActive]} />
@@ -281,14 +281,14 @@ export function RunningScreen() {
                   onPress={handleStop}
                 >
                   <Icon name="Square" size={IconSize.sm} color="#fff" strokeWidth={2.5} />
-                  <Text style={runStyles.stopBtnText}>停止</Text>
+                  <Text style={runStyles.stopBtnText}>Stop</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={runStyles.relockBtn}
                   onPress={() => setIsLocked(true)}
                 >
                   <Icon name="Lock" size={IconSize.sm} color="rgba(255,255,255,0.8)" strokeWidth={2} />
-                  <Text style={runStyles.relockText}>重新锁定</Text>
+                  <Text style={runStyles.relockText}>Lock Screen</Text>
                 </TouchableOpacity>
               </View>
             </SafeAreaView>

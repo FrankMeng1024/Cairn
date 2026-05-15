@@ -25,8 +25,8 @@ export function RoutesScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>{isGuided ? '路线历史' : '路线'}</Text>
-        {isGuided && <Text style={styles.subtitle}>你走过的每一条路都留在这里</Text>}
+        <Text style={styles.title}>{isGuided ? 'Route History' : 'Routes'}</Text>
+        {isGuided && <Text style={styles.subtitle}>Every trail you've walked, saved here</Text>}
       </View>
 
       <FlatList
@@ -43,15 +43,15 @@ export function RoutesScreen() {
                 <View style={styles.statsRow}>
                   <View style={styles.statChip}>
                     <Text style={styles.statValue}>{item.distanceKm}</Text>
-                    <Text style={styles.statUnit}>公里</Text>
+                    <Text style={styles.statUnit}>km</Text>
                   </View>
                   <View style={styles.statChip}>
                     <Text style={styles.statValue}>{formatDuration(item.durationMin)}</Text>
-                    <Text style={styles.statUnit}>用时</Text>
+                    <Text style={styles.statUnit}>time</Text>
                   </View>
                   <View style={styles.statChip}>
                     <Text style={styles.statValue}>{item.markerCount}</Text>
-                    <Text style={styles.statUnit}>个标记</Text>
+                    <Text style={styles.statUnit}>flags</Text>
                   </View>
                 </View>
               ) : (
@@ -70,8 +70,8 @@ export function RoutesScreen() {
             <View style={styles.emptyIconWrap}>
               <Icon name="Map" size={36} color={Colors.textMuted} strokeWidth={1.5} />
             </View>
-            <Text style={styles.emptyTitle}>暂无路线记录</Text>
-            {isGuided && <Text style={styles.emptyHint}>开始追踪后，路线会自动保存到这里</Text>}
+            <Text style={styles.emptyTitle}>No routes yet</Text>
+            {isGuided && <Text style={styles.emptyHint}>Start tracking and your routes will be saved here</Text>}
           </View>
         }
       />

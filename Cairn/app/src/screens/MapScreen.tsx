@@ -42,8 +42,8 @@ function MapPlaceholder({
       <View style={styles.trailLine} />
       {/* Placeholder label */}
       <View style={styles.mapLabel}>
-        <Text style={styles.mapLabelText}>步道地图</Text>
-        <Text style={styles.mapLabelSub}>离线包加载后显示真实地图</Text>
+        <Text style={styles.mapLabelText}>Trail Map</Text>
+        <Text style={styles.mapLabelSub}>Real map loads with offline pack</Text>
       </View>
       {/* Mock markers */}
       {markers.map((m) => {
@@ -94,11 +94,11 @@ function CreateMarkerSheet({
   const permColors: Record<'personal' | 'group' | 'public', string> = {
     personal: Colors.textSecondary, group: Colors.info, public: Colors.primary,
   };
-  const permLabels = { personal: '仅自己', group: '好友组', public: '公开' };
+  const permLabels = { personal: 'Only me', group: 'Friends', public: 'Public' };
   const permHints = {
-    personal: '只有你能看到这面旗',
-    group: '你的好友也能看到',
-    public: '所有用户可见',
+    personal: 'Only you can see this flag',
+    group: 'Your friends can also see it',
+    public: 'Visible to all users',
   };
 
   if (!visible) return null;
@@ -108,9 +108,9 @@ function CreateMarkerSheet({
       <TouchableOpacity style={styles.sheetBackdrop} onPress={onClose} activeOpacity={1} />
       <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
         <View style={styles.sheetHandle} />
-        <Text style={styles.sheetTitle}>插一面旗</Text>
+        <Text style={styles.sheetTitle}>Plant a flag</Text>
         {isGuided && (
-          <Text style={styles.sheetSubtitle}>为后来的人留下有用的信息</Text>
+          <Text style={styles.sheetSubtitle}>Leave useful info for those who follow</Text>
         )}
 
         {/* Type selector */}
@@ -135,7 +135,7 @@ function CreateMarkerSheet({
         <View style={styles.inputWrap}>
           <TextInput
             style={styles.textInput}
-            placeholder={isGuided ? '简单描述（最多30字）' : '备注...'}
+            placeholder={isGuided ? 'Short description (max 30 chars)' : 'Note...'}
             placeholderTextColor={Colors.textMuted}
             value={text}
             onChangeText={(t) => setText(t.slice(0, 30))}
@@ -173,9 +173,9 @@ function CreateMarkerSheet({
           style={styles.confirmBtn}
           onPress={() => { onConfirm(selectedType, text); onClose(); setText(''); }}
         >
-          <Text style={styles.confirmBtnText}>插旗</Text>
+          <Text style={styles.confirmBtnText}>Plant Flag</Text>
           {isGuided && (
-            <Text style={styles.confirmBtnHint}>这面旗将帮助后来的人</Text>
+            <Text style={styles.confirmBtnHint}>This flag will help those who come after you</Text>
           )}
         </TouchableOpacity>
       </Animated.View>
@@ -203,14 +203,14 @@ function MarkerDetailSheet({
             <Icon name={meta.iconName as IconName} size={14} color={meta.color} strokeWidth={2} />
             <Text style={[styles.detailTypeLabel, { color: meta.color }]}>{meta.label}</Text>
           </View>
-          <Text style={styles.detailTime}>{marker.minutesAgo}分钟前 · {marker.author}</Text>
+          <Text style={styles.detailTime}>{marker.minutesAgo}m ago · {marker.author}</Text>
         </View>
         <Text style={styles.detailText}>{marker.text}</Text>
         <TouchableOpacity style={styles.helpfulBtn}>
           <Icon name="ThumbsUp" size={18} color={Colors.textSecondary} strokeWidth={1.8} />
           {isGuided
-            ? <Text style={styles.helpfulBtnText}>有帮助 — 告诉作者这个标记帮助了你</Text>
-            : <Text style={styles.helpfulBtnText}>有帮助</Text>
+            ? <Text style={styles.helpfulBtnText}>Helpful — let the author know this helped you</Text>
+            : <Text style={styles.helpfulBtnText}>Helpful</Text>
           }
         </TouchableOpacity>
       </View>
@@ -244,7 +244,7 @@ export function MapScreen() {
 
   const handleAddMarker = (type: MarkerType, text: string) => {
     setMarkers((prev) => [...prev, {
-      id: String(Date.now()), type, text, author: '我', minutesAgo: 0,
+      id: String(Date.now()), type, text, author: 'Me', minutesAgo: 0,
       x: 0.5 + (Math.random() - 0.5) * 0.3,
       y: 0.5 + (Math.random() - 0.5) * 0.3,
     }]);
@@ -261,7 +261,7 @@ export function MapScreen() {
         <View style={styles.gpsChip}>
           <View style={styles.gpsDot} />
           {isGuided
-            ? <Text style={styles.chipText}>GPS已连接 ±5m</Text>
+            ? <Text style={styles.chipText}>GPS Connected ±5m</Text>
             : <Text style={styles.chipText}>GPS</Text>
           }
         </View>
@@ -273,7 +273,7 @@ export function MapScreen() {
             size={16} color={Colors.primary} strokeWidth={1.8}
           />
           {isGuided && (
-            <Text style={styles.chipText}>{activityMode === 'hiking' ? '徒步' : '跑步'}</Text>
+            <Text style={styles.chipText}>{activityMode === 'hiking' ? 'Hiking' : 'Running'}</Text>
           )}
         </TouchableOpacity>
       </SafeAreaView>
@@ -285,13 +285,13 @@ export function MapScreen() {
             // Running mode — big pace, minimal
             <>
               <Text style={styles.trackingPaceBig}>5:30</Text>
-              {isGuided && <Text style={styles.trackingPaceLabel}>当前配速 /km</Text>}
+              {isGuided && <Text style={styles.trackingPaceLabel}>Current pace /km</Text>}
               <View style={styles.trackingRow}>
                 <Text style={styles.trackingStat}>{trackingDistance.toFixed(2)}{isGuided ? ' km' : 'k'}</Text>
                 <Text style={styles.trackingStat}>{formatDuration(trackingDuration)}</Text>
               </View>
               <TouchableOpacity style={styles.markLaterBtn}>
-                <Text style={styles.markLaterText}>稍后标记</Text>
+                <Text style={styles.markLaterText}>Flag later</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -300,20 +300,20 @@ export function MapScreen() {
               <View style={styles.trackingStatsRow}>
                 <View style={styles.trackingStatItem}>
                   <Text style={styles.trackingStatValue}>{trackingDistance.toFixed(2)}</Text>
-                  <Text style={styles.trackingStatUnit}>{isGuided ? '公里' : 'km'}</Text>
+                  <Text style={styles.trackingStatUnit}>{isGuided ? 'km' : 'km'}</Text>
                 </View>
                 <View style={styles.trackingStatItem}>
                   <Text style={styles.trackingStatValue}>{formatDuration(trackingDuration)}</Text>
-                  <Text style={styles.trackingStatUnit}>{isGuided ? '用时' : ''}</Text>
+                  <Text style={styles.trackingStatUnit}>{isGuided ? 'elapsed' : ''}</Text>
                 </View>
                 <View style={styles.trackingStatItem}>
                   <Text style={styles.trackingStatValue}>850</Text>
-                  <Text style={styles.trackingStatUnit}>{isGuided ? '米海拔' : 'm'}</Text>
+                  <Text style={styles.trackingStatUnit}>{isGuided ? 'elev m' : 'm'}</Text>
                 </View>
               </View>
               <TouchableOpacity style={styles.stopBtn} onPress={() => setTrackingState('idle')}>
                 <Text style={styles.stopBtnText}>
-                  {isGuided ? '停止追踪' : '■'}
+                  {isGuided ? 'Stop' : '■'}
                 </Text>
               </TouchableOpacity>
             </>
@@ -328,7 +328,7 @@ export function MapScreen() {
           onPress={() => setCreateVisible(true)}
         >
           <Icon name="MapPin" size={22} color="#fff" strokeWidth={2} />
-          {isGuided && trackingState === 'idle' && <Text style={styles.fabLabel}>标记</Text>}
+          {isGuided && trackingState === 'idle' && <Text style={styles.fabLabel}>Flag</Text>}
         </TouchableOpacity>
       ) : null}
 
@@ -339,7 +339,7 @@ export function MapScreen() {
           onPress={() => setTrackingState('tracking')}
         >
           <Text style={styles.startTrackingText}>
-            {isGuided ? `开始${activityMode === 'hiking' ? '徒步' : '跑步'}记录` : '▶'}
+            {isGuided ? `Start ${activityMode === 'hiking' ? 'Hiking' : 'Running'}` : '▶'}
           </Text>
         </TouchableOpacity>
       )}
@@ -361,7 +361,7 @@ export function MapScreen() {
       <Modal visible={showModeModal} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowModeModal(false)} activeOpacity={1}>
           <View style={styles.modeModal}>
-            <Text style={styles.modeModalTitle}>运动模式</Text>
+            <Text style={styles.modeModalTitle}>Activity Mode</Text>
             {(['hiking', 'running'] as const).map((m) => (
               <TouchableOpacity
                 key={m}
@@ -376,10 +376,10 @@ export function MapScreen() {
                   />
                 </View>
                 <View>
-                  <Text style={styles.modeModalLabel}>{m === 'hiking' ? '徒步模式' : '跑步模式'}</Text>
+                  <Text style={styles.modeModalLabel}>{m === 'hiking' ? 'Hiking Mode' : 'Running Mode'}</Text>
                   {isGuided && (
                     <Text style={styles.modeModalHint}>
-                      {m === 'hiking' ? '地图交互为主，完整标记功能' : '语音为主，极简界面，锁屏可用'}
+                      {m === 'hiking' ? 'Map-first, full flag features' : 'Voice-first, minimal UI, lock-screen safe'}
                     </Text>
                   )}
                 </View>

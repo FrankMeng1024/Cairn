@@ -64,17 +64,17 @@ function FriendCard({ friend, onToggleShare }: {
       <View style={cardStyles.info}>
         <Text style={cardStyles.name}>{friend.name}</Text>
         <Text style={cardStyles.meta}>
-          {friend.online ? '在线' : friend.lastSeen}
-          {friend.sharedMarkers > 0 ? ` · ${friend.sharedMarkers}个共同旗帜` : ''}
+          {friend.online ? 'Online' : friend.lastSeen}
+          {friend.sharedMarkers > 0 ? ` · ${friend.sharedMarkers} shared flags` : ''}
         </Text>
         {!friend.sharing && (
-          <Text style={cardStyles.noShareLabel}>旗帜不分享</Text>
+          <Text style={cardStyles.noShareLabel}>Not sharing flags</Text>
         )}
       </View>
 
       {/* Share toggle */}
       <View style={cardStyles.toggleCol}>
-        <Text style={cardStyles.toggleLabel}>{friend.sharing ? '分享' : '不分享'}</Text>
+        <Text style={cardStyles.toggleLabel}>{friend.sharing ? 'Sharing' : 'Hidden'}</Text>
         <Switch
           value={friend.sharing}
           onValueChange={onToggleShare}
@@ -96,9 +96,9 @@ function AddFriendView({ onBack }: { onBack: () => void }) {
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
           <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-          <Text style={styles.backText}>返回</Text>
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.topTitle}>添加好友</Text>
+        <Text style={styles.topTitle}>Add Friend</Text>
         <View style={{ width: 72 }} />
       </View>
 
@@ -108,15 +108,15 @@ function AddFriendView({ onBack }: { onBack: () => void }) {
           <View style={addStyles.illustrationIcon}>
             <Icon name="Users" size={48} color={Colors.primary} strokeWidth={1.5} />
           </View>
-          <Text style={addStyles.illustrationText}>通过邮箱邀请好友{'\n'}对方确认后成为好友</Text>
+          <Text style={addStyles.illustrationText}>Invite friends by email{'\n'}They'll appear here once they accept</Text>
         </View>
 
-        <Text style={addStyles.fieldLabel}>好友邮箱</Text>
+        <Text style={addStyles.fieldLabel}>Friend's email</Text>
         <View style={addStyles.inputWrap}>
           <Icon name="Mail" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
           <TextInput
             style={addStyles.input}
-            placeholder="对方注册Cairn时使用的邮箱"
+            placeholder="Email they use for Cairn"
             placeholderTextColor={Colors.textMuted}
             value={email}
             onChangeText={setEmail}
@@ -130,15 +130,15 @@ function AddFriendView({ onBack }: { onBack: () => void }) {
           style={[addStyles.sendBtn, !email.trim() && addStyles.sendBtnDisabled]}
           onPress={() => {
             if (!email.trim()) return;
-            Alert.alert('', `邀请已发送至 ${email}`, [{ text: '好的', onPress: onBack }]);
+            Alert.alert('', `Invite sent to ${email}`, [{ text: 'OK', onPress: onBack }]);
           }}
           activeOpacity={email.trim() ? 0.8 : 1}
         >
           <Icon name="Send" size={IconSize.sm} color="#fff" strokeWidth={2} />
-          <Text style={addStyles.sendBtnText}>发送邀请</Text>
+          <Text style={addStyles.sendBtnText}>Send Invite</Text>
         </TouchableOpacity>
 
-        <Text style={addStyles.hint}>对方会收到一封邮件邀请，确认后自动成为好友</Text>
+        <Text style={addStyles.hint}>They'll receive an email — once accepted, you'll be connected</Text>
       </View>
     </SafeAreaView>
   );
@@ -168,21 +168,21 @@ export function FriendsScreen() {
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
           <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-          <Text style={styles.backText}>返回</Text>
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.topTitle}>好友</Text>
+        <Text style={styles.topTitle}>Friends</Text>
         <TouchableOpacity style={styles.addTopBtn} onPress={() => setShowAdd(true)}>
           <Icon name="UserPlus" size={14} color="#fff" strokeWidth={2} />
-          <Text style={styles.addTopBtnText}>添加</Text>
+          <Text style={styles.addTopBtnText}>Add</Text>
         </TouchableOpacity>
       </View>
 
       {/* Share summary banner */}
       <View style={styles.shareBanner}>
         <Text style={styles.shareBannerText}>
-          与 {sharingCount}/{friends.length} 位好友分享旗帜
+          Sharing flags with {sharingCount}/{friends.length} friends
         </Text>
-        <Text style={styles.shareBannerSub}>可为每位好友单独开关分享</Text>
+        <Text style={styles.shareBannerSub}>Toggle sharing individually per friend</Text>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -201,8 +201,8 @@ export function FriendsScreen() {
               <Icon name="UserPlus" size={IconSize.md} color={Colors.primary} strokeWidth={1.8} />
             </View>
             <View>
-              <Text style={styles.addCardLabel}>添加好友</Text>
-              <Text style={styles.addCardHint}>通过邮箱邀请</Text>
+              <Text style={styles.addCardLabel}>Add a friend</Text>
+              <Text style={styles.addCardHint}>Invite by email</Text>
             </View>
           </View>
         </PressCard>
@@ -211,7 +211,7 @@ export function FriendsScreen() {
         <View style={styles.infoBox}>
           <Icon name="Info" size={14} color={Colors.textSecondary} strokeWidth={1.8} />
           <Text style={styles.infoBoxText}>
-            关闭分享后，该好友将看不到你新建的旗帜。已有的共同旗帜不受影响。
+            When you turn off sharing, that friend won't see your new flags. Existing shared flags are not affected.
           </Text>
         </View>
       </ScrollView>
