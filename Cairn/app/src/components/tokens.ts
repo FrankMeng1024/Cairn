@@ -1,0 +1,75 @@
+/**
+ * Design tokens — mirrors UI_SPEC.md exactly.
+ * Single import for all components.
+ */
+export const Colors = {
+  primary: '#5d7c46',
+  primaryLight: 'rgba(93,124,70,0.15)',
+  bg: '#faf7f2',
+  surface: '#ffffff',
+  border: '#ece6de',
+  textPrimary: '#2d2a26',
+  textSecondary: '#8c7e72',
+  textMuted: '#b5a99d',
+  danger: '#c53d2e',
+  dangerBg: '#f4e0dc',
+  warning: '#b36b00',
+  warningBg: '#fff3e0',
+  info: '#2e6cc5',
+  infoBg: '#dce8f4',
+  success: '#2e8c3a',
+  successBg: '#dcf4de',
+} as const;
+
+export const Spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  base: 16,
+  lg: 20,
+  xl: 24,
+  xxl: 32,
+} as const;
+
+export const Radius = {
+  card: 14,
+  cardLg: 20,
+  button: 12,
+  pill: 20,
+  circle: 999,
+  sheet: 20,
+} as const;
+
+export const FontSize = {
+  h1: 28,
+  h2: 20,
+  h3: 17,
+  body: 15,
+  caption: 13,
+  small: 11,
+  tiny: 9,
+} as const;
+
+export const Shadow = {
+  card: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 4,
+  },
+  fab: {
+    shadowColor: '#5d7c46',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  overlay: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 20,
+    elevation: 4,
+  },
+} as const;

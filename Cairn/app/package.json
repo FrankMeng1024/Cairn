@@ -1,0 +1,54 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "test": "jest --watchAll=false",
+    "test:watch": "jest"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "setupFilesAfterFramework": [
+      "@testing-library/jest-native/extend-expect"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?expo(nent)?|@expo(nent)?/.*|expo-location|expo-speech|react-native|@react-native(/.*)?|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg))"
+    ],
+    "moduleNameMapper": {
+      "^expo-location$": "<rootDir>/__mocks__/expo-location.ts",
+      "^expo-speech$": "<rootDir>/__mocks__/expo-speech.ts"
+    }
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~6.1.2",
+    "@react-navigation/bottom-tabs": "^7.16.1",
+    "@react-navigation/native": "^7.2.4",
+    "@react-navigation/native-stack": "^7.15.1",
+    "expo": "~54.0.33",
+    "expo-location": "~19.0.8",
+    "expo-speech": "~14.0.8",
+    "expo-status-bar": "~3.0.9",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0",
+    "react-native-web": "^0.21.0",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@testing-library/jest-native": "^5.4.3",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^29.5.14",
+    "@types/react": "~19.1.0",
+    "jest": "^29.7.0",
+    "jest-expo": "^55.0.17",
+    "react-test-renderer": "^19.1.0",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}
