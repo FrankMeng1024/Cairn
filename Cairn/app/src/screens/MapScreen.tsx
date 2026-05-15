@@ -1,11 +1,23 @@
+/**
+ * MapScreen — Sprint 13 SVG polish
+ *
+ * - Emoji replaced with lucide SVG icons throughout
+ * - Map markers, type selector, detail badge all use Icon component
+ * - Permission icons: Lock, Users, Globe
+ * - Activity mode chip: Mountain / PersonStanding
+ * - FAB: MapPin SVG
+ * - Helpful button: ThumbsUp SVG
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, Modal,
-  TextInput, ScrollView, Animated,
+  TextInput, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAppStore } from '../store/useAppStore';
-import { Colors, Spacing, Radius, FontSize, Shadow } from '../components/tokens';
+import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
+import { Icon } from '../components/Icon';
+import type { IconName } from '../components/Icon';
 import { MOCK_MARKERS, MARKER_META, MarkerType } from '../data/mockData';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -47,7 +59,7 @@ function MapPlaceholder({
             }]}
             onPress={() => onMarkerPress(m)}
           >
-            <Text style={[styles.mapMarkerIcon, { color: meta.color }]}>{meta.icon}</Text>
+            <Icon name={meta.iconName as IconName} size={13} color={meta.color} strokeWidth={2} />
           </TouchableOpacity>
         );
       })}
@@ -76,7 +88,12 @@ function CreateMarkerSheet({
     }).start();
   }, [visible]);
 
-  const permIcons = { personal: '🔒', group: '👥', public: '🌐' };
+  const permIconNames: Record<'personal' | 'group' | 'public', IconName> = {
+    personal: 'Lock', group: 'Users', public: 'Globe',
+  };
+  const permColors: Record<'personal' | 'group' | 'public', string> = {
+    personal: Colors.textSecondary, group: Colors.info, public: Colors.primary,
+  };
   const permLabels = { personal: '仅自己', group: '好友组', public: '公开' };
   const permHints = {
     personal: '只有你能看到这面旗',
@@ -107,7 +124,7 @@ function CreateMarkerSheet({
                 style={[styles.typeBtn, active && { backgroundColor: meta.bg, borderColor: meta.color }]}
                 onPress={() => setSelectedType(t)}
               >
-                <Text style={[styles.typeBtnIcon, { color: meta.color }]}>{meta.icon}</Text>
+                <Icon name={meta.iconName as IconName} size={18} color={meta.color} strokeWidth={1.8} />
                 {isGuided && <Text style={[styles.typeBtnLabel, { color: meta.color }]}>{meta.label}</Text>}
               </TouchableOpacity>
             );
@@ -139,7 +156,7 @@ function CreateMarkerSheet({
                 style={[styles.permBtn, active && styles.permBtnActive]}
                 onPress={() => setPermission(p)}
               >
-                <Text style={styles.permBtnIcon}>{permIcons[p]}</Text>
+                <Icon name={permIconNames[p]} size={16} color={active ? Colors.primary : permColors[p]} strokeWidth={1.8} />
                 {isGuided && (
                   <View>
                     <Text style={[styles.permBtnLabel, active && styles.permBtnLabelActive]}>{permLabels[p]}</Text>
@@ -183,14 +200,14 @@ function MarkerDetailSheet({
         <View style={styles.sheetHandle} />
         <View style={styles.detailHeader}>
           <View style={[styles.detailTypeBadge, { backgroundColor: meta.bg, borderColor: meta.color }]}>
-            <Text style={[styles.detailTypeIcon, { color: meta.color }]}>{meta.icon}</Text>
+            <Icon name={meta.iconName as IconName} size={14} color={meta.color} strokeWidth={2} />
             <Text style={[styles.detailTypeLabel, { color: meta.color }]}>{meta.label}</Text>
           </View>
           <Text style={styles.detailTime}>{marker.minutesAgo}分钟前 · {marker.author}</Text>
         </View>
         <Text style={styles.detailText}>{marker.text}</Text>
         <TouchableOpacity style={styles.helpfulBtn}>
-          <Text style={styles.helpfulBtnIcon}>👍</Text>
+          <Icon name="ThumbsUp" size={18} color={Colors.textSecondary} strokeWidth={1.8} />
           {isGuided
             ? <Text style={styles.helpfulBtnText}>有帮助 — 告诉作者这个标记帮助了你</Text>
             : <Text style={styles.helpfulBtnText}>有帮助</Text>
@@ -251,7 +268,10 @@ export function MapScreen() {
 
         {/* Activity mode chip */}
         <TouchableOpacity style={styles.modeChip} onPress={() => setShowModeModal(true)}>
-          <Text style={styles.chipText}>{activityMode === 'hiking' ? '🥾' : '🏃'}</Text>
+          <Icon
+            name={activityMode === 'hiking' ? 'Mountain' : 'PersonStanding'}
+            size={16} color={Colors.primary} strokeWidth={1.8}
+          />
           {isGuided && (
             <Text style={styles.chipText}>{activityMode === 'hiking' ? '徒步' : '跑步'}</Text>
           )}
@@ -307,7 +327,7 @@ export function MapScreen() {
           style={[styles.fab, trackingState === 'tracking' && styles.fabSmall]}
           onPress={() => setCreateVisible(true)}
         >
-          <Text style={styles.fabIcon}>📍</Text>
+          <Icon name="MapPin" size={22} color="#fff" strokeWidth={2} />
           {isGuided && trackingState === 'idle' && <Text style={styles.fabLabel}>标记</Text>}
         </TouchableOpacity>
       ) : null}
@@ -348,7 +368,13 @@ export function MapScreen() {
                 style={[styles.modeModalRow, activityMode === m && styles.modeModalRowActive]}
                 onPress={() => { setActivityMode(m); setShowModeModal(false); }}
               >
-                <Text style={styles.modeModalIcon}>{m === 'hiking' ? '🥾' : '🏃'}</Text>
+                <View style={styles.modeModalIconWrap}>
+                  <Icon
+                    name={m === 'hiking' ? 'Mountain' : 'PersonStanding'}
+                    size={22} color={activityMode === m ? Colors.primary : Colors.textSecondary}
+                    strokeWidth={1.8}
+                  />
+                </View>
                 <View>
                   <Text style={styles.modeModalLabel}>{m === 'hiking' ? '徒步模式' : '跑步模式'}</Text>
                   {isGuided && (
@@ -386,7 +412,6 @@ const styles = StyleSheet.create({
     position: 'absolute', width: 28, height: 28, borderRadius: 14,
     borderWidth: 2, alignItems: 'center', justifyContent: 'center',
   },
-  mapMarkerIcon: { fontSize: 13, fontWeight: '700' },
 
   topBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
@@ -437,7 +462,6 @@ const styles = StyleSheet.create({
     ...Shadow.fab,
   },
   fabSmall: { width: 52, height: 52 },
-  fabIcon: { fontSize: 24 },
   fabLabel: {
     fontSize: FontSize.tiny, color: '#fff', fontWeight: '700',
     position: 'absolute', bottom: -18,
@@ -472,7 +496,6 @@ const styles = StyleSheet.create({
     borderRadius: Radius.card, borderWidth: 1.5, borderColor: Colors.border,
     backgroundColor: Colors.bg, gap: 2,
   },
-  typeBtnIcon: { fontSize: 18, fontWeight: '700' },
   typeBtnLabel: { fontSize: FontSize.tiny, fontWeight: '600' },
 
   inputWrap: {
@@ -489,7 +512,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.border,
   },
   permBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
-  permBtnIcon: { fontSize: 16 },
   permBtnLabel: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
   permBtnLabelActive: { color: Colors.primary },
   permBtnHint: { fontSize: 9, color: Colors.textMuted },
@@ -506,7 +528,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4,
     borderWidth: 1.5, borderRadius: Radius.pill, paddingHorizontal: 10, paddingVertical: 4,
   },
-  detailTypeIcon: { fontSize: 14, fontWeight: '700' },
   detailTypeLabel: { fontSize: FontSize.small, fontWeight: '600' },
   detailTime: { fontSize: FontSize.caption, color: Colors.textSecondary },
   detailText: { fontSize: FontSize.body, color: Colors.textPrimary, lineHeight: 22, marginBottom: Spacing.lg },
@@ -514,7 +535,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     backgroundColor: Colors.bg, borderRadius: Radius.button, padding: Spacing.md,
   },
-  helpfulBtnIcon: { fontSize: 20 },
   helpfulBtnText: { fontSize: FontSize.caption, color: Colors.textSecondary },
 
   // Modal
@@ -526,7 +546,11 @@ const styles = StyleSheet.create({
     padding: Spacing.md, borderRadius: Radius.card, marginBottom: Spacing.sm,
   },
   modeModalRowActive: { backgroundColor: Colors.primaryLight },
-  modeModalIcon: { fontSize: 24 },
+  modeModalIconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.bg,
+  },
   modeModalLabel: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
   modeModalHint: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
 });

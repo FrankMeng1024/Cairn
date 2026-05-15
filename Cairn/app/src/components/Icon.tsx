@@ -18,6 +18,8 @@ import {
   Info, Send,
   // Sprint 12
   BookOpen, Moon, Volume2, LogOut, User, ArrowUp, Save,
+  // Sprint 13
+  Globe, ThumbsUp,
 } from 'lucide-react-native';
 import { IconSize } from './tokens';
 
@@ -31,6 +33,7 @@ const ICON_MAP = {
   LogIn, Eye, EyeOff, Mail, KeyRound, UserPlus,
   Info, Send,
   BookOpen, Moon, Volume2, LogOut, User, ArrowUp, Save,
+  Globe, ThumbsUp,
 } as const;
 
 export type IconName = keyof typeof ICON_MAP;
