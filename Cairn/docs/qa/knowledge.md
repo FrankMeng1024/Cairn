@@ -138,3 +138,20 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 - STORY-00068 (HikingScreen tracking bar elevation): PASS HIGH
 - STORY-00069 (MapHistory expand + route view): PASS HIGH
 - STORY-00070 (Empty state labels + amber test data): PASS MEDIUM (AC2 satisfied by design — duration-only format means "-- km" never appears)
+
+## Sprint 26 Updates
+
+- FlagPlantSheet is a bottom-sheet component on HikingScreen triggered by FAB tap during active session. Supports 4 flag types (Danger/Scenic/Supply/Junction) with color coding and optional 30-char note. FAB badge tracks total flags planted in session. Selection state resets correctly on re-open.
+- Settings premium uplift: Explorer/Navigator mode cards with gradient icon badges, selection state (green 2px border + CircleCheck), and a "Tap Save to apply" hint pill (ArrowUp icon) for unsaved changes. Save button in topbar follows active/disabled pattern based on pending changes.
+- Run Complete screen: uses '--' placeholder for missing GPS data (km and pace). Do not flag as bug — expected for no-GPS sessions.
+- MapHistory capsule uses "No GPS" text label in the km stat position for GPS-less sessions (replaces previous "--" behavior).
+- HowItWorks onboarding section is conditionally hidden when sessions > 0. Create Account form includes "You'll start in Explorer mode" subtitle as onboarding cue.
+- expo-keep-awake Wake Lock console errors confirmed pre-existing (Sprint 23+). Browser Web API limitation. Tag r0/r1 variants both expected. Do not flag in future QA runs.
+- Navigation regression Sprint 26: PASS. All 5 paths (Home↔Hiking/Settings/MapHistory/Friends/Running) 0 new JS errors. Pre-existing Wake Lock only.
+
+## Sprint 26 Verification Summary
+
+- STORY-00071 (FlagPlantSheet bottom-sheet): PASS HIGH
+- STORY-00072 (SettingsScreen premium uplift): PASS HIGH
+- STORY-00073 (Run Complete + MapHistory polish): PASS HIGH
+- STORY-00074 (Create Account + HowItWorks UX): PASS HIGH

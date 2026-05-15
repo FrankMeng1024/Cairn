@@ -11,11 +11,12 @@
  * expo-keep-awake: activates when status === 'tracking'
  * Real stores: useTrackingStore (GPS), useMarkerStore (flags)
  */
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions,
-  TextInput, Alert, PanResponder, Animated,
+  TextInput, Alert, Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useNavigation } from '@react-navigation/native';
@@ -42,20 +43,12 @@ const FLAG_TYPES: {
   label: string;
   color: string;
   bg: string;
-  corner: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
 }[] = [
-  { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: Colors.danger,   bg: Colors.dangerBg,  corner: 'topLeft' },
-  { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: Colors.info,     bg: Colors.infoBg,    corner: 'topRight' },
-  { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: Colors.success,  bg: Colors.successBg, corner: 'bottomLeft' },
-  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg, corner: 'bottomRight' },
+  { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: Colors.danger,   bg: Colors.dangerBg  },
+  { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: Colors.info,     bg: Colors.infoBg    },
+  { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: Colors.success,  bg: Colors.successBg },
+  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg },
 ];
-
-const CORNER_POSITIONS: Record<string, { top?: number; bottom?: number; left?: number; right?: number }> = {
-  topLeft:     { top: 48, left: 20 },
-  topRight:    { top: 48, right: 20 },
-  bottomLeft:  { bottom: 120, left: 20 },
-  bottomRight: { bottom: 120, right: 20 },
-};
 
 // ── Marker pin on map ─────────────────────────────────────────────────────
 function MarkerPin({ type, x, y, onPress }: {
@@ -117,179 +110,123 @@ function MapPlaceholder({ markers, onMarkerPress }: {
   );
 }
 
-// ── AR Flag Picker — drag-from-corners ────────────────────────────────────────
-// Drop zone: centred rect. Each corner flag has a PanResponder.
-// Drag into drop zone bounds → highlight → on release → onPlant.
-// Tap also works as fallback.
-const DROP_ZONE = { x: W / 2 - 72, y: 200, w: 144, h: 144 };
-
-function DraggableFlag({ flag, onPlant, onDropZoneEnter, onDropZoneLeave, hideLabel = false }: {
-  flag: typeof FLAG_TYPES[0];
-  onPlant: (type: MarkerType) => void;
-  onDropZoneEnter: () => void;
-  onDropZoneLeave: () => void;
-  hideLabel?: boolean;
+// ── Flag Plant Bottom Sheet — replaces ARFlagPicker + PlantNoteSheet ─────────
+// Premium bottom sheet: type selection + optional note. No dark AR overlay.
+function FlagPlantSheet({ onClose, onSave }: {
+  onClose: () => void;
+  onSave: (type: MarkerType, note: string) => void;
 }) {
-  const pan = useRef(new Animated.ValueXY()).current;
-  const dragging = useRef(false);
-  const overZone = useRef(false);
+  const [selectedType, setSelectedType] = useState<MarkerType | null>(null);
+  const [note, setNote] = useState('');
+  const charCount = note.length;
+  const canSave = selectedType !== null;
 
-  const isInDropZone = (x: number, y: number) => {
-    return (
-      x > DROP_ZONE.x && x < DROP_ZONE.x + DROP_ZONE.w &&
-      y > DROP_ZONE.y && y < DROP_ZONE.y + DROP_ZONE.h
-    );
+  // Slide-in animation
+  const slideY = useRef(new Animated.Value(400)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 200, friction: 18 }),
+      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const handleClose = () => {
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: 400, duration: 180, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+    ]).start(() => onClose());
   };
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        dragging.current = true;
-        pan.setOffset({ x: (pan.x as any)._value, y: (pan.y as any)._value });
-      },
-      onPanResponderMove: (_, gestureState) => {
-        pan.setValue({ x: gestureState.dx, y: gestureState.dy });
-        const cornerPos = CORNER_POSITIONS[flag.corner];
-        const absX = (cornerPos.left ?? (W - 84 - (cornerPos.right ?? 0))) + gestureState.moveX - gestureState.x0;
-        const absY = (cornerPos.top ?? (500 - (cornerPos.bottom ?? 0))) + gestureState.moveY - gestureState.y0;
-        const inZone = isInDropZone(gestureState.moveX, gestureState.moveY);
-        if (inZone && !overZone.current) { overZone.current = true; onDropZoneEnter(); }
-        if (!inZone && overZone.current) { overZone.current = false; onDropZoneLeave(); }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        dragging.current = false;
-        pan.flattenOffset();
-        const inZone = isInDropZone(gestureState.moveX, gestureState.moveY);
-        if (inZone) {
-          overZone.current = false;
-          onDropZoneLeave();
-          onPlant(flag.id);
-        } else {
-          overZone.current = false;
-          onDropZoneLeave();
-          Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: false, tension: 200, friction: 8 }).start();
-        }
-      },
-    })
-  ).current;
-
-  const pos = CORNER_POSITIONS[flag.corner];
+  const handleSave = () => {
+    if (!selectedType) return;
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: 400, duration: 180, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+    ]).start(() => onSave(selectedType, note));
+  };
 
   return (
-    <Animated.View
-      style={[
-        arStyles.cornerFlag,
-        pos,
-        { backgroundColor: flag.bg, borderColor: flag.color },
-        { transform: pan.getTranslateTransform() },
-      ]}
-      {...panResponder.panHandlers}
-    >
-      <TouchableOpacity
-        style={arStyles.cornerFlagInner}
-        onPress={() => onPlant(flag.id)}
-        activeOpacity={0.75}
-      >
-        <Icon name={flag.icon} size={IconSize.md} color={flag.color} strokeWidth={2} />
-        {!hideLabel && <Text style={[arStyles.cornerLabel, { color: flag.color }]}>{flag.label}</Text>}
-      </TouchableOpacity>
+    <Animated.View style={[sheetStyles.backdrop, { opacity }]}>
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={handleClose} activeOpacity={1} />
+      <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: slideY }] }]}>
+        {/* Handle */}
+        <View style={sheetStyles.handle} />
+        {/* Header */}
+        <View style={sheetStyles.header}>
+          <Text style={sheetStyles.title}>Plant a Flag</Text>
+          <TouchableOpacity style={sheetStyles.closeBtn} onPress={handleClose}>
+            <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.5} />
+          </TouchableOpacity>
+        </View>
+        {/* Flag type row */}
+        <View style={sheetStyles.typeRow}>
+          {FLAG_TYPES.map(flag => (
+            <TouchableOpacity
+              key={flag.id}
+              style={[sheetStyles.typeCard, selectedType === flag.id && { borderColor: Colors.primary, backgroundColor: Colors.primaryBg }]}
+              onPress={() => setSelectedType(flag.id)}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={[flag.bg, flag.bg.replace(')', ', 0.9)').replace('rgb', 'rgba')]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={[sheetStyles.typeIconBadge, { borderColor: flag.color + '40' }]}
+              >
+                <Icon name={flag.icon} size={IconSize.md} color={flag.color} strokeWidth={2} />
+              </LinearGradient>
+              <Text style={[sheetStyles.typeLabel, { color: selectedType === flag.id ? Colors.primary : Colors.textSecondary }]}>
+                {flag.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {/* Note input */}
+        <View style={sheetStyles.noteWrap}>
+          <TextInput
+            style={sheetStyles.noteInput}
+            placeholder="Describe this spot… (optional)"
+            placeholderTextColor={Colors.textMuted}
+            value={note}
+            onChangeText={t => setNote(t.slice(0, 30))}
+            multiline
+            numberOfLines={2}
+          />
+          <Text style={sheetStyles.charCount}>{charCount}/30</Text>
+        </View>
+        {/* Save button */}
+        <TouchableOpacity
+          style={[sheetStyles.saveBtn, !canSave && sheetStyles.saveBtnDisabled]}
+          onPress={handleSave}
+          activeOpacity={canSave ? 0.8 : 1}
+        >
+          <Icon name="Flag" size={IconSize.sm} color={canSave ? '#fff' : Colors.textMuted} strokeWidth={2} />
+          <Text style={[sheetStyles.saveBtnText, !canSave && { color: Colors.textMuted }]}>Save Flag</Text>
+        </TouchableOpacity>
+      </Animated.View>
     </Animated.View>
   );
 }
 
-function ARFlagPicker({ onClose, onPlant, hideLabels = false }: {
-  onClose: () => void;
-  onPlant: (type: MarkerType) => void;
-  hideLabels?: boolean;
-}) {
-  const [planted, setPlanted] = useState<MarkerType | null>(null);
-  const [dropHighlight, setDropHighlight] = useState(false);
-
-  const handlePlant = useCallback((type: MarkerType) => {
-    setPlanted(type);
-    setTimeout(() => onPlant(type), 350);
-  }, [onPlant]);
-
+// ── Flag Saved Toast ──────────────────────────────────────────────────────────
+function FlagSavedToast({ onHide }: { onHide: () => void }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const slideY = useRef(new Animated.Value(20)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 200, friction: 14 }),
+    ]).start(() => {
+      setTimeout(() => {
+        Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(onHide);
+      }, 1200);
+    });
+  }, []);
   return (
-    <View style={arStyles.overlay}>
-      <View style={arStyles.cameraBg}>
-        <Text style={arStyles.hint}>Drag a flag to the zone · or tap</Text>
-        {/* Drop zone */}
-        <View style={[
-          arStyles.dropZone,
-          dropHighlight && arStyles.dropZoneActive,
-          { position: 'absolute', left: DROP_ZONE.x, top: DROP_ZONE.y, width: DROP_ZONE.w, height: DROP_ZONE.h },
-        ]}>
-          {planted ? (
-            <Icon name="CircleCheck" size={40} color={Colors.success} strokeWidth={1.5} />
-          ) : (
-            <Icon name="Flag" size={32} color={dropHighlight ? Colors.primary : 'rgba(255,255,255,0.3)'} strokeWidth={1.5} />
-          )}
-          <Text style={[arStyles.dropZoneText, dropHighlight && { color: Colors.primary }]}>
-            {planted ? 'Flag planted!' : 'Target zone'}
-          </Text>
-        </View>
-      </View>
-
-      {FLAG_TYPES.map(flag => (
-        <DraggableFlag
-          key={flag.id}
-          flag={flag}
-          onPlant={handlePlant}
-          onDropZoneEnter={() => setDropHighlight(true)}
-          onDropZoneLeave={() => setDropHighlight(false)}
-          hideLabel={hideLabels}
-        />
-      ))}
-
-      <TouchableOpacity style={arStyles.closeBtn} onPress={onClose}>
-        <Icon name="X" size={IconSize.sm} color="rgba(255,255,255,0.8)" strokeWidth={2.5} />
-        <Text style={arStyles.closeBtnText}>Cancel</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// ── Plant Note Sheet ───────────────────────────────────────────────────────
-function PlantNoteSheet({ flagType, onSave, onSkip }: {
-  flagType: MarkerType;
-  onSave: (note: string) => void;
-  onSkip: () => void;
-}) {
-  const [note, setNote] = useState('');
-  const flag = FLAG_TYPES.find(f => f.id === flagType) || FLAG_TYPES[0];
-
-  return (
-    <View style={noteStyles.container}>
-      <View style={noteStyles.sheet}>
-        <View style={[noteStyles.flagBadge, { backgroundColor: flag.bg, borderColor: flag.color }]}>
-          <Icon name={flag.icon} size={IconSize.sm} color={flag.color} strokeWidth={2} />
-          <Text style={[noteStyles.flagLabel, { color: flag.color }]}>{flag.label}</Text>
-        </View>
-        <Text style={noteStyles.title}>Add a note (optional)</Text>
-        <TextInput
-          style={noteStyles.input}
-          placeholder="Describe this spot... (e.g. Slippery rocks, clean water source)"
-          placeholderTextColor={Colors.textMuted}
-          value={note}
-          onChangeText={setNote}
-          multiline
-          numberOfLines={3}
-          autoFocus
-        />
-        <View style={noteStyles.btnRow}>
-          <TouchableOpacity style={noteStyles.skipBtn} onPress={onSkip}>
-            <Text style={noteStyles.skipBtnText}>Skip</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={noteStyles.saveBtn} onPress={() => onSave(note)}>
-            <Icon name="Flag" size={IconSize.sm} color="#fff" strokeWidth={2} />
-            <Text style={noteStyles.saveBtnText}>Save Flag</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
+    <Animated.View style={[toastStyles.toast, { opacity, transform: [{ translateY: slideY }] }]}>
+      <Icon name="CircleCheck" size={16} color={Colors.success} strokeWidth={2} />
+      <Text style={toastStyles.text}>Flag saved</Text>
+    </Animated.View>
   );
 }
 
@@ -365,7 +302,7 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
 }
 
 // ── Main HikingScreen ──────────────────────────────────────────────────────
-type UIState = 'map' | 'ar' | 'note' | 'detail';
+type UIState = 'map' | 'plant' | 'detail';
 
 export function HikingScreen() {
   const nav = useNavigation<Nav>();
@@ -392,8 +329,8 @@ export function HikingScreen() {
   const markers = getMarkersForRegion(region.code);
 
   const [ui, setUi] = useState<UIState>('map');
-  const [plantedFlag, setPlantedFlag] = useState<MarkerType | null>(null);
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+  const [showSavedToast, setShowSavedToast] = useState(false);
 
   const isTracking = status === 'tracking';
 
@@ -410,13 +347,12 @@ export function HikingScreen() {
 
   const selectedMarker = markers.find(m => m.id === selectedMarkerId) ?? null;
 
-  function handlePlantSave(note: string) {
-    if (!plantedFlag) return;
+  function handlePlantSave(type: MarkerType, note: string) {
     // Use last GPS coordinate if available, else region center
     const lat = lastCoordinate?.lat ?? region.centerLat;
     const lng = lastCoordinate?.lng ?? region.centerLng;
     const marker = addMarker({
-      type: plantedFlag,
+      type,
       regionCode: region.code,
       lat,
       lng,
@@ -427,6 +363,7 @@ export function HikingScreen() {
     });
     if (sessionId) linkMarker(marker.id);
     setUi('map');
+    setShowSavedToast(true);
   }
 
   function handleDeleteMarker() {
@@ -518,7 +455,7 @@ export function HikingScreen() {
           <Animated.View style={{ transform: [{ scale: fabScale }] }}>
             <TouchableOpacity
               style={styles.fab}
-              onPress={() => setUi('ar')}
+              onPress={() => setUi('plant')}
               activeOpacity={1}
               onPressIn={() => springIn(fabScale)}
               onPressOut={() => springOut(fabScale)}
@@ -534,21 +471,11 @@ export function HikingScreen() {
         </View>
       </SafeAreaView>
 
-      {/* AR Flag Picker */}
-      {ui === 'ar' && (
-        <ARFlagPicker
+      {/* Flag Plant Bottom Sheet */}
+      {ui === 'plant' && (
+        <FlagPlantSheet
           onClose={() => setUi('map')}
-          onPlant={(type) => { setPlantedFlag(type); setUi('note'); }}
-          hideLabels={isExpert}
-        />
-      )}
-
-      {/* Plant Note Sheet */}
-      {ui === 'note' && plantedFlag && (
-        <PlantNoteSheet
-          flagType={plantedFlag}
           onSave={handlePlantSave}
-          onSkip={() => { handlePlantSave(''); }}
         />
       )}
 
@@ -560,6 +487,11 @@ export function HikingScreen() {
           onDelete={handleDeleteMarker}
           lastCoordinate={lastCoordinate}
         />
+      )}
+
+      {/* Flag Saved Toast */}
+      {showSavedToast && (
+        <FlagSavedToast onHide={() => setShowSavedToast(false)} />
       )}
     </View>
   );
@@ -703,75 +635,72 @@ const styles = StyleSheet.create({
   fabBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 });
 
-const arStyles = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(20,40,20,0.9)' },
-  cameraBg: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
-  hint: { color: 'rgba(255,255,255,0.55)', fontSize: FontSize.caption, letterSpacing: 0.5 },
-  dropZone: {
-    borderRadius: 24,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)',
-    borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
-  },
-  dropZoneActive: {
-    borderColor: Colors.primary, borderStyle: 'solid',
-    backgroundColor: 'rgba(93,124,70,0.15)',
-  },
-  dropZoneText: { color: 'rgba(255,255,255,0.45)', fontSize: FontSize.small },
-  cornerFlag: {
-    position: 'absolute', width: 84, height: 84,
-    borderRadius: 20, borderWidth: 2,
-    zIndex: 10, ...Shadow.card,
-  },
-  cornerFlagInner: {
-    flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', gap: 6,
-    borderRadius: 20,
-  },
-  cornerLabel: { fontSize: FontSize.small, fontWeight: '800' },
-  closeBtn: {
-    position: 'absolute', bottom: 52, alignSelf: 'center',
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: Radius.pill, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,
-  },
-  closeBtnText: { color: 'rgba(255,255,255,0.75)', fontWeight: '600', fontSize: FontSize.caption },
-});
-
-const noteStyles = StyleSheet.create({
-  container: {
+const sheetStyles = StyleSheet.create({
+  backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
   },
   sheet: {
     backgroundColor: Colors.surface,
     borderTopLeftRadius: Radius.sheet, borderTopRightRadius: Radius.sheet,
-    padding: Spacing.xl, paddingBottom: Spacing.xxl, gap: Spacing.md,
+    padding: Spacing.xl, paddingBottom: Spacing.xxl + 8, gap: Spacing.md,
+    ...Shadow.overlay,
   },
-  flagBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
-    alignSelf: 'flex-start', borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderWidth: 1.5,
+  handle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: Colors.border, alignSelf: 'center', marginBottom: Spacing.xs,
   },
-  flagLabel: { fontSize: FontSize.caption, fontWeight: '700' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary },
-  input: {
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center',
+  },
+  typeRow: { flexDirection: 'row', gap: Spacing.sm },
+  typeCard: {
+    flex: 1, alignItems: 'center', gap: Spacing.xs, paddingVertical: Spacing.sm,
+    borderRadius: Radius.card, borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.surface, ...Shadow.card,
+  },
+  typeIconBadge: {
+    width: 44, height: 44, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1,
+  },
+  typeLabel: { fontSize: FontSize.small, fontWeight: '700' },
+  noteWrap: { position: 'relative' },
+  noteInput: {
     backgroundColor: Colors.bg, borderRadius: Radius.button,
     padding: Spacing.md, fontSize: FontSize.body, color: Colors.textPrimary,
-    borderWidth: 1.5, borderColor: Colors.border, minHeight: 80,
+    borderWidth: 1.5, borderColor: Colors.border, minHeight: 70,
     textAlignVertical: 'top',
   },
-  btnRow: { flexDirection: 'row', gap: Spacing.sm },
-  skipBtn: {
-    flex: 1, borderRadius: Radius.button, paddingVertical: Spacing.md,
-    alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border,
+  charCount: {
+    position: 'absolute', bottom: 8, right: Spacing.sm,
+    fontSize: FontSize.tiny, color: Colors.textMuted,
   },
-  skipBtnText: { color: Colors.textSecondary, fontWeight: '600', fontSize: FontSize.body },
   saveBtn: {
-    flex: 2, borderRadius: Radius.button, paddingVertical: Spacing.md,
+    borderRadius: Radius.button, paddingVertical: Spacing.md,
     alignItems: 'center', backgroundColor: Colors.primary,
     flexDirection: 'row', gap: Spacing.xs, justifyContent: 'center',
   },
+  saveBtnDisabled: { backgroundColor: Colors.border },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
 });
+
+const toastStyles = StyleSheet.create({
+  toast: {
+    position: 'absolute', bottom: 140, alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
+    backgroundColor: Colors.surface, borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
+    ...Shadow.elevated,
+  },
+  text: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary },
+});
+
+
 
 const detailStyles = StyleSheet.create({
   container: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },

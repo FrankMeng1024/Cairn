@@ -186,7 +186,7 @@ export function RunningScreen() {
         </View>
         <View style={preStyles.footer}>
           <TouchableOpacity style={preStyles.startBtn} onPress={() => { setRunState('pre'); }}>
-            <Icon name="ChevronLeft" size={IconSize.md} color="#fff" strokeWidth={2} />
+            <Icon name="RotateCcw" size={IconSize.md} color="#fff" strokeWidth={2} />
             <Text style={preStyles.startBtnText}>New Run</Text>
           </TouchableOpacity>
         </View>

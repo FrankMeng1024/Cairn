@@ -24,6 +24,8 @@ import {
   Compass,
   // Sprint 21
   Apple,
+  // Sprint 26
+  RotateCcw, Download,
 } from 'lucide-react-native';
 import { IconSize } from './tokens';
 
@@ -40,6 +42,7 @@ const ICON_MAP = {
   Globe, ThumbsUp,
   Compass,
   Apple,
+  RotateCcw, Download,
 } as const;
 
 export type IconName = keyof typeof ICON_MAP;

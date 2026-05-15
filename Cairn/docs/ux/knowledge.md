@@ -44,3 +44,13 @@ The Cairn app helps users track hikes and runs, plant location flags, and share 
 - MapHistory session cards: secondary line now shows "No GPS" instead of "-- km" for sessions without GPS distance — clarity improvement.
 - FriendsScreen: 3-tier status dots confirmed working (green=online, amber=recently active ~45m, grey=inactive 3h+). Sharing toggles functional. MOCK_FRIENDS now includes Alex (amber state) for amber dot coverage.
 - Warning triangle icon (red circle with exclamation) on map placeholders across MapHistory and HikingScreen — no label, purpose unclear to new users. Pre-existing.
+
+## Sprint 26 Knowledge Updates
+- FlagPlantSheet bottom-sheet pattern is significantly more intuitive than the previous dark AR overlay. 4-card layout makes all flag types immediately scannable. Disabled→active Save button progressive disclosure guides user naturally. Green border + CircleCheck selection indicator is unmistakable.
+- Settings gradient icon badges + h3 mode titles create premium visual hierarchy. "Tap Save to apply" hint pill with ArrowUp icon explicitly communicates manual save (preventing auto-save confusion). Unsaved state resets correctly on navigation-away — no data loss.
+- Toast feedback pattern ("Flag saved" with CircleCheck) + FAB badge increment = tight confirmation loop.
+- Create Account form upfront Explorer mode disclosure ("You'll start in Explorer mode") reduces first-run confusion.
+- "No GPS" label in MapHistory is definitively more informative than "--". Users immediately understand why distance data is missing.
+- Navigation regression Sprint 26: flags persist across screen transitions, Settings state resets on unsaved exit. Zero new JS runtime errors from Sprint 26 changes.
+- Medium friction: RotateCcw icon on "New Run" button (run complete screen) conventionally means "refresh/retry" not "start new". Label compensates but icon creates momentary cognitive mismatch. Consider PlusCircle or PlayCircle icon in future Sprint.
+- Low friction: "No GPS | km" in MapHistoryScreen expanded capsule — bare "km" unit label without a number is visually noisy. Consider hiding distance chip entirely when GPS unavailable.

@@ -222,7 +222,7 @@ function MarkerDetailSheet({
 export function MapScreen() {
   const { uiMode, activityMode, setActivityMode, trackingState, setTrackingState,
     trackingDistance, trackingDuration, incrementTracking } = useAppStore();
-  const isGuided = uiMode === 'guided';
+  const isGuided = uiMode === 'beginner';
 
   const [markers, setMarkers] = useState(MOCK_MARKERS);
   const [createVisible, setCreateVisible] = useState(false);
@@ -247,6 +247,7 @@ export function MapScreen() {
       id: String(Date.now()), type, text, author: 'Me', minutesAgo: 0,
       x: 0.5 + (Math.random() - 0.5) * 0.3,
       y: 0.5 + (Math.random() - 0.5) * 0.3,
+      title: text, note: '', distanceM: 0, timeAgo: 'just now',
     }]);
   };
 

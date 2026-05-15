@@ -20,7 +20,7 @@ function formatDuration(min: number) {
 
 export function RoutesScreen() {
   const { uiMode } = useAppStore();
-  const isGuided = uiMode === 'guided';
+  const isGuided = uiMode === 'beginner';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

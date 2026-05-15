@@ -1,11 +1,11 @@
 /**
- * SettingsScreen — Sprint 12 redesign
+ * SettingsScreen — Sprint 26 premium redesign
  *
- * - SVG icons replace all emoji (BookOpen, Zap, Check, Flag, MapPin,
- *   Moon, Volume2, User, LogOut, ArrowUp, Save)
- * - Spring press on mode cards
- * - ChevronLeft back, ChevronRight on action rows
- * - uiMode persisted via storage (localStorage on web, AsyncStorage-ready on native)
+ * - Mode cards: LinearGradient icon badges (40×40), h3/600 title, CircleCheck badge
+ * - Section headers: tiny/uppercase/muted (unchanged)
+ * - Toggle rows: 32×32 icon badge with tint bg (unchanged)
+ * - Save button: hidden until dirty, shimmer animation (unchanged)
+ * - Sprint 12 SVG icons retained
  */
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -47,18 +47,24 @@ function PressCard({
 }
 
 // ── Mode Card ────────────────────────────────────────────────────────────────
-const MODE_META: Record<UIMode, { icon: IconName; iconColor: string; iconBg: string; title: string; desc: string }> = {
+const MODE_META: Record<UIMode, {
+  icon: IconName; iconColor: string;
+  gradientStart: string; gradientEnd: string;
+  title: string; desc: string;
+}> = {
   beginner: {
     icon: 'Mountain',
     iconColor: Colors.primary,
-    iconBg: Colors.primaryLight,
+    gradientStart: Colors.primaryLight,
+    gradientEnd: Colors.primaryLight.replace('0.15', '0.28'),
     title: 'Explorer',
     desc: 'Simplified view · Guided prompts',
   },
   expert: {
     icon: 'Compass',
     iconColor: Colors.flag,
-    iconBg: Colors.flagLight,
+    gradientStart: Colors.flagLight,
+    gradientEnd: Colors.flagLight.replace('0.12', '0.24'),
     title: 'Navigator',
     desc: 'Full data · Dense interface · Expert controls',
   },
@@ -72,12 +78,16 @@ function ModeCard({
     <PressCard onPress={onSelect} style={{ flex: 1 }}>
       <View style={[modeStyles.card, selected && modeStyles.cardSelected]}>
         <View style={modeStyles.top}>
-          <View style={[modeStyles.iconWrap, { backgroundColor: meta.iconBg }]}>
+          <LinearGradient
+            colors={[meta.gradientStart, meta.gradientEnd]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={modeStyles.iconWrap}
+          >
             <Icon name={meta.icon} size={20} color={meta.iconColor} strokeWidth={1.8} />
-          </View>
+          </LinearGradient>
           {selected && (
             <View style={modeStyles.checkBadge}>
-              <Icon name="Check" size={11} color="#fff" strokeWidth={3} />
+              <Icon name="CircleCheck" size={18} color={Colors.primary} strokeWidth={2} />
             </View>
           )}
         </View>
@@ -404,11 +414,10 @@ const modeStyles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   checkBadge: {
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
+    // Uses Icon name="CircleCheck" directly — no wrapper needed
   },
-  title: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary, marginBottom: 2 },
-  desc: { fontSize: 11, color: Colors.textSecondary, lineHeight: 15 },
+  title: { fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary, marginBottom: 2 },
+  desc: { fontSize: FontSize.small, color: Colors.textSecondary, lineHeight: 16 },
 });
 
 const rowStyles = StyleSheet.create({

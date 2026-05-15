@@ -205,7 +205,7 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
       <Animated.View style={[cardStyles.expandedArea, { height: expandedHeight, opacity: expandAnim }]}>
         <View style={cardStyles.expandedStats}>
           <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.primary }]}>
-            <Text style={cardStyles.expandedStatVal}>{formatDistance(session.distanceM, 'km', 2)}</Text>
+            <Text style={cardStyles.expandedStatVal}>{distStr}</Text>
             <Text style={cardStyles.expandedStatLbl}>km</Text>
           </View>
           <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.running }]}>

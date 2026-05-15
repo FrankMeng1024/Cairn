@@ -112,17 +112,30 @@ function HomeEmptyState({ onPress }: { onPress: () => void }) {
 // ── How It Works Row ──────────────────────────────────────────────────────────
 function HowItWorks() {
   const steps = [
-    { icon: 'Flag' as IconName, label: 'Plant flags', color: Colors.primary, bg: Colors.primaryLight },
-    { icon: 'Users' as IconName, label: 'Share with friends', color: Colors.running, bg: Colors.runningLight },
-    { icon: 'Compass' as IconName, label: 'Guide others', color: Colors.flag, bg: Colors.flagLight },
+    {
+      icon: 'Flag' as IconName, label: 'Plant flags', color: Colors.primary,
+      gradStart: Colors.primaryLight, gradEnd: Colors.primaryLight.replace('0.15', '0.28'),
+    },
+    {
+      icon: 'Users' as IconName, label: 'Share with friends', color: Colors.running,
+      gradStart: Colors.runningLight, gradEnd: Colors.runningLight.replace('0.12', '0.24'),
+    },
+    {
+      icon: 'Compass' as IconName, label: 'Guide others', color: Colors.flag,
+      gradStart: Colors.flagLight, gradEnd: Colors.flagLight.replace('0.12', '0.24'),
+    },
   ];
   return (
     <View style={howStyles.row}>
       {steps.map((s, i) => (
         <View key={i} style={howStyles.step}>
-          <View style={[howStyles.iconCircle, { backgroundColor: s.bg }]}>
+          <LinearGradient
+            colors={[s.gradStart, s.gradEnd]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={howStyles.iconBadge}
+          >
             <Icon name={s.icon} size={18} color={s.color} strokeWidth={1.8} />
-          </View>
+          </LinearGradient>
           <Text style={howStyles.label}>{s.label}</Text>
         </View>
       ))}
@@ -474,7 +487,7 @@ const howStyles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   step: { flex: 1, alignItems: 'center', gap: 6 },
-  iconCircle: {
+  iconBadge: {
     width: 40, height: 40, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center',
   },
