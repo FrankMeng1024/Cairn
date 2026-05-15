@@ -384,17 +384,15 @@ export function HikingScreen() {
         onMarkerPress={(id) => { setSelectedMarkerId(id); setUi('detail'); }}
       />
 
-      {/* Top overlay: GPS chip + back button */}
+      {/* Top overlay: back button (left) + GPS chip (right) */}
       <SafeAreaView style={styles.topOverlay} edges={['top']} pointerEvents="box-none">
         <View style={styles.topRow}>
+          <BackButton variant="pill" />
           <View style={[styles.gpsChip, !locationAvailable && styles.gpsChipOffline]}>
             <View style={[styles.gpsDot, { backgroundColor: locationAvailable ? Colors.success : Colors.danger }]} />
             <Text style={[styles.gpsText, !locationAvailable && styles.gpsTextOffline]}>
               {locationAvailable ? 'GPS Connected ±5m' : 'GPS Offline'}
             </Text>
-          </View>
-          <View style={styles.topRight}>
-            <BackButton variant="pill" />
           </View>
         </View>
 
@@ -576,7 +574,6 @@ const styles = StyleSheet.create({
   gpsDot: { width: 8, height: 8, borderRadius: 4 },
   gpsText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary },
   gpsTextOffline: { color: Colors.danger },
-  topRight: { flexDirection: 'row', gap: Spacing.sm },
   backChip: {
     flexDirection: 'row', alignItems: 'center', gap: 2,
     backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,

@@ -1,6 +1,18 @@
 # Lessons Learned
 
-## Sprint 25 — 2026-05-15
+## Sprint 26 — 2026-05-15
+- [archived: CLAUDE.md §Integration] Sprint 26: clean Sprint, no retrospective actions. Zero QA bugs (4/4 stories PASS HIGH), no integration restart loops, no Spec Drift, no VU NOT ACCEPTED.
+- [resolved: Sprint 26] UX: Explorer mode subtitle shows before user has established preference — Create Account now shows "You'll start in Explorer mode. Switch anytime in Settings." at form level. Resolved.
+- [resolved: Sprint 26] Session cards "No GPS" — MapHistoryScreen expanded capsule now shows "No GPS" in km stat chip. Resolved.
+- [resolved: Sprint 26] Run Complete screen stats as placeholders for no-GPS — confirmed expected behavior (--/00:00 shown). Closed as by-design.
+- [pending] UX: MapHistoryScreen placeholder persists when sessions visible — consider auto-selecting first route on load (Low, backlog). Pre-existing, deferred.
+- [pending] STORY-00062: distance > 10m km-display branch still untested. Future QA sprint: seed a session with distance > 100m.
+- [pending] STORY-00062: "Hike" badge variant still untested. Future QA: add hike session to store before test.
+- [pending] UX: Lock hint in RunningScreen — verify icon rendering cross-platform (backlog Low).
+- [pending] Medium: RotateCcw icon on New Run button (run complete) — semantically means "refresh/retry". Consider PlusCircle or PlayCircle in future Sprint.
+- [pending] Low: "No GPS | km" in MapHistory expanded capsule — bare "km" unit label without number is noisy. Consider hiding distance chip entirely when GPS unavailable.
+
+
 - [archived: CLAUDE.md §Integration] Sprint 25: clean Sprint, no retrospective actions. Zero QA bugs (4/4 stories PASS, 3 HIGH + 1 MEDIUM), no integration restart loops, no Spec Drift, no prior VU NOT ACCEPTED.
 - [resolved: Sprint 25] STORY-00065 amber status dot coverage gap — MOCK_FRIENDS now includes Alex (lastSeen: '45m ago', online: false). Amber dot confirmed rendering as Colors.warning.
 - [resolved: Sprint 25] Session cards "-- km" — MapHistoryScreen now shows "No GPS" label. HomeScreen strip uses duration-only format (never shows "-- km"). Both resolved.

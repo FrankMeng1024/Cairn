@@ -206,7 +206,7 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
         <View style={cardStyles.expandedStats}>
           <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.primary }]}>
             <Text style={cardStyles.expandedStatVal}>{distStr}</Text>
-            <Text style={cardStyles.expandedStatLbl}>km</Text>
+            {distStr !== 'No GPS' && <Text style={cardStyles.expandedStatLbl}>km</Text>}
           </View>
           <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.running }]}>
             <Text style={cardStyles.expandedStatVal}>{durationStr}</Text>
@@ -299,6 +299,17 @@ export function MapHistoryScreen() {
 
   const region = getCurrentRegion();
   const sessions = useSessionStore(s => s.sessions);
+
+  // Auto-select first session on mount (STORY-00078)
+  useEffect(() => {
+    if (sessions.length > 0) {
+      setSelectedSessionId(sessions[0].id);
+      setExpandedSessionId(sessions[0].id);
+    } else {
+      setSelectedSessionId(null);
+      setExpandedSessionId(null);
+    }
+  }, []);
   const deleteSession = useSessionStore(s => s.deleteSession);
   const allMarkers = useMarkerStore(s => s.markers);
   const markers = allMarkers.filter(m => m.regionCode === region.code);
