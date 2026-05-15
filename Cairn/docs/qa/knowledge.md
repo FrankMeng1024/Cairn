@@ -95,3 +95,20 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 - STORY-00052 (HomeScreen empty state): PASS — hasData=true path verified; hasData=false path confirmed in prior dev testing
 - STORY-00053 (Running UX): PASS — route selection, lock hint, post-run share button verified
 - STORY-00054 (Micro-interactions): PASS — gradient badges, switch consistency, shimmer save, accordion expansion verified
+
+## Sprint 23 Updates
+
+- HomeScreen QuickStats: 3-capsule row, each with 2px colored left-border accent (green/blue/orange), matching icon in tinted badge, bold h2 number, tiny unit label — this is now the visual baseline
+- HomeScreen activity cards: gradient icon badge (LinearGradient, light→deeper), 20×20 circle chevron (tinted bg matching activity color, ChevronRight icon)
+- RecentActivityStrip: "Run"/"Hike" colored pill badge + bold primary stat (duration if dist < 10m, else km) + secondary "date · duration" line
+- HikingScreen map placeholder: sage-green (Colors.primaryBg) bg, 4 topo rings at varying opacity, S-curve trail, filled circle pin, "Trail Map" title, "Download Map" outlined CTA, "GPS Offline" pill (red on dangerBg)
+- SettingsScreen mode selector: Explorer selected = 2px green border + primaryBg + shadow; Navigator = 1px grey border flat; icon badges 40×40 rounded squares
+- RecentActivityStrip AC2 coverage gap: only duration fallback (distance < 10m) tested; km display branch not tested in Sprint 23
+- expo-keep-awake Wake Lock produces 2 errors per Hiking visit (activate + deactivate) — both pre-existing, non-blocking
+
+## Sprint 23 Verification Summary
+
+- STORY-00059 (HomeScreen activity cards + QuickStats): PASS HIGH
+- STORY-00060 (HikingScreen premium map placeholder): PASS HIGH
+- STORY-00061 (SettingsScreen mode selector refinement): PASS HIGH
+- STORY-00062 (RecentActivityStrip typography): PASS MEDIUM (distance > 10m branch untested)

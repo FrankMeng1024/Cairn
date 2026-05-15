@@ -80,27 +80,28 @@ function MapPlaceholder({ markers, onMarkerPress }: {
 }) {
   return (
     <View style={styles.mapBg}>
-      {/* Topo elevation rings */}
-      <View style={[styles.topoRing, { width: 340, height: 340, borderRadius: 170, top: 120, left: W / 2 - 170 }]} />
-      <View style={[styles.topoRing, { width: 240, height: 240, borderRadius: 120, top: 170, left: W / 2 - 120 }]} />
-      <View style={[styles.topoRing, { width: 150, height: 150, borderRadius: 75, top: 215, left: W / 2 - 75 }]} />
-      <View style={[styles.topoRing, { width: 72, height: 72, borderRadius: 36, top: 254, left: W / 2 - 36, backgroundColor: 'rgba(93,124,70,0.07)' }]} />
-      {/* Trail path */}
+      {/* Topo elevation rings — concentric, varying opacity */}
+      <View style={[styles.topoRing, { width: 320, height: 320, borderRadius: 160, top: 100, left: W / 2 - 160, borderColor: Colors.primaryLight.replace('0.15', '0.20') }]} />
+      <View style={[styles.topoRing, { width: 240, height: 240, borderRadius: 120, top: 140, left: W / 2 - 120, borderColor: Colors.primaryLight.replace('0.15', '0.30') }]} />
+      <View style={[styles.topoRing, { width: 165, height: 165, borderRadius: 83, top: 178, left: W / 2 - 83, borderColor: Colors.primaryLight.replace('0.15', '0.42') }]} />
+      <View style={[styles.topoRing, { width: 96, height: 96, borderRadius: 48, top: 212, left: W / 2 - 48, borderColor: Colors.primaryLight.replace('0.15', '0.60'), backgroundColor: 'rgba(93,124,70,0.06)' }]} />
+      {/* Trail S-curve — three segments forming gentle S */}
       <View style={styles.trailLine} />
       <View style={styles.trailLine2} />
       <View style={styles.trailLine3} />
-      {/* Mountain silhouette hint */}
-      <View style={styles.mountainLeft} />
-      <View style={styles.mountainRight} />
-      {/* Location dot */}
+      {/* Location pin at trail midpoint */}
       <View style={styles.locationDot}>
         <View style={styles.locationDotInner} />
         <View style={styles.locationPulse} />
       </View>
-      {/* Trail Map label */}
+      {/* Trail Map label + subtitle + CTA */}
       <View style={styles.mapLabelWrap}>
         <Text style={styles.mapLabel}>Trail Map</Text>
-        <Text style={styles.mapSubLabel}>Real map loads with offline pack</Text>
+        <Text style={styles.mapSubLabel}>Download an offline pack to get started</Text>
+        <TouchableOpacity style={styles.downloadBtn} activeOpacity={0.8}>
+          <Icon name="Download" size={12} color={Colors.primary} strokeWidth={2.5} />
+          <Text style={styles.downloadBtnText}>Download Map</Text>
+        </TouchableOpacity>
       </View>
       {/* Real marker pins */}
       {markers.map((m, i) => (
@@ -449,9 +450,9 @@ export function HikingScreen() {
       {/* Top overlay: GPS chip + back button */}
       <SafeAreaView style={styles.topOverlay} edges={['top']} pointerEvents="box-none">
         <View style={styles.topRow}>
-          <View style={styles.gpsChip}>
-            <View style={[styles.gpsDot, { backgroundColor: locationAvailable ? Colors.success : Colors.textMuted }]} />
-            <Text style={styles.gpsText}>
+          <View style={[styles.gpsChip, !locationAvailable && styles.gpsChipOffline]}>
+            <View style={[styles.gpsDot, { backgroundColor: locationAvailable ? Colors.success : Colors.danger }]} />
+            <Text style={[styles.gpsText, !locationAvailable && styles.gpsTextOffline]}>
               {locationAvailable ? 'GPS Connected ±5m' : 'GPS Offline'}
             </Text>
           </View>
@@ -569,63 +570,57 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
 
   // Map
-  mapBg: { flex: 1, backgroundColor: '#e8f4e8', overflow: 'hidden' },
+  mapBg: { flex: 1, backgroundColor: Colors.primaryBg, overflow: 'hidden' },
   topoRing: {
     position: 'absolute',
-    borderWidth: 1, borderColor: 'rgba(93,124,70,0.18)',
+    borderWidth: 1.5,
     backgroundColor: 'transparent',
   },
-  mountainLeft: {
-    position: 'absolute', bottom: 260, left: 30,
-    width: 0, height: 0,
-    borderLeftWidth: 55, borderRightWidth: 55, borderBottomWidth: 80,
-    borderLeftColor: 'transparent', borderRightColor: 'transparent',
-    borderBottomColor: 'rgba(93,124,70,0.09)',
-  },
-  mountainRight: {
-    position: 'absolute', bottom: 255, left: 80,
-    width: 0, height: 0,
-    borderLeftWidth: 70, borderRightWidth: 70, borderBottomWidth: 100,
-    borderLeftColor: 'transparent', borderRightColor: 'transparent',
-    borderBottomColor: 'rgba(93,124,70,0.07)',
-  },
   trailLine: {
-    position: 'absolute', top: 240, left: 60, right: 60,
-    height: 3, backgroundColor: Colors.primary + '70', borderRadius: 2,
+    position: 'absolute', top: 240, left: 60, right: 80,
+    height: 2.5, backgroundColor: Colors.primary + '66', borderRadius: 2,
   },
   trailLine2: {
-    position: 'absolute', top: 240, left: 60, width: 160, height: 130,
-    borderBottomWidth: 3, borderRightWidth: 3,
-    borderColor: Colors.primary + '70', borderBottomRightRadius: 16,
+    position: 'absolute', top: 240, left: 60, width: 140, height: 120,
+    borderBottomWidth: 2.5, borderRightWidth: 2.5,
+    borderColor: Colors.primary + '66', borderBottomRightRadius: 20,
   },
   trailLine3: {
-    position: 'absolute', top: 370, left: 220, width: 120, height: 100,
-    borderBottomWidth: 3, borderLeftWidth: 3,
-    borderColor: Colors.primary + '50', borderBottomLeftRadius: 16,
+    position: 'absolute', top: 360, left: 200, width: 100, height: 80,
+    borderBottomWidth: 2.5, borderLeftWidth: 2.5,
+    borderColor: Colors.primary + '55', borderBottomLeftRadius: 20,
   },
   locationDot: {
-    position: 'absolute', top: 350, left: W / 2 - 10,
+    position: 'absolute', top: 290, left: W / 2 - 10,
     width: 20, height: 20, alignItems: 'center', justifyContent: 'center',
   },
   locationDotInner: {
-    width: 16, height: 16, borderRadius: 8,
-    backgroundColor: Colors.primary, borderWidth: 3, borderColor: '#fff',
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: Colors.primary, borderWidth: 2.5, borderColor: '#fff',
   },
   locationPulse: {
-    position: 'absolute', width: 32, height: 32, borderRadius: 16,
-    borderWidth: 2, borderColor: Colors.primary + '60',
+    position: 'absolute', width: 28, height: 28, borderRadius: 14,
+    borderWidth: 1.5, borderColor: Colors.primary + '55',
   },
   mapLabelWrap: {
-    position: 'absolute', bottom: 160, left: 0, right: 0,
-    alignItems: 'center',
+    position: 'absolute', bottom: 180, left: 0, right: 0,
+    alignItems: 'center', gap: 6,
   },
   mapLabel: {
-    fontSize: FontSize.caption, fontWeight: '700',
-    color: 'rgba(93,124,70,0.55)', letterSpacing: 1.5, textTransform: 'uppercase',
+    fontSize: FontSize.h3, fontWeight: '600',
+    color: Colors.primary, opacity: 0.7,
   },
   mapSubLabel: {
-    fontSize: FontSize.tiny, color: 'rgba(93,124,70,0.4)', marginTop: 2,
+    fontSize: FontSize.small, color: Colors.primary, opacity: 0.5, marginTop: 2,
   },
+  downloadBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1.5, borderColor: Colors.primary + '60',
+    borderRadius: Radius.pill,
+    paddingHorizontal: 14, paddingVertical: 7, marginTop: 4,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  downloadBtnText: { fontSize: FontSize.small, fontWeight: '700', color: Colors.primary },
   markerPin: {
     position: 'absolute', width: 32, height: 32, borderRadius: 16,
     borderWidth: 2.5, alignItems: 'center', justifyContent: 'center',
@@ -643,8 +638,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,
     paddingHorizontal: Spacing.md, paddingVertical: 7, ...Shadow.card,
   },
+  gpsChipOffline: {
+    backgroundColor: Colors.dangerBg,
+  },
   gpsDot: { width: 8, height: 8, borderRadius: 4 },
   gpsText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary },
+  gpsTextOffline: { color: Colors.danger },
   topRight: { flexDirection: 'row', gap: Spacing.sm },
   backChip: {
     flexDirection: 'row', alignItems: 'center', gap: 2,

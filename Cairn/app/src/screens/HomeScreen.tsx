@@ -56,12 +56,14 @@ function QuickStats({ sessions, markerCount }: { sessions: any[]; markerCount: n
   }, []);
 
   const capsule = (anim: Animated.Value, icon: IconName, value: string, unit: string, color: string, bg: string) => (
-    <Animated.View style={[statsStyles.capsule, { opacity: anim }]}>
+    <Animated.View style={[statsStyles.capsule, { opacity: anim, borderLeftColor: color }]}>
       <View style={[statsStyles.capIcon, { backgroundColor: bg }]}>
         <Icon name={icon} size={14} color={color} strokeWidth={1.8} />
       </View>
-      <Text style={statsStyles.capValue}>{value}</Text>
-      <Text style={statsStyles.capUnit}>{unit}</Text>
+      <View style={statsStyles.capTextCol}>
+        <Text style={statsStyles.capValue}>{value}</Text>
+        <Text style={statsStyles.capUnit}>{unit}</Text>
+      </View>
     </Animated.View>
   );
 
@@ -136,27 +138,31 @@ function RecentActivityStrip({ onPress }: { onPress: () => void }) {
   const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
   const last = sorted[0];
   const isRun = last.activityMode === 'running';
-  const label = last.name ?? `${isRun ? 'Run' : 'Hike'} · ${formatDate(last.startedAt)}`;
-  const flagCount = last.markerIds?.length ?? 0;
-  const elevGain = last.elevationGainM ?? 0;
-  const hasSecondaryStats = elevGain > 0 || flagCount > 0;
-  const elevStr = `+${elevGain}m elev`;
-  const flagStr = `${flagCount} flag${flagCount !== 1 ? 's' : ''}`;
+  const accentColor = isRun ? Colors.running : Colors.primary;
+  const lightBg = isRun ? Colors.runningLight : Colors.primaryLight;
+  const badgeLabel = isRun ? 'Run' : 'Hike';
+
+  // Primary stat: distance if > 10m, else duration
+  const showDist = last.distanceM > 10;
+  const primaryStat = showDist
+    ? `${formatDistance(last.distanceM, 'km', 1)} km`
+    : formatDuration(last.durationS);
+
+  // Secondary line: date · duration
+  const secondaryLine = `${formatDate(last.startedAt)} · ${formatDuration(last.durationS)}`;
 
   return (
     <View style={recentStyles.stripWrap}>
       <TouchableOpacity style={recentStyles.strip} onPress={onPress} activeOpacity={0.8}>
-        <View style={[recentStyles.iconWrap, { backgroundColor: isRun ? Colors.runningLight : Colors.primaryLight }]}>
-          <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={20} color={isRun ? Colors.running : Colors.primary} strokeWidth={1.8} />
+        <View style={[recentStyles.iconWrap, { backgroundColor: lightBg }]}>
+          <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={20} color={accentColor} strokeWidth={1.8} />
         </View>
         <View style={recentStyles.info}>
-          <Text style={recentStyles.label} numberOfLines={1}>{label}</Text>
-          <Text style={recentStyles.stats}>
-            {formatDistance(last.distanceM, 'km', 1)} km · {formatDuration(last.durationS)}
-          </Text>
-          {hasSecondaryStats && (
-            <Text style={recentStyles.statsExtra}>{elevStr} · {flagStr}</Text>
-          )}
+          <View style={[recentStyles.typeBadge, { backgroundColor: lightBg }]}>
+            <Text style={[recentStyles.typeBadgeText, { color: accentColor }]}>{badgeLabel}</Text>
+          </View>
+          <Text style={recentStyles.primaryStat}>{primaryStat}</Text>
+          <Text style={recentStyles.secondaryLine}>{secondaryLine}</Text>
         </View>
         <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
       </TouchableOpacity>
@@ -172,12 +178,13 @@ function RecentActivityStrip({ onPress }: { onPress: () => void }) {
 
 
 function ActivityCard({
-  iconName, title, subtitle, accentColor, gradientColors, onPress, entranceAnim,
+  iconName, title, subtitle, accentColor, lightBg, gradientColors, onPress, entranceAnim,
 }: {
   iconName: IconName;
   title: string;
   subtitle: string;
   accentColor: string;
+  lightBg: string;
   gradientColors: [string, string, string];
   onPress: () => void;
   entranceAnim: Animated.Value;
@@ -203,9 +210,9 @@ function ActivityCard({
           style={styles.activityCard}
         >
           <LinearGradient
-            colors={[accentColor + '33', 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
+            colors={[lightBg, accentColor + '22']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
             style={styles.activityIconBadge}
           >
             <Icon name={iconName} size={IconSize.xl} color={accentColor} strokeWidth={1.8} />
@@ -214,8 +221,8 @@ function ActivityCard({
             <Text style={styles.activityTitle}>{title}</Text>
             <Text style={styles.activitySubtitle}>{subtitle}</Text>
           </View>
-          <View style={[styles.activityChevronPill, { backgroundColor: accentColor + '18' }]}>
-            <Icon name="ChevronRight" size={IconSize.sm} color={accentColor} strokeWidth={2.5} />
+          <View style={[styles.activityChevronPill, { backgroundColor: lightBg }]}>
+            <Icon name="ChevronRight" size={12} color={accentColor} strokeWidth={2.5} />
           </View>
         </LinearGradient>
       </TouchableOpacity>
@@ -300,6 +307,7 @@ export function HomeScreen() {
               title="Hiking"
               subtitle="Navigate trails · Plant flags · Explore"
               accentColor={Colors.primary}
+              lightBg={Colors.primaryLight}
               gradientColors={['#ffffff', '#f6f9f3', '#eef4e8']}
               onPress={() => nav.navigate('Hiking')}
               entranceAnim={card1Anim}
@@ -309,6 +317,7 @@ export function HomeScreen() {
               title="Running"
               subtitle="Route planning · Voice guidance · Lock mode"
               accentColor={Colors.running}
+              lightBg={Colors.runningLight}
               gradientColors={['#ffffff', '#f3f7fc', '#e8f1f8']}
               onPress={() => nav.navigate('Running')}
               entranceAnim={card2Anim}
@@ -370,7 +379,7 @@ const styles = StyleSheet.create({
   activityTitle: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
   activitySubtitle: { fontSize: FontSize.caption, color: Colors.textSecondary, lineHeight: 18 },
   activityChevronPill: {
-    width: 32, height: 32, borderRadius: Radius.circle ?? 50,
+    width: 20, height: 20, borderRadius: Radius.circle ?? 50,
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -405,10 +414,14 @@ const recentStyles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
-  info: { flex: 1 },
-  label: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary },
-  stats: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
-  statsExtra: { fontSize: FontSize.tiny, color: Colors.textMuted, marginTop: 1 },
+  info: { flex: 1, gap: 3 },
+  typeBadge: {
+    alignSelf: 'flex-start', borderRadius: Radius.pill,
+    paddingHorizontal: 8, paddingVertical: 2,
+  },
+  typeBadgeText: { fontSize: FontSize.tiny, fontWeight: '700', letterSpacing: 0.3 },
+  primaryStat: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
+  secondaryLine: { fontSize: FontSize.small, fontWeight: '400', color: Colors.textSecondary },
   viewAll: {
     flexDirection: 'row', alignItems: 'center', gap: 2,
     alignSelf: 'flex-end', paddingTop: Spacing.xs, paddingRight: 2,
@@ -419,17 +432,19 @@ const recentStyles = StyleSheet.create({
 const statsStyles = StyleSheet.create({
   row: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.xl },
   capsule: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: Colors.surface, borderRadius: Radius.button ?? 12,
     paddingVertical: 10, paddingHorizontal: 10,
     borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
+    borderLeftWidth: 3,
   },
   capIcon: {
-    width: 26, height: 26, borderRadius: 8,
+    width: 28, height: 28, borderRadius: 8,
     alignItems: 'center', justifyContent: 'center',
   },
-  capValue: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
-  capUnit: { fontSize: FontSize.tiny, color: Colors.textMuted, fontWeight: '500', marginTop: 1 },
+  capTextCol: { flex: 1 },
+  capValue: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, lineHeight: 22 },
+  capUnit: { fontSize: FontSize.tiny, color: Colors.textMuted, fontWeight: '600' },
 });
 
 const emptyStyles = StyleSheet.create({

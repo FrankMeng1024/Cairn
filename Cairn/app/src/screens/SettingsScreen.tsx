@@ -50,15 +50,15 @@ function PressCard({
 const MODE_META: Record<UIMode, { icon: IconName; iconColor: string; iconBg: string; title: string; desc: string }> = {
   beginner: {
     icon: 'Mountain',
-    iconColor: Colors.info,
-    iconBg: Colors.infoBg,
+    iconColor: Colors.primary,
+    iconBg: Colors.primaryLight,
     title: 'Explorer',
     desc: 'Simplified view · Guided prompts',
   },
   expert: {
     icon: 'Compass',
-    iconColor: '#b47c28',
-    iconBg: 'rgba(180,130,60,0.12)',
+    iconColor: Colors.flag,
+    iconBg: Colors.flagLight,
     title: 'Navigator',
     desc: 'Full data · Dense interface · Expert controls',
   },
@@ -343,8 +343,8 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: Spacing.xxl },
 
   sectionHeader: {
-    fontSize: FontSize.small, fontWeight: '700', color: Colors.textSecondary,
-    textTransform: 'uppercase', letterSpacing: 0.8,
+    fontSize: FontSize.tiny, fontWeight: '700', color: Colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 1,
     marginHorizontal: Spacing.base, marginTop: Spacing.xl, marginBottom: 4,
   },
   sectionNote: {
@@ -389,15 +389,18 @@ const styles = StyleSheet.create({
 const modeStyles = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface, borderRadius: Radius.card,
-    padding: Spacing.md, borderWidth: 2, borderColor: Colors.border, ...Shadow.card,
+    padding: Spacing.md, borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
   },
-  cardSelected: { borderColor: Colors.primary, backgroundColor: 'rgba(93,124,70,0.05)' },
+  cardSelected: {
+    borderWidth: 2, borderColor: Colors.primary, backgroundColor: Colors.primaryBg,
+    ...Shadow.card,
+  },
   top: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: Spacing.sm,
   },
   iconWrap: {
-    width: 36, height: 36, borderRadius: 10,
+    width: 40, height: 40, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
   },
   checkBadge: {
@@ -412,7 +415,7 @@ const rowStyles = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
-    minHeight: 56,
+    minHeight: 54,
   },
   rowPending: { backgroundColor: 'rgba(93,124,70,0.03)' },
   iconWrap: {
@@ -426,6 +429,7 @@ const rowStyles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
+    minHeight: 54,
   },
   actionLabel: { flex: 1, fontSize: FontSize.body, fontWeight: '500', color: Colors.textPrimary },
 });

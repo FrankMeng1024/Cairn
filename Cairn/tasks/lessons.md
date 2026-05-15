@@ -1,6 +1,15 @@
 # Lessons Learned
 
-## Sprint 21 — 2026-05-15
+## Sprint 22 — 2026-05-15
+- [archived: CLAUDE.md §Integration] Sprint 22: clean Sprint, no retrospective actions. Zero QA bugs, no integration restart loops, no Spec Drift confirmed fixed, no prior VU NOT ACCEPTED.
+- [resolved: Sprint 22] "0.0 km" stat on HomeScreen — formatDistance now returns '--' for <10m (STORY-00056 DONE)
+- [resolved: Sprint 22] "+0m elev · 0 flags" zero-value noise — secondary stats row hidden when both zero (STORY-00056 DONE)
+- [resolved: Sprint 22] ✓ unicode in RunningScreen checkBadge — replaced with lucide Check icon (STORY-00057 DONE)
+- [resolved: Sprint 22] FriendsScreen Switch thumbColor was conditional — now always '#fff' (STORY-00057 DONE)
+- [pending] UX: Explorer mode subtitle shows before user has established preference (backlog Low priority)
+- [pending] UX: Lock hint in RunningScreen — verify icon rendering cross-platform (backlog Low priority)
+
+
 - [archived: CLAUDE.md §Integration] Sprint 21: clean Sprint, no retrospective actions. Zero QA bugs, no integration restart loops, no Spec Drift, no prior VU NOT ACCEPTED.
 - [pending] UX: "0.0 km" stat showing on HomeScreen when user has 1 session — zero-value display needs investigation (test data artifact or real bug). Filed in Sprint 22 backlog.
 - [pending] UX: Explorer mode subtitle ("Explorer · 1 session") shows before user has established a preference — consider showing mode only after N sessions. Backlog Low.
