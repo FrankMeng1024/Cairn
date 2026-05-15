@@ -14,12 +14,12 @@ export const MOCK_ROUTES = [
 
 export type MarkerType = 'danger' | 'scenic' | 'supply' | 'junction' | 'free';
 
-export const MARKER_META: Record<MarkerType, { label: string; icon: string; color: string; bg: string }> = {
-  danger:   { label: '危险',   icon: '!',  color: '#c53d2e', bg: '#f4e0dc' },
-  scenic:   { label: '风景',   icon: '★',  color: '#2e6cc5', bg: '#dce8f4' },
-  supply:   { label: '补给',   icon: '+',  color: '#2e8c3a', bg: '#dcf4de' },
-  junction: { label: '路口',   icon: '→',  color: '#b36b00', bg: '#fff3e0' },
-  free:     { label: '自由',   icon: '○',  color: '#8c7e72', bg: '#ffffff' },
+export const MARKER_META: Record<MarkerType, { label: string; icon: string; iconName: string; color: string; bg: string }> = {
+  danger:   { label: '危险',   icon: '!',  iconName: 'TriangleAlert', color: '#c53d2e', bg: '#f4e0dc' },
+  scenic:   { label: '风景',   icon: '★',  iconName: 'Star',          color: '#2e6cc5', bg: '#dce8f4' },
+  supply:   { label: '补给',   icon: '+',  iconName: 'Droplets',      color: '#2e8c3a', bg: '#dcf4de' },
+  junction: { label: '路口',   icon: '→',  iconName: 'Navigation2',   color: '#b36b00', bg: '#fff3e0' },
+  free:     { label: '自由',   icon: '○',  iconName: 'MapPin',        color: '#8c7e72', bg: '#ffffff' },
 };
 
 export const MOCK_MARKERS = [
