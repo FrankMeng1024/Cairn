@@ -1,25 +1,48 @@
 /**
- * SettingsScreen — design.jpg "设置页"
+ * SettingsScreen — Sprint 12 redesign
  *
- * - Simple/Expert (简易/说明) mode toggle — 2-card selector
- * - 添加好友后是否默认分享旗帜 (share-after-add toggle)
- * - 夜间模式 toggle
- * - Other preferences
- * - MUST click "保存" to apply — changes are local until saved
+ * - SVG icons replace all emoji (BookOpen, Zap, Check, Flag, MapPin,
+ *   Moon, Volume2, User, LogOut, ArrowUp, Save)
+ * - Spring press on mode cards
+ * - ChevronLeft back, ChevronRight on action rows
+ * - uiMode persisted via storage (localStorage on web, AsyncStorage-ready on native)
  */
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Switch, Alert,
+  Switch, Alert, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore, UIMode } from '../store/useAppStore';
-import { Colors, Spacing, Radius, FontSize, Shadow } from '../components/tokens';
+import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
+import { Icon } from '../components/Icon';
+import type { IconName } from '../components/Icon';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+// ── Spring press wrapper ────────────────────────────────────────────────────
+function PressCard({
+  onPress, style, children, scale = 0.97,
+}: {
+  onPress: () => void;
+  style?: object | object[];
+  children: React.ReactNode;
+  scale?: number;
+}) {
+  const anim = useRef(new Animated.Value(1)).current;
+  const onIn = () => Animated.spring(anim, { toValue: scale, useNativeDriver: true, tension: 300, friction: 10 }).start();
+  const onOut = () => Animated.spring(anim, { toValue: 1, useNativeDriver: true, tension: 300, friction: 8 }).start();
+  return (
+    <Animated.View style={[{ transform: [{ scale: anim }] }, style]}>
+      <TouchableOpacity onPress={onPress} onPressIn={onIn} onPressOut={onOut} activeOpacity={1}>
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 // ── Mode Card ────────────────────────────────────────────────────────────────
 function ModeCard({
@@ -27,42 +50,46 @@ function ModeCard({
 }: { mode: UIMode; selected: boolean; onSelect: () => void }) {
   const isGuided = mode === 'guided';
   return (
-    <TouchableOpacity
-      style={[styles.modeCard, selected && styles.modeCardSelected]}
-      onPress={onSelect}
-      activeOpacity={0.85}
-    >
-      <View style={styles.modeCardTop}>
-        <Text style={styles.modeEmoji}>{isGuided ? '📖' : '⚡'}</Text>
-        {selected && (
-          <View style={styles.modeCheckBadge}>
-            <Text style={styles.modeCheckText}>✓</Text>
+    <PressCard onPress={onSelect} style={{ flex: 1 }}>
+      <View style={[modeStyles.card, selected && modeStyles.cardSelected]}>
+        <View style={modeStyles.top}>
+          <View style={[modeStyles.iconWrap, { backgroundColor: isGuided ? Colors.infoBg : 'rgba(180,130,60,0.12)' }]}>
+            <Icon
+              name={isGuided ? 'BookOpen' : 'Zap'}
+              size={20}
+              color={isGuided ? Colors.info : '#b47c28'}
+              strokeWidth={1.8}
+            />
           </View>
-        )}
+          {selected && (
+            <View style={modeStyles.checkBadge}>
+              <Icon name="Check" size={11} color="#fff" strokeWidth={3} />
+            </View>
+          )}
+        </View>
+        <Text style={modeStyles.title}>{isGuided ? '说明模式' : '简易模式'}</Text>
+        <Text style={modeStyles.desc}>{isGuided ? '操作说明 · 新手友好' : '图标优先 · 极简'}</Text>
       </View>
-      <Text style={styles.modeCardTitle}>{isGuided ? '说明模式' : '简易模式'}</Text>
-      <Text style={styles.modeCardDesc}>
-        {isGuided ? '操作说明 · 新手友好' : '图标优先 · 极简'}
-      </Text>
-    </TouchableOpacity>
+    </PressCard>
   );
 }
 
 // ── Toggle Row ───────────────────────────────────────────────────────────────
 function ToggleRow({
-  icon, label, hint, value, onToggle, pending,
+  iconName, iconColor, iconBg, label, hint, value, onToggle, pending,
 }: {
-  icon: string; label: string; hint?: string;
+  iconName: IconName; iconColor: string; iconBg: string;
+  label: string; hint?: string;
   value: boolean; onToggle: () => void; pending?: boolean;
 }) {
   return (
-    <View style={[styles.toggleRow, pending && styles.toggleRowPending]}>
-      <View style={styles.toggleIconWrap}>
-        <Text style={styles.toggleIcon}>{icon}</Text>
+    <View style={[rowStyles.row, pending && rowStyles.rowPending]}>
+      <View style={[rowStyles.iconWrap, { backgroundColor: iconBg }]}>
+        <Icon name={iconName} size={16} color={iconColor} strokeWidth={1.8} />
       </View>
-      <View style={styles.toggleContent}>
-        <Text style={styles.toggleLabel}>{label}</Text>
-        {hint ? <Text style={styles.toggleHint}>{hint}</Text> : null}
+      <View style={rowStyles.content}>
+        <Text style={rowStyles.label}>{label}</Text>
+        {hint ? <Text style={rowStyles.hint}>{hint}</Text> : null}
       </View>
       <Switch
         value={value}
@@ -74,7 +101,25 @@ function ToggleRow({
   );
 }
 
-// ── Section Header ───────────────────────────────────────────────────────────
+// ── Action Row ───────────────────────────────────────────────────────────────
+function ActionRow({
+  iconName, iconColor, iconBg, label, labelColor, onPress,
+}: {
+  iconName: IconName; iconColor: string; iconBg: string;
+  label: string; labelColor?: string; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={rowStyles.actionRow} onPress={onPress} activeOpacity={0.7}>
+      <View style={[rowStyles.iconWrap, { backgroundColor: iconBg }]}>
+        <Icon name={iconName} size={16} color={iconColor} strokeWidth={1.8} />
+      </View>
+      <Text style={[rowStyles.actionLabel, labelColor ? { color: labelColor } : null]}>{label}</Text>
+      <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
+    </TouchableOpacity>
+  );
+}
+
+// ── Section Header ────────────────────────────────────────────────────────────
 function SectionHeader({ title }: { title: string }) {
   return <Text style={styles.sectionHeader}>{title}</Text>;
 }
@@ -84,7 +129,6 @@ export function SettingsScreen() {
   const nav = useNavigation<Nav>();
   const { uiMode, setUIMode } = useAppStore();
 
-  // Pending (draft) state — not applied until Save is pressed
   const [pendingMode, setPendingMode] = useState<UIMode>(uiMode);
   const [shareAfterAdd, setShareAfterAdd] = useState(true);
   const [nightMode, setNightMode] = useState(false);
@@ -92,7 +136,7 @@ export function SettingsScreen() {
   const [locationShare, setLocationShare] = useState(false);
 
   const hasChanges = pendingMode !== uiMode
-    || shareAfterAdd !== true  // vs. initial values (simplified for mock)
+    || shareAfterAdd !== true
     || nightMode !== false;
 
   const handleSave = () => {
@@ -102,16 +146,18 @@ export function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Top nav bar */}
+      {/* Top bar */}
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
-          <Text style={styles.backText}>← 返回</Text>
+          <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
+          <Text style={styles.backText}>返回</Text>
         </TouchableOpacity>
         <Text style={styles.topTitle}>设置</Text>
         <TouchableOpacity
           style={[styles.saveBtn, hasChanges && styles.saveBtnActive]}
           onPress={handleSave}
         >
+          <Icon name="Save" size={14} color={hasChanges ? '#fff' : Colors.textMuted} strokeWidth={2} />
           <Text style={[styles.saveBtnText, hasChanges && styles.saveBtnTextActive]}>保存</Text>
         </TouchableOpacity>
       </View>
@@ -127,7 +173,8 @@ export function SettingsScreen() {
         </View>
         {pendingMode !== uiMode && (
           <View style={styles.pendingHint}>
-            <Text style={styles.pendingHintText}>⬆ 点击"保存"后生效</Text>
+            <Icon name="ArrowUp" size={12} color={Colors.primary} strokeWidth={2.5} />
+            <Text style={styles.pendingHintText}>点击"保存"后生效</Text>
           </View>
         )}
 
@@ -135,7 +182,9 @@ export function SettingsScreen() {
         <SectionHeader title="分享设置" />
         <View style={styles.card}>
           <ToggleRow
-            icon="🏳️"
+            iconName="Flag"
+            iconColor={Colors.primary}
+            iconBg={Colors.primaryLight}
             label="添加好友后默认分享旗帜"
             hint="新好友可以自动看到你的公开旗帜"
             value={shareAfterAdd}
@@ -144,7 +193,9 @@ export function SettingsScreen() {
           />
           <View style={styles.divider} />
           <ToggleRow
-            icon="📍"
+            iconName="MapPin"
+            iconColor={Colors.info}
+            iconBg={Colors.infoBg}
             label="位置实时共享"
             hint="让好友看到你当前的实时位置"
             value={locationShare}
@@ -157,7 +208,9 @@ export function SettingsScreen() {
         <SectionHeader title="显示" />
         <View style={styles.card}>
           <ToggleRow
-            icon="🌙"
+            iconName="Moon"
+            iconColor="#5a4fcf"
+            iconBg="rgba(90,79,207,0.1)"
             label="夜间模式"
             hint="深色界面，减少夜间用眼疲劳"
             value={nightMode}
@@ -170,7 +223,9 @@ export function SettingsScreen() {
         <SectionHeader title="语音播报" />
         <View style={styles.card}>
           <ToggleRow
-            icon="🔊"
+            iconName="Volume2"
+            iconColor={Colors.success}
+            iconBg={Colors.successBg}
             label="路线播报"
             hint="跑步/徒步时播报距离和偏离提醒"
             value={broadcastEnabled}
@@ -182,23 +237,25 @@ export function SettingsScreen() {
         {/* ── Account ── */}
         <SectionHeader title="账号" />
         <View style={styles.card}>
-          <TouchableOpacity style={styles.actionRow} onPress={() => Alert.alert('个人信息', '即将开放')}>
-            <View style={styles.toggleIconWrap}><Text style={styles.toggleIcon}>👤</Text></View>
-            <Text style={styles.actionLabel}>个人信息</Text>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
+          <ActionRow
+            iconName="User"
+            iconColor={Colors.textSecondary}
+            iconBg={Colors.border}
+            label="个人信息"
+            onPress={() => Alert.alert('个人信息', '即将开放')}
+          />
           <View style={styles.divider} />
-          <TouchableOpacity
-            style={styles.actionRow}
+          <ActionRow
+            iconName="LogOut"
+            iconColor={Colors.danger}
+            iconBg={Colors.dangerBg}
+            label="退出登录"
+            labelColor={Colors.danger}
             onPress={() => Alert.alert('退出登录', '确认退出账号？', [
               { text: '取消', style: 'cancel' },
               { text: '退出', style: 'destructive' },
             ])}
-          >
-            <View style={styles.toggleIconWrap}><Text style={styles.toggleIcon}>🚪</Text></View>
-            <Text style={[styles.actionLabel, { color: Colors.danger }]}>退出登录</Text>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
+          />
         </View>
 
         {/* Save button (bottom) */}
@@ -207,7 +264,8 @@ export function SettingsScreen() {
           onPress={handleSave}
           activeOpacity={hasChanges ? 0.8 : 1}
         >
-          <Text style={styles.saveBtnBottomText}>保存设置</Text>
+          <Icon name="Save" size={IconSize.sm} color={hasChanges ? '#fff' : Colors.textMuted} strokeWidth={2} />
+          <Text style={[styles.saveBtnBottomText, !hasChanges && { color: Colors.textMuted }]}>保存设置</Text>
         </TouchableOpacity>
 
         <Text style={styles.version}>Cairn v0.1.0</Text>
@@ -216,6 +274,7 @@ export function SettingsScreen() {
   );
 }
 
+// ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
 
@@ -225,10 +284,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.border,
     backgroundColor: Colors.bg,
   },
-  backBtn: { paddingVertical: 6, paddingRight: Spacing.sm },
+  backBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    paddingVertical: 6, paddingRight: Spacing.sm,
+  },
   backText: { fontSize: FontSize.caption, fontWeight: '600', color: Colors.primary },
-  topTitle: { flex: 1, textAlign: 'center', fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary },
-  saveBtn: { backgroundColor: Colors.border, borderRadius: Radius.pill, paddingHorizontal: Spacing.md, paddingVertical: 6 },
+  topTitle: {
+    flex: 1, textAlign: 'center',
+    fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary,
+  },
+  saveBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.border, borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md, paddingVertical: 6,
+  },
   saveBtnActive: { backgroundColor: Colors.primary },
   saveBtnText: { fontSize: FontSize.small, fontWeight: '700', color: Colors.textMuted },
   saveBtnTextActive: { color: '#fff' },
@@ -252,55 +321,20 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: Colors.border, marginLeft: 52 },
 
   modeRow: { flexDirection: 'row', gap: Spacing.sm, marginHorizontal: Spacing.base },
-  modeCard: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.card,
-    padding: Spacing.md, borderWidth: 2, borderColor: Colors.border, ...Shadow.card,
-  },
-  modeCardSelected: { borderColor: Colors.primary, backgroundColor: 'rgba(93,124,70,0.05)' },
-  modeCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xs },
-  modeEmoji: { fontSize: 22 },
-  modeCheckBadge: {
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
-  },
-  modeCheckText: { color: '#fff', fontSize: 11, fontWeight: '800' },
-  modeCardTitle: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary, marginBottom: 2 },
-  modeCardDesc: { fontSize: 11, color: Colors.textSecondary, lineHeight: 15 },
 
   pendingHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
     marginHorizontal: Spacing.base, marginTop: Spacing.xs,
     backgroundColor: 'rgba(93,124,70,0.1)', borderRadius: Radius.pill,
     paddingHorizontal: Spacing.md, paddingVertical: 4, alignSelf: 'flex-start',
   },
   pendingHintText: { fontSize: FontSize.small, color: Colors.primary, fontWeight: '600' },
 
-  toggleRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
-    minHeight: 56,
-  },
-  toggleRowPending: { backgroundColor: 'rgba(93,124,70,0.03)' },
-  toggleIconWrap: {
-    width: 32, height: 32, borderRadius: 8,
-    backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center',
-    marginRight: Spacing.md,
-  },
-  toggleIcon: { fontSize: 16 },
-  toggleContent: { flex: 1 },
-  toggleLabel: { fontSize: FontSize.body, fontWeight: '500', color: Colors.textPrimary },
-  toggleHint: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2, lineHeight: 16 },
-
-  actionRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
-  },
-  actionLabel: { flex: 1, fontSize: FontSize.body, fontWeight: '500', color: Colors.textPrimary, marginLeft: 0 },
-  chevron: { fontSize: 20, color: Colors.textMuted },
-
   saveBtnBottom: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, justifyContent: 'center',
     marginHorizontal: Spacing.base, marginTop: Spacing.xl,
     backgroundColor: Colors.border, borderRadius: Radius.button,
-    paddingVertical: Spacing.md, alignItems: 'center',
+    paddingVertical: Spacing.md,
   },
   saveBtnBottomActive: { backgroundColor: Colors.primary },
   saveBtnBottomText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
@@ -309,4 +343,48 @@ const styles = StyleSheet.create({
     textAlign: 'center', fontSize: FontSize.small, color: Colors.textMuted,
     marginTop: Spacing.lg, marginBottom: Spacing.base,
   },
+});
+
+const modeStyles = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.surface, borderRadius: Radius.card,
+    padding: Spacing.md, borderWidth: 2, borderColor: Colors.border, ...Shadow.card,
+  },
+  cardSelected: { borderColor: Colors.primary, backgroundColor: 'rgba(93,124,70,0.05)' },
+  top: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: Spacing.sm,
+  },
+  iconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkBadge: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  title: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary, marginBottom: 2 },
+  desc: { fontSize: 11, color: Colors.textSecondary, lineHeight: 15 },
+});
+
+const rowStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
+    minHeight: 56,
+  },
+  rowPending: { backgroundColor: 'rgba(93,124,70,0.03)' },
+  iconWrap: {
+    width: 32, height: 32, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  content: { flex: 1 },
+  label: { fontSize: FontSize.body, fontWeight: '500', color: Colors.textPrimary },
+  hint: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2, lineHeight: 16 },
+  actionRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
+  },
+  actionLabel: { flex: 1, fontSize: FontSize.body, fontWeight: '500', color: Colors.textPrimary },
 });

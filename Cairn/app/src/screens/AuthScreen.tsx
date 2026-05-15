@@ -155,7 +155,8 @@ export function AuthScreen() {
       return;
     }
     setLoggedIn(true);
-    setUIMode('guided');
+    // New registrations default to guided mode; login preserves persisted setting
+    if (view === 'register') setUIMode('guided');
     nav.replace('Home');
   };
 
