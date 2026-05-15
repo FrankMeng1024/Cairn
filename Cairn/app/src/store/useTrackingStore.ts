@@ -126,8 +126,8 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   },
 
   stopTracking: () => {
-    // Clean up subscriptions
-    locationSubscription?.remove();
+    // Clean up subscriptions (wrapped — expo-location .remove() throws on web)
+    try { locationSubscription?.remove(); } catch { /* web: no-op */ }
     locationSubscription = null;
     if (durationInterval) {
       clearInterval(durationInterval);
@@ -155,7 +155,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   },
 
   pauseTracking: () => {
-    locationSubscription?.remove();
+    try { locationSubscription?.remove(); } catch { /* web: no-op */ }
     locationSubscription = null;
     set({ status: 'paused' });
   },

@@ -1,9 +1,9 @@
 /**
- * RunningScreen — Sprint 15 real GPS tracking
+ * RunningScreen — Sprint 18 premium lock screen
  *
  * States:
  * 1. Pre-start: route selection with SVG icons, animated start button
- * 2. Running — LOCKED: real stats bar (distance/duration/pace), compass ring, lock indicator
+ * 2. Running — LOCKED: large elapsed time + secondary stats, pulsing GPS dot
  * 3. Running — UNLOCKED: stop/relock controls fade in
  *
  * Uses useTrackingStore (real GPS via expo-location, graceful web fallback).
@@ -34,7 +34,23 @@ function useRunKeepAwake() {
   useKeepAwake();
 }
 
-// ── Stat item ───────────────────────────────────────────────────────────────
+// ── Pulsing GPS dot ───────────────────────────────────────────────────────────
+function PulsingDot({ active }: { active: boolean }) {
+  const pulse = useRef(new Animated.Value(0.8)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.2, duration: 1000, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.8, duration: 1000, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  return (
+    <Animated.View style={[runStyles.pulsingDot, { transform: [{ scale: pulse }], backgroundColor: active ? Colors.success : Colors.textMuted }]} />
+  );
+}
+
+// ── Stat item ────────────────────────────────────────────────────────────────
 function StatItem({ value, label }: { value: string; label: string }) {
   return (
     <View style={runStyles.statItem}>
@@ -259,10 +275,20 @@ export function RunningScreen() {
             )}
           </View>
 
-          {/* Lock indicator */}
+          {/* Lock indicator — premium lock screen */}
           {isLocked && (
-            <View style={runStyles.lockIndicator}>
-              <Icon name="Lock" size={IconSize.lg} color="rgba(255,255,255,0.5)" strokeWidth={1.8} />
+            <View style={runStyles.lockScreen}>
+              {/* GPS pulsing indicator */}
+              <PulsingDot active={locationAvailable} />
+              {/* Primary stat: elapsed */}
+              <Text style={runStyles.lockPrimary}>{durationDisplay}</Text>
+              {/* Secondary row */}
+              <View style={runStyles.lockSecondary}>
+                <Text style={runStyles.lockSecStat}>{distDisplay} <Text style={runStyles.lockSecUnit}>km</Text></Text>
+                <View style={runStyles.lockSecDivider} />
+                <Text style={runStyles.lockSecStat}>{paceDisplay} <Text style={runStyles.lockSecUnit}>min/km</Text></Text>
+              </View>
+              {/* Hint */}
               <Text style={runStyles.lockText}>Double-tap to unlock</Text>
               <View style={runStyles.tapDots}>
                 {[0, 1].map(i => (
@@ -382,7 +408,28 @@ const runStyles = StyleSheet.create({
     textAlign: 'center', paddingHorizontal: Spacing.xl,
   },
 
-  lockIndicator: { alignItems: 'center', paddingBottom: 60, gap: Spacing.sm },
+  lockScreen: {
+    alignItems: 'center', paddingBottom: 60, gap: Spacing.md,
+  },
+  lockPrimary: {
+    fontSize: 60, fontWeight: '200', color: '#ffffff',
+    letterSpacing: -2, lineHeight: 68,
+  },
+  lockSecondary: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.lg,
+  },
+  lockSecStat: {
+    fontSize: 20, fontWeight: '300', color: 'rgba(255,255,255,0.85)',
+  },
+  lockSecUnit: {
+    fontSize: 13, fontWeight: '400', color: 'rgba(255,255,255,0.5)',
+  },
+  lockSecDivider: {
+    width: 1, height: 20, backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  pulsingDot: {
+    width: 14, height: 14, borderRadius: 7, marginBottom: Spacing.sm,
+  },
   lockText: { fontSize: FontSize.caption, color: 'rgba(255,255,255,0.4)' },
   tapDots: { flexDirection: 'row', gap: Spacing.md, marginTop: 4 },
   tapDot: {

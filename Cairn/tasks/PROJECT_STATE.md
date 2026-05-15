@@ -1,7 +1,7 @@
 # PROJECT_STATE.md — Cairn
 
 **Status**: IN_PROGRESS
-**Current Sprint**: 14-16 (Phase A complete)
+**Current Sprint**: 18 (UI polish)
 **Last Updated**: 2026-05-15
 
 ## Sprint History
@@ -24,6 +24,11 @@
   - HikingScreen: real GPS start/stop, real markers plant/delete, live stats
   - RunningScreen: real tracking store, live distance/duration/pace
   - MapHistoryScreen: real sessions + real markers, empty states
+- Sprint 17: COMPLETE (2026-05-15) — Full English UI conversion (NZ/Global)
+  - All 7 screens converted: HikingScreen, RunningScreen, MapHistoryScreen, FriendsScreen, SettingsScreen, MapScreen, RoutesScreen
+  - mockData.ts: MARKER_META labels, MOCK_FRIENDS, MOCK_MARKERS all English
+  - BUG FIX: MapHistoryScreen Zustand selector infinite re-render (useMarkerStore selector was calling function)
+  - QA PASS: 9 screenshots, 0 console errors
 
 ## Phase A Summary (COMPLETE)
 All core GPS tracking functionality wired. No hardcoded coordinates anywhere.

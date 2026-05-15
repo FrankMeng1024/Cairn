@@ -1,20 +1,20 @@
 /**
- * HikingScreen — Sprint 14 real GPS tracking
+ * HikingScreen — Sprint 18 AR drag interaction + topo map
  *
  * States:
- * 1. Map view: full-screen map placeholder, GPS chip, back chip, FAB
+ * 1. Map view: full-screen topo placeholder, GPS chip, back chip, FAB
  * 2. Tracking: stats bar appears above map
- * 3. AR flag picker: tap a corner flag type to plant
+ * 3. AR flag picker: drag from corner to drop zone to plant (tap fallback preserved)
  * 4. Plant note sheet: optional note before saving
  * 5. Marker detail sheet: view / delete a marker
  *
  * expo-keep-awake: activates when status === 'tracking'
  * Real stores: useTrackingStore (GPS), useMarkerStore (flags)
  */
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions,
-  TextInput, Alert,
+  TextInput, Alert, PanResponder, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -79,20 +79,27 @@ function MapPlaceholder({ markers, onMarkerPress }: {
 }) {
   return (
     <View style={styles.mapBg}>
-      {/* Topo-style grid */}
-      {Array.from({ length: 12 }).map((_, row) =>
-        Array.from({ length: 8 }).map((__, col) => (
-          <View key={`${row}-${col}`} style={[styles.gridCell, { top: row * 80, left: col * 50 }]} />
-        ))
-      )}
+      {/* Topo elevation rings */}
+      <View style={[styles.topoRing, { width: 340, height: 340, borderRadius: 170, top: 120, left: W / 2 - 170 }]} />
+      <View style={[styles.topoRing, { width: 240, height: 240, borderRadius: 120, top: 170, left: W / 2 - 120 }]} />
+      <View style={[styles.topoRing, { width: 150, height: 150, borderRadius: 75, top: 215, left: W / 2 - 75 }]} />
+      <View style={[styles.topoRing, { width: 72, height: 72, borderRadius: 36, top: 254, left: W / 2 - 36, backgroundColor: 'rgba(93,124,70,0.07)' }]} />
       {/* Trail path */}
       <View style={styles.trailLine} />
       <View style={styles.trailLine2} />
       <View style={styles.trailLine3} />
+      {/* Mountain silhouette hint */}
+      <View style={styles.mountainLeft} />
+      <View style={styles.mountainRight} />
       {/* Location dot */}
       <View style={styles.locationDot}>
         <View style={styles.locationDotInner} />
         <View style={styles.locationPulse} />
+      </View>
+      {/* Trail Map label */}
+      <View style={styles.mapLabelWrap}>
+        <Text style={styles.mapLabel}>Trail Map</Text>
+        <Text style={styles.mapSubLabel}>Real map loads with offline pack</Text>
       </View>
       {/* Real marker pins */}
       {markers.map((m, i) => (
@@ -108,40 +115,128 @@ function MapPlaceholder({ markers, onMarkerPress }: {
   );
 }
 
-// ── AR Flag Picker ─────────────────────────────────────────────────────────
+// ── AR Flag Picker — drag-from-corners ────────────────────────────────────────
+// Drop zone: centred rect. Each corner flag has a PanResponder.
+// Drag into drop zone bounds → highlight → on release → onPlant.
+// Tap also works as fallback.
+const DROP_ZONE = { x: W / 2 - 72, y: 200, w: 144, h: 144 };
+
+function DraggableFlag({ flag, onPlant, onDropZoneEnter, onDropZoneLeave }: {
+  flag: typeof FLAG_TYPES[0];
+  onPlant: (type: MarkerType) => void;
+  onDropZoneEnter: () => void;
+  onDropZoneLeave: () => void;
+}) {
+  const pan = useRef(new Animated.ValueXY()).current;
+  const dragging = useRef(false);
+  const overZone = useRef(false);
+
+  const isInDropZone = (x: number, y: number) => {
+    return (
+      x > DROP_ZONE.x && x < DROP_ZONE.x + DROP_ZONE.w &&
+      y > DROP_ZONE.y && y < DROP_ZONE.y + DROP_ZONE.h
+    );
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        dragging.current = true;
+        pan.setOffset({ x: (pan.x as any)._value, y: (pan.y as any)._value });
+      },
+      onPanResponderMove: (_, gestureState) => {
+        pan.setValue({ x: gestureState.dx, y: gestureState.dy });
+        const cornerPos = CORNER_POSITIONS[flag.corner];
+        const absX = (cornerPos.left ?? (W - 84 - (cornerPos.right ?? 0))) + gestureState.moveX - gestureState.x0;
+        const absY = (cornerPos.top ?? (500 - (cornerPos.bottom ?? 0))) + gestureState.moveY - gestureState.y0;
+        const inZone = isInDropZone(gestureState.moveX, gestureState.moveY);
+        if (inZone && !overZone.current) { overZone.current = true; onDropZoneEnter(); }
+        if (!inZone && overZone.current) { overZone.current = false; onDropZoneLeave(); }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        dragging.current = false;
+        pan.flattenOffset();
+        const inZone = isInDropZone(gestureState.moveX, gestureState.moveY);
+        if (inZone) {
+          overZone.current = false;
+          onDropZoneLeave();
+          onPlant(flag.id);
+        } else {
+          overZone.current = false;
+          onDropZoneLeave();
+          Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: false, tension: 200, friction: 8 }).start();
+        }
+      },
+    })
+  ).current;
+
+  const pos = CORNER_POSITIONS[flag.corner];
+
+  return (
+    <Animated.View
+      style={[
+        arStyles.cornerFlag,
+        pos,
+        { backgroundColor: flag.bg, borderColor: flag.color },
+        { transform: pan.getTranslateTransform() },
+      ]}
+      {...panResponder.panHandlers}
+    >
+      <TouchableOpacity
+        style={arStyles.cornerFlagInner}
+        onPress={() => onPlant(flag.id)}
+        activeOpacity={0.75}
+      >
+        <Icon name={flag.icon} size={IconSize.md} color={flag.color} strokeWidth={2} />
+        <Text style={[arStyles.cornerLabel, { color: flag.color }]}>{flag.label}</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
 function ARFlagPicker({ onClose, onPlant }: {
   onClose: () => void;
   onPlant: (type: MarkerType) => void;
 }) {
   const [planted, setPlanted] = useState<MarkerType | null>(null);
+  const [dropHighlight, setDropHighlight] = useState(false);
+
+  const handlePlant = useCallback((type: MarkerType) => {
+    setPlanted(type);
+    setTimeout(() => onPlant(type), 350);
+  }, [onPlant]);
 
   return (
     <View style={arStyles.overlay}>
       <View style={arStyles.cameraBg}>
-        <Text style={arStyles.hint}>Tap a flag type to plant</Text>
-        <View style={arStyles.dropZone}>
+        <Text style={arStyles.hint}>Drag a flag to the zone · or tap</Text>
+        {/* Drop zone */}
+        <View style={[
+          arStyles.dropZone,
+          dropHighlight && arStyles.dropZoneActive,
+          { position: 'absolute', left: DROP_ZONE.x, top: DROP_ZONE.y, width: DROP_ZONE.w, height: DROP_ZONE.h },
+        ]}>
           {planted ? (
             <Icon name="CircleCheck" size={40} color={Colors.success} strokeWidth={1.5} />
           ) : (
-            <Icon name="Flag" size={32} color="rgba(255,255,255,0.3)" strokeWidth={1.5} />
+            <Icon name="Flag" size={32} color={dropHighlight ? Colors.primary : 'rgba(255,255,255,0.3)'} strokeWidth={1.5} />
           )}
-          <Text style={arStyles.dropZoneText}>{planted ? 'Flag planted!' : 'Target zone'}</Text>
+          <Text style={[arStyles.dropZoneText, dropHighlight && { color: Colors.primary }]}>
+            {planted ? 'Flag planted!' : 'Target zone'}
+          </Text>
         </View>
       </View>
 
       {FLAG_TYPES.map(flag => (
-        <TouchableOpacity
+        <DraggableFlag
           key={flag.id}
-          style={[arStyles.cornerFlag, CORNER_POSITIONS[flag.corner], { backgroundColor: flag.bg, borderColor: flag.color }]}
-          onPress={() => {
-            setPlanted(flag.id);
-            setTimeout(() => onPlant(flag.id), 350);
-          }}
-          activeOpacity={0.75}
-        >
-          <Icon name={flag.icon} size={IconSize.md} color={flag.color} strokeWidth={2} />
-          <Text style={[arStyles.cornerLabel, { color: flag.color }]}>{flag.label}</Text>
-        </TouchableOpacity>
+          flag={flag}
+          onPlant={handlePlant}
+          onDropZoneEnter={() => setDropHighlight(true)}
+          onDropZoneLeave={() => setDropHighlight(false)}
+        />
       ))}
 
       <TouchableOpacity style={arStyles.closeBtn} onPress={onClose}>
@@ -414,10 +509,25 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
 
   // Map
-  mapBg: { flex: 1, backgroundColor: '#e8f0e0', overflow: 'hidden' },
-  gridCell: {
-    position: 'absolute', width: 50, height: 80,
-    borderWidth: 0.5, borderColor: 'rgba(93,124,70,0.12)',
+  mapBg: { flex: 1, backgroundColor: '#e8f4e8', overflow: 'hidden' },
+  topoRing: {
+    position: 'absolute',
+    borderWidth: 1, borderColor: 'rgba(93,124,70,0.18)',
+    backgroundColor: 'transparent',
+  },
+  mountainLeft: {
+    position: 'absolute', bottom: 260, left: 30,
+    width: 0, height: 0,
+    borderLeftWidth: 55, borderRightWidth: 55, borderBottomWidth: 80,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+    borderBottomColor: 'rgba(93,124,70,0.09)',
+  },
+  mountainRight: {
+    position: 'absolute', bottom: 255, left: 80,
+    width: 0, height: 0,
+    borderLeftWidth: 70, borderRightWidth: 70, borderBottomWidth: 100,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+    borderBottomColor: 'rgba(93,124,70,0.07)',
   },
   trailLine: {
     position: 'absolute', top: 240, left: 60, right: 60,
@@ -444,6 +554,17 @@ const styles = StyleSheet.create({
   locationPulse: {
     position: 'absolute', width: 32, height: 32, borderRadius: 16,
     borderWidth: 2, borderColor: Colors.primary + '60',
+  },
+  mapLabelWrap: {
+    position: 'absolute', bottom: 160, left: 0, right: 0,
+    alignItems: 'center',
+  },
+  mapLabel: {
+    fontSize: FontSize.caption, fontWeight: '700',
+    color: 'rgba(93,124,70,0.55)', letterSpacing: 1.5, textTransform: 'uppercase',
+  },
+  mapSubLabel: {
+    fontSize: FontSize.tiny, color: 'rgba(93,124,70,0.4)', marginTop: 2,
   },
   markerPin: {
     position: 'absolute', width: 32, height: 32, borderRadius: 16,
@@ -516,16 +637,23 @@ const arStyles = StyleSheet.create({
   cameraBg: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
   hint: { color: 'rgba(255,255,255,0.55)', fontSize: FontSize.caption, letterSpacing: 0.5 },
   dropZone: {
-    width: 140, height: 140, borderRadius: 24,
+    borderRadius: 24,
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)',
     borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+  },
+  dropZoneActive: {
+    borderColor: Colors.primary, borderStyle: 'solid',
+    backgroundColor: 'rgba(93,124,70,0.15)',
   },
   dropZoneText: { color: 'rgba(255,255,255,0.45)', fontSize: FontSize.small },
   cornerFlag: {
     position: 'absolute', width: 84, height: 84,
     borderRadius: 20, borderWidth: 2,
-    alignItems: 'center', justifyContent: 'center', gap: 6,
-    ...Shadow.card,
+    zIndex: 10, ...Shadow.card,
+  },
+  cornerFlagInner: {
+    flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderRadius: 20,
   },
   cornerLabel: { fontSize: FontSize.small, fontWeight: '800' },
   closeBtn: {
