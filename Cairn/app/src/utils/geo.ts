@@ -34,12 +34,14 @@ export function haversineM(a: Coordinate, b: Coordinate): number {
  * @param meters  Raw distance in meters
  * @param unit    'km' (default) or 'mi'
  * @param decimals Decimal places (default 2)
+ * Returns '--' when distance is negligible (< 10m)
  */
 export function formatDistance(
   meters: number,
   unit: DistanceUnit = 'km',
   decimals = 2,
 ): string {
+  if (meters < 10) return '--';
   if (unit === 'mi') {
     return (meters / 1609.344).toFixed(decimals);
   }
@@ -92,4 +94,23 @@ export function calculateElevationGain(altitudes: (number | null | undefined)[])
  */
 export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Format a timestamp to a human-readable date string.
+ * Returns "Today", "Yesterday", or "Jan 5" / "May 14" format.
+ */
+export function formatDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86400000;
+  const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+
+  if (dateStart === todayStart) return 'Today';
+  if (dateStart === yesterdayStart) return 'Yesterday';
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[date.getMonth()]} ${date.getDate()}`;
 }

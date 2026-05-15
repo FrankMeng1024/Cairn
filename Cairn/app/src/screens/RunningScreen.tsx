@@ -161,7 +161,7 @@ export function RunningScreen() {
             <StatItem value={paceDisplay} label="pace" />
           </View>
           <TouchableOpacity style={preStyles.shareBtn} onPress={handleShare}>
-            <Icon name="Send" size={16} color="#3d7ab5" strokeWidth={2} />
+            <Icon name="Send" size={16} color={Colors.running} strokeWidth={2} />
             <Text style={preStyles.shareBtnText}>Share</Text>
           </TouchableOpacity>
         </View>
@@ -203,7 +203,7 @@ export function RunningScreen() {
             </View>
             {selectedRoute === null && (
               <View style={preStyles.checkBadge}>
-                <Text style={preStyles.checkText}>✓</Text>
+                <Icon name="Check" size={14} color="#fff" strokeWidth={3} />
               </View>
             )}
           </TouchableOpacity>
@@ -215,8 +215,8 @@ export function RunningScreen() {
               onPress={() => setSelectedRoute(r.id)}
               activeOpacity={0.85}
             >
-              <View style={[preStyles.routeIconBadge, { backgroundColor: 'rgba(61,122,181,0.12)' }]}>
-                <Icon name="Route" size={IconSize.md} color="#3d7ab5" strokeWidth={1.8} />
+              <View style={[preStyles.routeIconBadge, { backgroundColor: Colors.runningLight }]}>
+                <Icon name="Route" size={IconSize.md} color={Colors.running} strokeWidth={1.8} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={preStyles.routeName}>{r.name}</Text>
@@ -224,7 +224,7 @@ export function RunningScreen() {
               </View>
               {selectedRoute === r.id && (
                 <View style={preStyles.checkBadge}>
-                  <Text style={preStyles.checkText}>✓</Text>
+                  <Icon name="Check" size={14} color="#fff" strokeWidth={3} />
                 </View>
               )}
             </TouchableOpacity>
@@ -374,13 +374,12 @@ const preStyles = StyleSheet.create({
   routeMeta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
   checkBadge: {
     width: 28, height: 28, borderRadius: 14,
-    backgroundColor: '#3d7ab5', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.running, alignItems: 'center', justifyContent: 'center',
   },
-  checkText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 
   footer: { padding: Spacing.xl, gap: Spacing.sm },
   startBtn: {
-    backgroundColor: '#3d7ab5', borderRadius: Radius.button,
+    backgroundColor: Colors.running, borderRadius: Radius.button,
     paddingVertical: Spacing.lg, alignItems: 'center',
     flexDirection: 'row', gap: Spacing.sm, justifyContent: 'center',
   },
@@ -389,10 +388,10 @@ const preStyles = StyleSheet.create({
   lockHint: { fontSize: FontSize.small, color: Colors.textMuted, textAlign: 'center' },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: '#3d7ab5', borderRadius: 22,
+    borderWidth: 1, borderColor: Colors.running, borderRadius: 22,
     paddingHorizontal: Spacing.lg, paddingVertical: 10,
   },
-  shareBtnText: { color: '#3d7ab5', fontWeight: '600', fontSize: FontSize.caption },
+  shareBtnText: { color: Colors.running, fontWeight: '600', fontSize: FontSize.caption },
 });
 
 // ── Styles: running ─────────────────────────────────────────────────────────
@@ -416,7 +415,7 @@ const runStyles = StyleSheet.create({
     width: 220, height: 220, borderRadius: 110,
     borderWidth: 1.5, borderColor: 'rgba(93,124,70,0.4)',
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(93,124,70,0.08)',
+    backgroundColor: Colors.primaryBg,
     gap: Spacing.sm,
   },
   compassDir: {

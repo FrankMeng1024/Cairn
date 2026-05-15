@@ -25,7 +25,7 @@ import { Icon, type IconName } from '../components/Icon';
 import { useAppStore } from '../store/useAppStore';
 import { useSessionStore } from '../store/useSessionStore';
 import { useMarkerStore } from '../store/useMarkerStore';
-import { formatDistance, formatDuration } from '../utils/geo';
+import { formatDistance, formatDuration, formatDate } from '../utils/geo';
 import { getCurrentRegion } from '../config/regions';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -68,8 +68,8 @@ function QuickStats({ sessions, markerCount }: { sessions: any[]; markerCount: n
   return (
     <View style={statsStyles.row}>
       {capsule(stat1Anim, 'Route', String(sessions.length), sessions.length === 1 ? 'session' : 'sessions', Colors.primary, Colors.primaryLight)}
-      {capsule(stat2Anim, 'Map', formatDistance(totalDistM, 'km', 1), 'km', '#3d7ab5', 'rgba(61,122,181,0.12)')}
-      {capsule(stat3Anim, 'Flag', String(markerCount), markerCount === 1 ? 'flag' : 'flags', '#c87941', 'rgba(200,121,65,0.12)')}
+      {capsule(stat2Anim, 'Map', totalDistM < 10 ? '--' : formatDistance(totalDistM, 'km', 1), 'km', Colors.running, Colors.runningLight)}
+      {capsule(stat3Anim, 'Flag', String(markerCount), markerCount === 1 ? 'flag' : 'flags', Colors.flag, Colors.flagLight)}
     </View>
   );
 }
@@ -93,8 +93,8 @@ function HomeEmptyState({ onPress }: { onPress: () => void }) {
         <Animated.View style={[emptyStyles.iconCircle, { backgroundColor: Colors.primaryLight, transform: [{ scale: pulse }] }]}>
           <Icon name="Mountain" size={24} color={Colors.primary} strokeWidth={1.5} />
         </Animated.View>
-        <View style={[emptyStyles.iconCircle, { backgroundColor: 'rgba(61,122,181,0.12)', marginLeft: -10 }]}>
-          <Icon name="Flag" size={20} color="#3d7ab5" strokeWidth={1.5} />
+        <View style={[emptyStyles.iconCircle, { backgroundColor: Colors.runningLight, marginLeft: -10 }]}>
+          <Icon name="Flag" size={20} color={Colors.running} strokeWidth={1.5} />
         </View>
       </View>
       <Text style={emptyStyles.heading}>Your adventure begins here</Text>
@@ -111,8 +111,8 @@ function HomeEmptyState({ onPress }: { onPress: () => void }) {
 function HowItWorks() {
   const steps = [
     { icon: 'Flag' as IconName, label: 'Plant flags', color: Colors.primary, bg: Colors.primaryLight },
-    { icon: 'Users' as IconName, label: 'Share with friends', color: '#3d7ab5', bg: 'rgba(61,122,181,0.15)' },
-    { icon: 'Compass' as IconName, label: 'Guide others', color: '#c87941', bg: 'rgba(200,121,65,0.12)' },
+    { icon: 'Users' as IconName, label: 'Share with friends', color: Colors.running, bg: Colors.runningLight },
+    { icon: 'Compass' as IconName, label: 'Guide others', color: Colors.flag, bg: Colors.flagLight },
   ];
   return (
     <View style={howStyles.row}>
@@ -136,25 +136,27 @@ function RecentActivityStrip({ onPress }: { onPress: () => void }) {
   const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
   const last = sorted[0];
   const isRun = last.activityMode === 'running';
-  const date = new Date(last.startedAt);
-  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const label = last.name ?? `${isRun ? 'Run' : 'Hike'} · ${dateStr}`;
+  const label = last.name ?? `${isRun ? 'Run' : 'Hike'} · ${formatDate(last.startedAt)}`;
   const flagCount = last.markerIds?.length ?? 0;
-  const elevStr = `+${last.elevationGainM ?? 0}m elev`;
+  const elevGain = last.elevationGainM ?? 0;
+  const hasSecondaryStats = elevGain > 0 || flagCount > 0;
+  const elevStr = `+${elevGain}m elev`;
   const flagStr = `${flagCount} flag${flagCount !== 1 ? 's' : ''}`;
 
   return (
     <View style={recentStyles.stripWrap}>
       <TouchableOpacity style={recentStyles.strip} onPress={onPress} activeOpacity={0.8}>
-        <View style={[recentStyles.iconWrap, { backgroundColor: isRun ? 'rgba(61,122,181,0.12)' : Colors.primaryLight }]}>
-          <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={20} color={isRun ? '#3d7ab5' : Colors.primary} strokeWidth={1.8} />
+        <View style={[recentStyles.iconWrap, { backgroundColor: isRun ? Colors.runningLight : Colors.primaryLight }]}>
+          <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={20} color={isRun ? Colors.running : Colors.primary} strokeWidth={1.8} />
         </View>
         <View style={recentStyles.info}>
           <Text style={recentStyles.label} numberOfLines={1}>{label}</Text>
           <Text style={recentStyles.stats}>
             {formatDistance(last.distanceM, 'km', 1)} km · {formatDuration(last.durationS)}
           </Text>
-          <Text style={recentStyles.statsExtra}>{elevStr} · {flagStr}</Text>
+          {hasSecondaryStats && (
+            <Text style={recentStyles.statsExtra}>{elevStr} · {flagStr}</Text>
+          )}
         </View>
         <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
       </TouchableOpacity>
@@ -306,7 +308,7 @@ export function HomeScreen() {
               iconName="PersonStanding"
               title="Running"
               subtitle="Route planning · Voice guidance · Lock mode"
-              accentColor="#3d7ab5"
+              accentColor={Colors.running}
               gradientColors={['#ffffff', '#f3f7fc', '#e8f1f8']}
               onPress={() => nav.navigate('Running')}
               entranceAnim={card2Anim}

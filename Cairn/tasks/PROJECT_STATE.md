@@ -1,7 +1,7 @@
 # PROJECT_STATE.md — Cairn
 
 **Status**: IN_PROGRESS
-**Current Sprint**: 20 (COMPLETE — next: Sprint 21)
+**Current Sprint**: 21 (COMPLETE — next: Sprint 22)
 **Last Updated**: 2026-05-15
 
 ## Key Decisions
@@ -27,17 +27,26 @@
 - Sprint 18: COMPLETE — AR flag drag UX, HomeScreen activity strip, topo map, RunningScreen premium lock screen
 - Sprint 19: COMPLETE — Session track viz, expert mode, friends polish, map history uplift
 - Sprint 20: COMPLETE — HomeScreen QuickStats, HikingScreen polish, session badges, BackButton consistency
+- Sprint 21: COMPLETE — AuthScreen premium redesign, HomeScreen empty state, Running UX polish, cross-screen micro-interactions
 
 ## Phase A Status (COMPLETE)
 All core GPS tracking functionality wired. Real expo-location GPS, haversineM distance calc, Zustand stores persisted.
 
-## Open Retro Items (from Sprint 20)
-- FAB badge context — Low (add tooltip/label for flag count meaning)
-- Hide zero-value stats — Low (don't show +0m/0 flags when both zero)
-- Auth privacy checkbox UX — Medium (separate checkbox from link text)
+## VU Prerequisites Status
+- Must-Have items 1–5, 8–10: DONE
+- Must-Have items 6 (DOC risk layer) + 7 (route deviation + voice alerts): Phase B/C — NOT YET IMPLEMENTED
+- VU trigger deferred until Phase B integration complete
+
+## Open Retro Items
+- [Sprint 22] FAB badge tooltip/label for flag count context (Low)
+- [Sprint 22] Hide zero-value secondary stats ("+0m · 0 flags") (Low)
+- [Sprint 22] 0.0 km stat showing — zero-value session display (Medium — from UX Sprint 21)
 
 ## Next Work (Phase B — Firebase + Safety)
 - Firebase Auth integration (AuthScreen → real login)
 - Firestore marker sync (personal → group/public sharing)
 - Cloud session backup
 - Phase C: SafetyDataProvider (DOC NZ hazard alerts)
+
+## Ongoing: UI Quality Optimization
+Sprint 22+ continues frontend UI detail polishing (user directive: iterate until quality 10/10).

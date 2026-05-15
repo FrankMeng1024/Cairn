@@ -80,7 +80,7 @@ function FriendCard({ friend, onToggleShare }: {
           value={friend.sharing}
           onValueChange={onToggleShare}
           trackColor={{ false: Colors.border, true: Colors.primaryLight }}
-          thumbColor={friend.sharing ? Colors.primary : Colors.textMuted}
+          thumbColor="#fff"
           style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
         />
       </View>
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
   addTopBtnText: { fontSize: FontSize.small, fontWeight: '700', color: '#fff' },
 
   shareBanner: {
-    backgroundColor: 'rgba(93,124,70,0.08)',
+    backgroundColor: Colors.primaryBg,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },

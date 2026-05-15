@@ -77,6 +77,16 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 
 - Signed-in user: test@cairn.app / password123
 - Has 1-2 sessions and 1 flag in store after running tests
+
+## Sprint 22 Updates
+
+- `formatDistance` returns `'--'` for distances < 10m — expected, not a bug
+- RecentActivityStrip date format: human-readable ('Today'/'Yesterday'/'Month Day') — baseline for regression
+- Secondary stats row (elevation + flags) hidden when both zero — future QA should test with non-zero values
+- AuthScreen splash: radial glow, two-line tagline, 56px buttons — visual fidelity baseline
+- New design tokens: Colors.primaryBg, Colors.running, Colors.runningLight, Colors.flag, Colors.flagLight
+- RunningScreen checkBadge: lucide Check icon (SVG, strokeWidth=3, white on blue circle) — not unicode
+- FriendsScreen Switch thumbColor: always '#fff' in both active and inactive states
 - hasData=false state requires fresh session with no prior activity (not achievable without store reset in tests)
 
 ## Sprint 21 Verification Summary

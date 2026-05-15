@@ -5,6 +5,11 @@
 export const Colors = {
   primary: '#5d7c46',
   primaryLight: 'rgba(93,124,70,0.15)',
+  primaryBg: 'rgba(93,124,70,0.08)',
+  running: '#3d7ab5',
+  runningLight: 'rgba(61,122,181,0.12)',
+  flag: '#c87941',
+  flagLight: 'rgba(200,121,65,0.12)',
   bg: '#faf7f2',
   surface: '#ffffff',
   border: '#ece6de',

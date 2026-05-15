@@ -1,19 +1,21 @@
 /**
- * AuthScreen — Sprint 21 premium redesign (STORY-00051)
+ * AuthScreen — Sprint 22 splash uplift (STORY-00058)
  *
  * - Cairn logo glow pulse after stack animation
- * - Premium pill entry buttons (minHeight 52, borderRadius 28)
+ * - Premium pill entry buttons (minHeight 56, borderRadius 28)
  * - Name field visible in registration
  * - Privacy row: checkbox + "I agree to the" text + tappable underlined "Privacy Policy" link (independent targets)
  * - Inline field validation (red text under each invalid field)
  * - Branded social login buttons (Apple=black, Google=white+border)
  * - `setUIMode('beginner')` on register (not 'guided')
+ * - Sprint 22: larger logo area (40%+ vh), radial glow bg, tagline line break, 8px up-translate entrance
  */
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  KeyboardAvoidingView, Platform, Animated, ScrollView,
+  KeyboardAvoidingView, Platform, Animated, ScrollView, Dimensions,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,14 +25,15 @@ import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../componen
 import { Icon } from '../components/Icon';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+const { height: SCREEN_H } = Dimensions.get('window');
 
 // ── Animated Cairn Stack ───────────────────────────────────────────────────
 const STONES = [
+  { width: 52, color: Colors.primary },
+  { width: 70, color: '#7a9e5a' },
   { width: 44, color: Colors.primary },
-  { width: 58, color: '#7a9e5a' },
-  { width: 36, color: Colors.primary },
-  { width: 50, color: '#7a9e5a' },
-  { width: 62, color: '#4a6b38' },
+  { width: 62, color: '#7a9e5a' },
+  { width: 78, color: '#4a6b38' },
 ];
 
 function AnimatedCairn({ size = 1 }: { size?: number }) {
@@ -75,8 +78,8 @@ function AnimatedCairn({ size = 1 }: { size?: number }) {
 }
 
 const cairnStyles = StyleSheet.create({
-  container: { alignItems: 'center', gap: 4 },
-  stone: { height: 11, borderRadius: 6 },
+  container: { alignItems: 'center', gap: 5 },
+  stone: { height: 14, borderRadius: 7 },
 });
 
 // ── Press-animated wrapper ─────────────────────────────────────────────────
@@ -174,12 +177,12 @@ export function AuthScreen() {
   const [privacyError, setPrivacyError] = useState('');
 
   const splashFade = useRef(new Animated.Value(0)).current;
-  const splashScale = useRef(new Animated.Value(0.96)).current;
+  const splashTranslate = useRef(new Animated.Value(8)).current;
   useEffect(() => {
     if (view === 'splash') {
       Animated.parallel([
-        Animated.timing(splashFade, { toValue: 1, duration: 320, useNativeDriver: true }),
-        Animated.spring(splashScale, { toValue: 1, tension: 120, friction: 10, useNativeDriver: true }),
+        Animated.timing(splashFade, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(splashTranslate, { toValue: 0, duration: 400, useNativeDriver: true }),
       ]).start();
     }
   }, [view]);
@@ -226,12 +229,26 @@ export function AuthScreen() {
   if (view === 'splash') {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        <Animated.View style={[styles.splashInner, { opacity: splashFade, transform: [{ scale: splashScale }] }]}>
+        <Animated.View style={[styles.splashInner, { opacity: splashFade, transform: [{ translateY: splashTranslate }] }]}>
+          {/* Hero area — at least 40% of screen */}
           <View style={styles.logoArea}>
+            {/* Radial glow behind cairn */}
+            <View style={styles.logoGlowWrap} pointerEvents="none">
+              <LinearGradient
+                colors={[Colors.primaryLight, 'transparent']}
+                style={styles.logoGlow}
+                start={{ x: 0.5, y: 0.5 }}
+                end={{ x: 1, y: 1 }}
+              />
+            </View>
             <AnimatedCairn />
             <Text style={styles.appName}>Cairn</Text>
-            <Text style={styles.tagline}>Leave a mark.{'\n'}Guide the next.</Text>
+            <View style={styles.taglineWrap}>
+              <Text style={styles.tagline}>Leave a mark.</Text>
+              <Text style={styles.tagline}>Guide the next.</Text>
+            </View>
           </View>
+          {/* CTA buttons anchored at bottom */}
           <View style={styles.splashActions}>
             <PressBtn style={styles.primaryBtn} onPress={() => handleViewChange('register')}>
               <View style={styles.btnContent}>
@@ -393,21 +410,41 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   splashInner: {
     flex: 1, justifyContent: 'space-between',
-    padding: Spacing.xl, paddingBottom: Spacing.xxl,
+    paddingHorizontal: Spacing.xl, paddingBottom: Spacing.xxl,
+    paddingTop: Spacing.xl,
   },
-  logoArea: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: Spacing.md },
-  appName: { fontSize: 52, fontWeight: '900', color: Colors.textPrimary, letterSpacing: -2.5, marginTop: Spacing.md },
-  tagline: { fontSize: FontSize.body, color: Colors.textSecondary, textAlign: 'center', lineHeight: 24 },
-  splashActions: { gap: Spacing.sm },
+  logoArea: {
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    gap: Spacing.lg,
+    minHeight: SCREEN_H * 0.42,
+  },
+  logoGlowWrap: {
+    position: 'absolute',
+    width: 200, height: 200,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  logoGlow: {
+    width: 200, height: 200, borderRadius: 100,
+  },
+  appName: {
+    fontSize: 56, fontWeight: '900', color: Colors.textPrimary,
+    letterSpacing: -2.5, marginTop: Spacing.sm,
+  },
+  taglineWrap: { alignItems: 'center', gap: 2 },
+  tagline: {
+    fontSize: FontSize.h3, color: Colors.textSecondary,
+    textAlign: 'center', lineHeight: 26, fontWeight: '400',
+  },
+  splashActions: { gap: Spacing.sm, paddingTop: Spacing.xxl },
   primaryBtn: {
     backgroundColor: Colors.primary, borderRadius: 28,
-    paddingVertical: Spacing.md, alignItems: 'center', minHeight: 52,
-    justifyContent: 'center',
+    paddingVertical: Spacing.lg, alignItems: 'center', minHeight: 56,
+    justifyContent: 'center', ...Shadow.fab,
   },
   primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
   secondaryBtn: {
     backgroundColor: Colors.surface, borderRadius: 28,
-    paddingVertical: Spacing.md, alignItems: 'center', minHeight: 52,
+    paddingVertical: Spacing.lg, alignItems: 'center', minHeight: 56,
     justifyContent: 'center',
     borderWidth: 1.5, borderColor: Colors.border,
   },

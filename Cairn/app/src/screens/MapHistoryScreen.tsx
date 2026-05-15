@@ -16,7 +16,7 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useSessionStore } from '../store/useSessionStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { getCurrentRegion } from '../config/regions';
-import { formatDistance, formatDuration } from '../utils/geo';
+import { formatDistance, formatDuration, formatDate } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
@@ -59,7 +59,7 @@ function PressRow({
 // If no trackPoints, renders a dashed "No GPS" placeholder line.
 function TrackPolyline({ session }: { session: TrackingSession }) {
   const pts = session.trackPoints;
-  const color = session.activityMode === 'running' ? '#3d7ab5' : Colors.primary;
+  const color = session.activityMode === 'running' ? Colors.running : Colors.primary;
 
   if (pts.length < 2) {
     // No GPS data — show a dashed placeholder line
@@ -148,11 +148,10 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
   onPress: () => void;
   onViewOnMap: () => void;
 }) {
-  const date = new Date(session.startedAt);
-  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const dateStr = formatDate(session.startedAt);
   const actLabel = session.activityMode === 'running' ? 'Run' : 'Hike';
-  const actColor = session.activityMode === 'running' ? '#3d7ab5' : Colors.primary;
-  const actIconBg = session.activityMode === 'running' ? 'rgba(61,122,181,0.12)' : Colors.primaryLight;
+  const actColor = session.activityMode === 'running' ? Colors.running : Colors.primary;
+  const actIconBg = session.activityMode === 'running' ? Colors.runningLight : Colors.primaryLight;
   const actIcon: IconName = session.activityMode === 'running' ? 'PersonStanding' : 'Mountain';
 
   const expandAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
@@ -530,7 +529,7 @@ const styles = StyleSheet.create({
   },
   routeLine2: {
     position: 'absolute', top: 200, left: 40, width: W * 0.6,
-    height: 3, backgroundColor: '#3d7ab5' + '70', borderRadius: 2,
+    height: 3, backgroundColor: Colors.running + '70', borderRadius: 2,
   },
   routeLine3: {
     position: 'absolute', top: 180, right: 40, width: W * 0.4,
@@ -635,7 +634,7 @@ const cardStyles = StyleSheet.create({
     padding: Spacing.md, gap: Spacing.md,
   },
   routeCardSelected: {
-    backgroundColor: 'rgba(93,124,70,0.06)',
+    backgroundColor: Colors.primaryBg,
     borderColor: Colors.primary + '50',
   },
   activityBadge: {
