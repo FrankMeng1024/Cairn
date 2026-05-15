@@ -1,13 +1,10 @@
 /**
- * MapHistoryScreen — Sprint 16 real route history
+ * MapHistoryScreen — Sprint 19 track visualization + flag detail sheet
  *
- * - Routes tab: reads from useSessionStore (real completed tracking sessions)
- * - Flags tab: reads from useMarkerStore (real planted markers, current region)
- * - Sessions shown with real distance, duration, elevation, marker count
- * - Marker delete calls useMarkerStore.deleteMarker
- * - Empty states when no sessions/markers yet
+ * - STORY-00043: session track polyline on map when session selected
+ * - STORY-00046: flag detail bottom sheet, richer flag list items, improved empty states
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert,
   Dimensions, Animated,
@@ -28,7 +25,12 @@ import type { TrackingSession } from '../store/useSessionStore';
 import type { Marker } from '../store/useMarkerStore';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-const { width: W } = Dimensions.get('window');
+const { width: W, height: H } = Dimensions.get('window');
+
+// Map display area height (approx — the area above the list panel)
+const MAP_H = H - 380;
+// Map bounds for coordinate mapping
+const MAP_PADDING = 40;
 
 // ── Spring press wrapper ────────────────────────────────────────────────────
 function PressRow({
@@ -51,6 +53,92 @@ function PressRow({
   );
 }
 
+// ── Track polyline ────────────────────────────────────────────────────────────
+// Converts trackPoints lat/lng to pixel positions within the map area.
+// If no trackPoints, renders a dashed "No GPS" placeholder line.
+function TrackPolyline({ session }: { session: TrackingSession }) {
+  const pts = session.trackPoints;
+  const color = session.activityMode === 'running' ? '#3d7ab5' : Colors.primary;
+
+  if (pts.length < 2) {
+    // No GPS data — show a dashed placeholder line
+    return (
+      <View style={trackStyles.noGpsWrap}>
+        <View style={[trackStyles.noGpsLine, { borderColor: color }]} />
+        <Text style={trackStyles.noGpsLabel}>No GPS data recorded</Text>
+      </View>
+    );
+  }
+
+  // Find bounding box of the track
+  const lats = pts.map(p => p.lat);
+  const lngs = pts.map(p => p.lng);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const latRange = maxLat - minLat || 0.001;
+  const lngRange = maxLng - minLng || 0.001;
+
+  const mapW = W - MAP_PADDING * 2;
+  const mapH = MAP_H - 80;
+
+  // Map lat/lng to pixel coords
+  const toPixel = (lat: number, lng: number) => ({
+    x: MAP_PADDING + ((lng - minLng) / lngRange) * mapW,
+    y: 60 + ((maxLat - lat) / latRange) * mapH,
+  });
+
+  // Draw as connected line segments using thin Views positioned absolutely
+  const segments: { x1: number; y1: number; x2: number; y2: number }[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = toPixel(pts[i].lat, pts[i].lng);
+    const b = toPixel(pts[i + 1].lat, pts[i + 1].lng);
+    segments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+  }
+
+  return (
+    <>
+      {segments.map((seg, i) => {
+        const dx = seg.x2 - seg.x1;
+        const dy = seg.y2 - seg.y1;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        return (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              left: seg.x1,
+              top: seg.y1,
+              width: length,
+              height: 3,
+              backgroundColor: color + 'cc',
+              borderRadius: 2,
+              transform: [{ rotate: `${angle}deg` }],
+              transformOrigin: 'left center',
+            }}
+          />
+        );
+      })}
+      {/* Start dot */}
+      {pts.length > 0 && (() => {
+        const start = toPixel(pts[0].lat, pts[0].lng);
+        return (
+          <View style={[trackStyles.trackDot, trackStyles.startDot, { left: start.x - 6, top: start.y - 6, backgroundColor: color }]} />
+        );
+      })()}
+      {/* End dot */}
+      {pts.length > 1 && (() => {
+        const end = toPixel(pts[pts.length - 1].lat, pts[pts.length - 1].lng);
+        return (
+          <View style={[trackStyles.trackDot, trackStyles.endDot, { left: end.x - 8, top: end.y - 8, borderColor: color }]} />
+        );
+      })()}
+    </>
+  );
+}
+
 // ── Session card ─────────────────────────────────────────────────────────────
 function SessionCard({ session, isSelected, onPress }: {
   session: TrackingSession;
@@ -60,10 +148,11 @@ function SessionCard({ session, isSelected, onPress }: {
   const date = new Date(session.startedAt);
   const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const actLabel = session.activityMode === 'running' ? 'Run' : 'Hike';
+  const actColor = session.activityMode === 'running' ? '#3d7ab5' : Colors.primary;
   return (
     <PressRow onPress={onPress} style={{ marginBottom: Spacing.sm }}>
       <View style={[cardStyles.routeCard, isSelected && cardStyles.routeCardSelected]}>
-        <View style={[cardStyles.routeColorBar, { backgroundColor: session.activityMode === 'running' ? '#3d7ab5' : Colors.primary }]} />
+        <View style={[cardStyles.routeColorBar, { backgroundColor: actColor }]} />
         <View style={cardStyles.routeInfo}>
           <Text style={cardStyles.routeName}>
             {session.name ?? `${actLabel} · ${dateStr}`}
@@ -74,9 +163,9 @@ function SessionCard({ session, isSelected, onPress }: {
         </View>
         <View style={cardStyles.routeChevron}>
           <Icon
-            name={isSelected ? 'ChevronLeft' : 'ChevronRight'}
+            name={isSelected ? 'ChevronDown' : 'ChevronRight'}
             size={IconSize.sm}
-            color={isSelected ? Colors.primary : Colors.textMuted}
+            color={isSelected ? actColor : Colors.textMuted}
             strokeWidth={2.5}
           />
         </View>
@@ -85,10 +174,70 @@ function SessionCard({ session, isSelected, onPress }: {
   );
 }
 
+// ── Flag detail bottom sheet ─────────────────────────────────────────────────
+function FlagDetailSheet({ marker, onClose, onDelete }: {
+  marker: Marker;
+  onClose: () => void;
+  onDelete: () => void;
+}) {
+  const slideY = useRef(new Animated.Value(H)).current;
+
+  React.useEffect(() => {
+    Animated.spring(slideY, {
+      toValue: 0, tension: 200, friction: 20, useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const meta = MARKER_META[marker.type as keyof typeof MARKER_META] || MARKER_META.free;
+  const date = new Date(marker.createdAt);
+  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+  const close = () => {
+    Animated.timing(slideY, { toValue: H, duration: 200, useNativeDriver: true }).start(onClose);
+  };
+
+  return (
+    <>
+      {/* Scrim */}
+      <TouchableOpacity style={sheetStyles.scrim} activeOpacity={1} onPress={close} />
+      <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: slideY }] }]}>
+        {/* Drag handle */}
+        <View style={sheetStyles.handle} />
+        {/* Type badge */}
+        <View style={[sheetStyles.typeBadge, { backgroundColor: meta.bg, borderColor: meta.color }]}>
+          <Icon name={meta.iconName as IconName} size={20} color={meta.color} strokeWidth={2} />
+          <Text style={[sheetStyles.typeBadgeText, { color: meta.color }]}>{meta.label}</Text>
+        </View>
+        {/* Note */}
+        <Text style={sheetStyles.noteLabel}>Note</Text>
+        <Text style={sheetStyles.noteText}>{marker.note || 'No note added'}</Text>
+        {/* Date */}
+        <Text style={sheetStyles.dateLine}>Planted: {dateStr}</Text>
+        {/* Delete */}
+        <TouchableOpacity
+          style={sheetStyles.deleteBtn}
+          onPress={() => Alert.alert(
+            'Delete Flag',
+            'This flag will be permanently removed.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete', style: 'destructive', onPress: onDelete },
+            ]
+          )}
+        >
+          <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
+          <Text style={sheetStyles.deleteBtnText}>Delete Flag</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    </>
+  );
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 export function MapHistoryScreen() {
   const nav = useNavigation<Nav>();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
   const [tab, setTab] = useState<'routes' | 'flags'>('routes');
 
   const region = getCurrentRegion();
@@ -99,25 +248,60 @@ export function MapHistoryScreen() {
   const deleteMarker = useMarkerStore(s => s.deleteMarker);
 
   const selectedSession = sessions.find(s => s.id === selectedSessionId) ?? null;
+  const selectedMarker = markers.find(m => m.id === selectedMarkerId) ?? null;
 
-  // Show real markers on map; fall back to empty array
+  // Show real markers on map; up to 8
   const mapMarkers: Marker[] = markers.slice(0, 8);
 
   return (
     <View style={styles.container}>
       {/* Map area */}
       <View style={styles.mapArea}>
-        {/* Route lines (decorative — real track rendering in Phase B) */}
-        <View style={styles.routeLine1} />
-        <View style={styles.routeLine2} />
-        <View style={styles.routeLine3} />
+        {/* Track polyline when session selected */}
+        {selectedSession ? (
+          <TrackPolyline session={selectedSession} />
+        ) : (
+          // Decorative lines when no session selected
+          <>
+            <View style={styles.routeLine1} />
+            <View style={styles.routeLine2} />
+            <View style={styles.routeLine3} />
+          </>
+        )}
 
         {/* Map placeholder label */}
-        <View style={styles.mapLabelWrap}>
-          <Icon name="Map" size={28} color={Colors.textMuted} strokeWidth={1.5} />
-          <Text style={styles.mapLabel}>Trail Map</Text>
-          <Text style={styles.mapSubLabel}>Route history · Flag markers</Text>
-        </View>
+        {!selectedSession && (
+          <View style={styles.mapLabelWrap}>
+            <Icon name="Map" size={28} color={Colors.textMuted} strokeWidth={1.5} />
+            <Text style={styles.mapLabel}>Trail Map</Text>
+            <Text style={styles.mapSubLabel}>Route history · Flag markers</Text>
+          </View>
+        )}
+
+        {/* Selected session stat bar on map */}
+        {selectedSession && (
+          <View style={styles.trackStatBar}>
+            <View style={styles.trackStat}>
+              <Text style={styles.trackStatValue}>{formatDistance(selectedSession.distanceM, 'km', 2)}</Text>
+              <Text style={styles.trackStatUnit}>km</Text>
+            </View>
+            <View style={styles.trackStatDivider} />
+            <View style={styles.trackStat}>
+              <Text style={styles.trackStatValue}>{formatDuration(selectedSession.durationS)}</Text>
+              <Text style={styles.trackStatUnit}>time</Text>
+            </View>
+            <View style={styles.trackStatDivider} />
+            <View style={styles.trackStat}>
+              <Text style={styles.trackStatValue}>{selectedSession.markerIds.length}</Text>
+              <Text style={styles.trackStatUnit}>flags</Text>
+            </View>
+            <View style={styles.trackStatDivider} />
+            <View style={styles.trackStat}>
+              <Text style={styles.trackStatValue}>+{selectedSession.elevationGainM}m</Text>
+              <Text style={styles.trackStatUnit}>elev</Text>
+            </View>
+          </View>
+        )}
 
         {/* Real marker pins */}
         {mapMarkers.map((m, i) => {
@@ -135,12 +319,7 @@ export function MapHistoryScreen() {
                 },
               ]}
             >
-              <Icon
-                name={meta.iconName as IconName}
-                size={13}
-                color={meta.color}
-                strokeWidth={2}
-              />
+              <Icon name={meta.iconName as IconName} size={13} color={meta.color} strokeWidth={2} />
             </View>
           );
         })}
@@ -169,28 +348,18 @@ export function MapHistoryScreen() {
             style={[styles.tabItem, tab === 'routes' && styles.tabItemActive]}
             onPress={() => setTab('routes')}
           >
-            <Icon
-              name="Route"
-              size={14}
-              color={tab === 'routes' ? '#fff' : Colors.textSecondary}
-              strokeWidth={2}
-            />
+            <Icon name="Route" size={14} color={tab === 'routes' ? '#fff' : Colors.textSecondary} strokeWidth={2} />
             <Text style={[styles.tabText, tab === 'routes' && styles.tabTextActive]}>
-              Route History{sessions.length > 0 ? ` (${sessions.length})` : ''}
+              Routes{sessions.length > 0 ? ` (${sessions.length})` : ''}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tabItem, tab === 'flags' && styles.tabItemActive]}
             onPress={() => setTab('flags')}
           >
-            <Icon
-              name="Flag"
-              size={14}
-              color={tab === 'flags' ? '#fff' : Colors.textSecondary}
-              strokeWidth={2}
-            />
+            <Icon name="Flag" size={14} color={tab === 'flags' ? '#fff' : Colors.textSecondary} strokeWidth={2} />
             <Text style={[styles.tabText, tab === 'flags' && styles.tabTextActive]}>
-              My Flags{markers.length > 0 ? ` (${markers.length})` : ''}
+              Flags{markers.length > 0 ? ` (${markers.length})` : ''}
             </Text>
           </TouchableOpacity>
         </View>
@@ -204,70 +373,47 @@ export function MapHistoryScreen() {
           <ScrollView showsVerticalScrollIndicator={false}>
             {sessions.length === 0 ? (
               <View style={styles.emptyState}>
-                <Icon name="Route" size={32} color={Colors.textMuted} strokeWidth={1.5} />
-                <Text style={styles.emptyTitle}>No routes yet</Text>
-                <Text style={styles.emptySubtitle}>Your hikes and runs will appear here</Text>
+                <Icon name="Route" size={40} color={Colors.textMuted} strokeWidth={1.2} />
+                <Text style={styles.emptyTitle}>No sessions yet</Text>
+                <Text style={styles.emptySubtitle}>Start hiking or running to see your routes here</Text>
               </View>
             ) : (
-              <>
-                {sessions.map(s => (
-                  <SessionCard
-                    key={s.id}
-                    session={s}
-                    isSelected={selectedSessionId === s.id}
-                    onPress={() => setSelectedSessionId(selectedSessionId === s.id ? null : s.id)}
-                  />
-                ))}
-
-                {selectedSession && (
-                  <View style={cardStyles.routeDetail}>
-                    <Text style={cardStyles.routeDetailTitle}>
-                      {selectedSession.name ?? (selectedSession.activityMode === 'running' ? 'Run' : 'Hike')}
-                    </Text>
-                    <View style={cardStyles.statsGrid}>
-                      {[
-                        { v: formatDistance(selectedSession.distanceM, 'km', 2), u: 'km' },
-                        { v: formatDuration(selectedSession.durationS), u: 'time' },
-                        { v: `${selectedSession.markerIds.length}`, u: 'flags' },
-                        { v: `+${selectedSession.elevationGainM}m`, u: 'elev' },
-                      ].map((s, i) => (
-                        <View key={i} style={cardStyles.statChip}>
-                          <Text style={cardStyles.statValue}>{s.v}</Text>
-                          <Text style={cardStyles.statUnit}>{s.u}</Text>
-                        </View>
-                      ))}
-                    </View>
-                    <TouchableOpacity
-                      style={cardStyles.deleteBtn}
-                      onPress={() => Alert.alert(
-                        'Delete Route',
-                        'Are you sure you want to delete this route?',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Delete', style: 'destructive', onPress: () => {
-                              deleteSession(selectedSession.id);
-                              setSelectedSessionId(null);
-                            },
-                          },
-                        ]
-                      )}
-                    >
-                      <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
-                      <Text style={cardStyles.deleteBtnText}>Delete Route</Text>
-                    </TouchableOpacity>
-                  </View>
+              sessions.map(s => (
+                <SessionCard
+                  key={s.id}
+                  session={s}
+                  isSelected={selectedSessionId === s.id}
+                  onPress={() => setSelectedSessionId(selectedSessionId === s.id ? null : s.id)}
+                />
+              ))
+            )}
+            {selectedSession && (
+              <TouchableOpacity
+                style={cardStyles.deleteBtn}
+                onPress={() => Alert.alert(
+                  'Delete Route',
+                  'Are you sure you want to delete this route?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => {
+                      deleteSession(selectedSession.id);
+                      setSelectedSessionId(null);
+                    }},
+                  ]
                 )}
-              </>
+              >
+                <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
+                <Text style={cardStyles.deleteBtnText}>Delete Route</Text>
+              </TouchableOpacity>
             )}
           </ScrollView>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false}>
             {markers.length === 0 ? (
               <View style={styles.emptyState}>
-                <Icon name="Flag" size={32} color={Colors.textMuted} strokeWidth={1.5} />
-                <Text style={styles.emptyTitle}>No flags yet</Text>
-                <Text style={styles.emptySubtitle}>Plant flags while hiking to see them here</Text>
+                <Icon name="Flag" size={40} color={Colors.textMuted} strokeWidth={1.2} />
+                <Text style={styles.emptyTitle}>No flags planted</Text>
+                <Text style={styles.emptySubtitle}>Open the map to place your first flag</Text>
               </View>
             ) : (
               markers.map(m => {
@@ -281,33 +427,23 @@ export function MapHistoryScreen() {
                   return `${Math.floor(mins / 1440)}d ago`;
                 })();
                 return (
-                  <PressRow key={m.id} onPress={() => {}} style={{ marginBottom: 0 }}>
+                  <PressRow key={m.id} onPress={() => setSelectedMarkerId(m.id)} style={{ marginBottom: 0 }}>
                     <View style={flagStyles.row}>
-                      <View style={[flagStyles.dot, { backgroundColor: meta.bg, borderColor: meta.color }]}>
-                        <Icon
-                          name={meta.iconName as IconName}
-                          size={16}
-                          color={meta.color}
-                          strokeWidth={2}
-                        />
+                      <View style={[flagStyles.iconBadge, { backgroundColor: meta.bg, borderColor: meta.color }]}>
+                        <Icon name={meta.iconName as IconName} size={18} color={meta.color} strokeWidth={2} />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={flagStyles.title}>{meta.label}</Text>
-                        <Text style={flagStyles.note}>{m.note || timeAgo}</Text>
+                        <View style={flagStyles.titleRow}>
+                          <Text style={flagStyles.title}>{meta.label}</Text>
+                          <View style={[flagStyles.typePill, { backgroundColor: meta.bg, borderColor: meta.color + '80' }]}>
+                            <Text style={[flagStyles.typePillText, { color: meta.color }]}>{m.type}</Text>
+                          </View>
+                        </View>
+                        <Text style={flagStyles.note} numberOfLines={1}>
+                          {m.note ? m.note.substring(0, 40) : timeAgo}
+                        </Text>
                       </View>
-                      <TouchableOpacity
-                        style={flagStyles.deleteBtn}
-                        onPress={() => Alert.alert(
-                          'Delete Flag',
-                          'Are you sure?',
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: 'Delete', style: 'destructive', onPress: () => deleteMarker(m.id) },
-                          ]
-                        )}
-                      >
-                        <Icon name="Trash2" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
-                      </TouchableOpacity>
+                      <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
                     </View>
                   </PressRow>
                 );
@@ -316,6 +452,18 @@ export function MapHistoryScreen() {
           </ScrollView>
         )}
       </View>
+
+      {/* Flag detail bottom sheet */}
+      {selectedMarker && (
+        <FlagDetailSheet
+          marker={selectedMarker}
+          onClose={() => setSelectedMarkerId(null)}
+          onDelete={() => {
+            deleteMarker(selectedMarker.id);
+            setSelectedMarkerId(null);
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -348,6 +496,18 @@ const styles = StyleSheet.create({
     borderWidth: 2.5, alignItems: 'center', justifyContent: 'center',
     ...Shadow.card,
   },
+
+  trackStatBar: {
+    position: 'absolute', bottom: 16, left: Spacing.base, right: Spacing.base,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: Radius.card, paddingVertical: Spacing.sm,
+    ...Shadow.card,
+  },
+  trackStat: { flex: 1, alignItems: 'center' },
+  trackStatValue: { fontSize: FontSize.caption, fontWeight: '800', color: Colors.textPrimary },
+  trackStatUnit: { fontSize: FontSize.tiny, color: Colors.textSecondary, marginTop: 1 },
+  trackStatDivider: { width: 1, height: 24, backgroundColor: Colors.border },
 
   topBar: { position: 'absolute', top: 0, left: 0, right: 0 },
   topRow: {
@@ -405,8 +565,8 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     paddingVertical: Spacing.xxl, gap: Spacing.sm,
   },
-  emptyTitle: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textSecondary },
-  emptySubtitle: { fontSize: FontSize.small, color: Colors.textMuted, textAlign: 'center' },
+  emptyTitle: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textSecondary },
+  emptySubtitle: { fontSize: FontSize.small, color: Colors.textMuted, textAlign: 'center', maxWidth: 260 },
 });
 
 const cardStyles = StyleSheet.create({
@@ -425,26 +585,10 @@ const cardStyles = StyleSheet.create({
   routeName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
   routeMeta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
   routeChevron: { paddingRight: Spacing.md },
-
-  routeDetail: {
-    backgroundColor: Colors.bg, borderRadius: Radius.card,
-    padding: Spacing.base, marginBottom: Spacing.md, gap: Spacing.sm,
-    borderWidth: 1, borderColor: Colors.border,
-  },
-  routeDetailTitle: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
-  statsGrid: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
-  statChip: {
-    flex: 1, minWidth: '22%',
-    backgroundColor: Colors.surface, borderRadius: Radius.pill,
-    paddingVertical: 8, alignItems: 'center', gap: 2,
-    borderWidth: 1, borderColor: Colors.border,
-  },
-  statValue: { fontSize: FontSize.caption, fontWeight: '800', color: Colors.textPrimary },
-  statUnit: { fontSize: FontSize.tiny, color: Colors.textSecondary },
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     borderRadius: Radius.button, paddingVertical: Spacing.sm,
-    justifyContent: 'center',
+    justifyContent: 'center', marginTop: Spacing.sm, marginBottom: Spacing.md,
     borderWidth: 1.5, borderColor: Colors.danger + '60',
     backgroundColor: Colors.dangerBg,
   },
@@ -457,11 +601,74 @@ const flagStyles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  dot: {
-    width: 40, height: 40, borderRadius: 20,
-    borderWidth: 2.5, alignItems: 'center', justifyContent: 'center',
+  iconBadge: {
+    width: 44, height: 44, borderRadius: 12,
+    borderWidth: 2, alignItems: 'center', justifyContent: 'center',
   },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 3 },
   title: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
-  note: { fontSize: FontSize.caption, color: Colors.textSecondary, marginTop: 3 },
-  deleteBtn: { padding: Spacing.sm },
+  typePill: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: Radius.pill,
+    borderWidth: 1,
+  },
+  typePillText: { fontSize: FontSize.tiny, fontWeight: '700', textTransform: 'capitalize' },
+  note: { fontSize: FontSize.caption, color: Colors.textSecondary },
+});
+
+const trackStyles = StyleSheet.create({
+  noGpsWrap: {
+    position: 'absolute', top: '35%', left: MAP_PADDING, right: MAP_PADDING,
+    alignItems: 'center', gap: Spacing.sm,
+  },
+  noGpsLine: {
+    width: '100%', height: 2,
+    borderStyle: 'dashed', borderWidth: 2, borderRadius: 1,
+    opacity: 0.5,
+  },
+  noGpsLabel: {
+    fontSize: FontSize.small, color: Colors.textMuted,
+    fontStyle: 'italic',
+  },
+  trackDot: {
+    position: 'absolute', borderRadius: 6,
+  },
+  startDot: { width: 12, height: 12 },
+  endDot: { width: 16, height: 16, backgroundColor: '#fff', borderWidth: 3 },
+});
+
+const sheetStyles = StyleSheet.create({
+  scrim: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    zIndex: 10,
+  },
+  sheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: Spacing.xl, paddingBottom: Spacing.xxl,
+    gap: Spacing.md, zIndex: 11,
+    ...Shadow.overlay,
+  },
+  handle: {
+    width: 44, height: 5, borderRadius: 3,
+    backgroundColor: Colors.border, alignSelf: 'center', marginBottom: Spacing.sm,
+  },
+  typeBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, alignSelf: 'flex-start',
+    borderRadius: Radius.pill, borderWidth: 1.5,
+    paddingHorizontal: Spacing.md, paddingVertical: 8,
+  },
+  typeBadgeText: { fontSize: FontSize.body, fontWeight: '700' },
+  noteLabel: { fontSize: FontSize.small, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8 },
+  noteText: { fontSize: FontSize.body, color: Colors.textPrimary, lineHeight: 22 },
+  dateLine: { fontSize: FontSize.caption, color: Colors.textMuted },
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    borderRadius: Radius.button, paddingVertical: Spacing.md,
+    justifyContent: 'center', marginTop: Spacing.sm,
+    borderWidth: 1.5, borderColor: Colors.danger + '60',
+    backgroundColor: Colors.dangerBg,
+  },
+  deleteBtnText: { color: Colors.danger, fontWeight: '700', fontSize: FontSize.body },
 });

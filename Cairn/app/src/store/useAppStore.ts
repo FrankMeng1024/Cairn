@@ -5,7 +5,7 @@
 import { create } from 'zustand';
 import { storage } from './storage';
 
-export type UIMode = 'guided' | 'simple';
+export type UIMode = 'beginner' | 'expert';
 export type ActivityMode = 'hiking' | 'running';
 export type TrackingState = 'idle' | 'tracking' | 'paused';
 
@@ -38,7 +38,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  uiMode: 'guided',      // Default: guided (说明模式) for new users
+  uiMode: 'beginner',    // Default: beginner (Explorer) for new users
   setUIMode: (mode) => {
     set({ uiMode: mode });
     storage.setItem(STORAGE_KEY_UI_MODE, mode);
@@ -63,7 +63,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   hydrate: async () => {
     const saved = await storage.getItem(STORAGE_KEY_UI_MODE);
-    if (saved === 'guided' || saved === 'simple') {
+    if (saved === 'beginner' || saved === 'expert') {
       set({ uiMode: saved });
     }
   },

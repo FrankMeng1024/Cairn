@@ -121,11 +121,12 @@ function MapPlaceholder({ markers, onMarkerPress }: {
 // Tap also works as fallback.
 const DROP_ZONE = { x: W / 2 - 72, y: 200, w: 144, h: 144 };
 
-function DraggableFlag({ flag, onPlant, onDropZoneEnter, onDropZoneLeave }: {
+function DraggableFlag({ flag, onPlant, onDropZoneEnter, onDropZoneLeave, hideLabel = false }: {
   flag: typeof FLAG_TYPES[0];
   onPlant: (type: MarkerType) => void;
   onDropZoneEnter: () => void;
   onDropZoneLeave: () => void;
+  hideLabel?: boolean;
 }) {
   const pan = useRef(new Animated.ValueXY()).current;
   const dragging = useRef(false);
@@ -190,15 +191,16 @@ function DraggableFlag({ flag, onPlant, onDropZoneEnter, onDropZoneLeave }: {
         activeOpacity={0.75}
       >
         <Icon name={flag.icon} size={IconSize.md} color={flag.color} strokeWidth={2} />
-        <Text style={[arStyles.cornerLabel, { color: flag.color }]}>{flag.label}</Text>
+        {!hideLabel && <Text style={[arStyles.cornerLabel, { color: flag.color }]}>{flag.label}</Text>}
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-function ARFlagPicker({ onClose, onPlant }: {
+function ARFlagPicker({ onClose, onPlant, hideLabels = false }: {
   onClose: () => void;
   onPlant: (type: MarkerType) => void;
+  hideLabels?: boolean;
 }) {
   const [planted, setPlanted] = useState<MarkerType | null>(null);
   const [dropHighlight, setDropHighlight] = useState(false);
@@ -236,6 +238,7 @@ function ARFlagPicker({ onClose, onPlant }: {
           onPlant={handlePlant}
           onDropZoneEnter={() => setDropHighlight(true)}
           onDropZoneLeave={() => setDropHighlight(false)}
+          hideLabel={hideLabels}
         />
       ))}
 
@@ -348,7 +351,7 @@ type UIState = 'map' | 'ar' | 'note' | 'detail';
 export function HikingScreen() {
   const nav = useNavigation<Nav>();
   const { uiMode } = useAppStore();
-  const isGuided = uiMode === 'guided';
+  const isExpert = uiMode === 'expert';
 
   // Real tracking store
   const status = useTrackingStore(s => s.status);
@@ -449,6 +452,12 @@ export function HikingScreen() {
               <Text style={styles.trackingValue}>+{elevationGainM}m</Text>
               <Text style={styles.trackingUnit}>elev</Text>
             </View>
+            {isExpert && (
+              <View style={styles.trackingStat}>
+                <Text style={styles.trackingValue}>--</Text>
+                <Text style={styles.trackingUnit}>brg</Text>
+              </View>
+            )}
             <TouchableOpacity style={styles.stopBtn} onPress={stopTracking}>
               <Icon name="Square" size={12} color="#fff" strokeWidth={3} />
               <Text style={styles.stopBtnText}>Stop</Text>
@@ -480,6 +489,7 @@ export function HikingScreen() {
         <ARFlagPicker
           onClose={() => setUi('map')}
           onPlant={(type) => { setPlantedFlag(type); setUi('note'); }}
+          hideLabels={isExpert}
         />
       )}
 

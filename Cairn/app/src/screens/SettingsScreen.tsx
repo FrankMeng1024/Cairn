@@ -45,21 +45,33 @@ function PressCard({
 }
 
 // ── Mode Card ────────────────────────────────────────────────────────────────
+const MODE_META: Record<UIMode, { icon: IconName; iconColor: string; iconBg: string; title: string; desc: string }> = {
+  beginner: {
+    icon: 'Mountain',
+    iconColor: Colors.info,
+    iconBg: Colors.infoBg,
+    title: 'Explorer',
+    desc: 'Simplified view · Guided prompts',
+  },
+  expert: {
+    icon: 'Compass',
+    iconColor: '#b47c28',
+    iconBg: 'rgba(180,130,60,0.12)',
+    title: 'Navigator',
+    desc: 'Full data · Dense interface · Expert controls',
+  },
+};
+
 function ModeCard({
   mode, selected, onSelect,
 }: { mode: UIMode; selected: boolean; onSelect: () => void }) {
-  const isGuided = mode === 'guided';
+  const meta = MODE_META[mode];
   return (
     <PressCard onPress={onSelect} style={{ flex: 1 }}>
       <View style={[modeStyles.card, selected && modeStyles.cardSelected]}>
         <View style={modeStyles.top}>
-          <View style={[modeStyles.iconWrap, { backgroundColor: isGuided ? Colors.infoBg : 'rgba(180,130,60,0.12)' }]}>
-            <Icon
-              name={isGuided ? 'BookOpen' : 'Zap'}
-              size={20}
-              color={isGuided ? Colors.info : '#b47c28'}
-              strokeWidth={1.8}
-            />
+          <View style={[modeStyles.iconWrap, { backgroundColor: meta.iconBg }]}>
+            <Icon name={meta.icon} size={20} color={meta.iconColor} strokeWidth={1.8} />
           </View>
           {selected && (
             <View style={modeStyles.checkBadge}>
@@ -67,8 +79,8 @@ function ModeCard({
             </View>
           )}
         </View>
-        <Text style={modeStyles.title}>{isGuided ? 'Guided Mode' : 'Simple Mode'}</Text>
-        <Text style={modeStyles.desc}>{isGuided ? 'Labels everywhere · Beginner-friendly' : 'Icons only · Minimal'}</Text>
+        <Text style={modeStyles.title}>{meta.title}</Text>
+        <Text style={modeStyles.desc}>{meta.desc}</Text>
       </View>
     </PressCard>
   );
@@ -168,8 +180,8 @@ export function SettingsScreen() {
         <SectionHeader title="Interface Mode" />
         <Text style={styles.sectionNote}>Choose your preferred UI style</Text>
         <View style={styles.modeRow}>
-          <ModeCard mode="guided" selected={pendingMode === 'guided'} onSelect={() => setPendingMode('guided')} />
-          <ModeCard mode="simple" selected={pendingMode === 'simple'} onSelect={() => setPendingMode('simple')} />
+          <ModeCard mode="beginner" selected={pendingMode === 'beginner'} onSelect={() => setPendingMode('beginner')} />
+          <ModeCard mode="expert" selected={pendingMode === 'expert'} onSelect={() => setPendingMode('expert')} />
         </View>
         {pendingMode !== uiMode && (
           <View style={styles.pendingHint}>

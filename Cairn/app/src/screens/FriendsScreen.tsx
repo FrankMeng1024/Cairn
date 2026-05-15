@@ -1,15 +1,14 @@
 /**
- * FriendsScreen — Sprint 11 redesign
+ * FriendsScreen — Sprint 19 uplift (STORY-00045)
  *
- * - SVG icons replace all text/emoji (ChevronLeft back, UserPlus add, Users illustration,
- *   Info tip, Mail email prefix, Send submit)
- * - Spring press on friend cards and add card
- * - Switch component kept (native control)
+ * - Empty state: illustration + "No friends yet" + CTA
+ * - Add-friend form: email validation, "Can't invite yourself", loading → success state
+ * - Existing friends list unchanged; Add button works from both CTA and top-right
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, Switch, Animated,
+  TextInput, Switch, Animated, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -21,6 +20,12 @@ import { MOCK_FRIENDS } from '../data/mockData';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Friend = typeof MOCK_FRIENDS[0] & { sharing: boolean };
+
+const OWN_EMAIL = 'me@cairn.app';
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
 
 // ── Spring press wrapper ────────────────────────────────────────────────────
 function PressCard({
@@ -50,7 +55,6 @@ function FriendCard({ friend, onToggleShare }: {
 }) {
   return (
     <View style={cardStyles.card}>
-      {/* Avatar */}
       <View style={cardStyles.avatarWrap}>
         <View style={[cardStyles.avatar, { backgroundColor: friend.sharing ? Colors.primaryLight : Colors.border }]}>
           <Text style={[cardStyles.avatarText, { color: friend.sharing ? Colors.primary : Colors.textMuted }]}>
@@ -59,8 +63,6 @@ function FriendCard({ friend, onToggleShare }: {
         </View>
         <View style={[cardStyles.onlineDot, { backgroundColor: friend.online ? Colors.success : Colors.border }]} />
       </View>
-
-      {/* Info */}
       <View style={cardStyles.info}>
         <Text style={cardStyles.name}>{friend.name}</Text>
         <Text style={cardStyles.meta}>
@@ -71,8 +73,6 @@ function FriendCard({ friend, onToggleShare }: {
           <Text style={cardStyles.noShareLabel}>Not sharing flags</Text>
         )}
       </View>
-
-      {/* Share toggle */}
       <View style={cardStyles.toggleCol}>
         <Text style={cardStyles.toggleLabel}>{friend.sharing ? 'Sharing' : 'Hidden'}</Text>
         <Switch
@@ -87,60 +87,122 @@ function FriendCard({ friend, onToggleShare }: {
   );
 }
 
-// ── Add Friend View ──────────────────────────────────────────────────────────
-function AddFriendView({ onBack }: { onBack: () => void }) {
+// ── Add Friend Sheet ─────────────────────────────────────────────────────────
+type AddState = 'idle' | 'loading' | 'success' | 'error';
+
+function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
   const [email, setEmail] = useState('');
+  const [validationError, setValidationError] = useState('');
+  const [addState, setAddState] = useState<AddState>('idle');
+  const successEmail = useRef('');
+
+  const handleSubmit = () => {
+    const trimmed = email.trim();
+    if (!isValidEmail(trimmed)) {
+      setValidationError('Enter a valid email');
+      return;
+    }
+    if (trimmed.toLowerCase() === OWN_EMAIL.toLowerCase()) {
+      setValidationError("Can't invite yourself");
+      return;
+    }
+    setValidationError('');
+    setAddState('loading');
+    successEmail.current = trimmed;
+    // Simulate async send
+    setTimeout(() => {
+      setAddState('success');
+      setTimeout(() => {
+        setEmail('');
+        setAddState('idle');
+        onDismiss();
+      }, 2000);
+    }, 900);
+  };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.topTitle}>Add Friend</Text>
-        <View style={{ width: 72 }} />
-      </View>
+    <View style={sheetStyles.backdrop}>
+      <View style={sheetStyles.sheet}>
+        {/* Drag handle */}
+        <View style={sheetStyles.handle} />
 
-      <View style={addStyles.form}>
-        {/* Illustration */}
-        <View style={addStyles.illustration}>
-          <View style={addStyles.illustrationIcon}>
-            <Icon name="Users" size={48} color={Colors.primary} strokeWidth={1.5} />
+        {addState === 'success' ? (
+          <View style={sheetStyles.successState}>
+            <View style={sheetStyles.successIcon}>
+              <Icon name="CircleCheck" size={40} color={Colors.success} strokeWidth={1.5} />
+            </View>
+            <Text style={sheetStyles.successTitle}>Invite sent!</Text>
+            <Text style={sheetStyles.successEmail}>{successEmail.current}</Text>
           </View>
-          <Text style={addStyles.illustrationText}>Invite friends by email{'\n'}They'll appear here once they accept</Text>
-        </View>
+        ) : (
+          <>
+            <View style={sheetStyles.illustration}>
+              <View style={sheetStyles.illustrationIcon}>
+                <Icon name="Users" size={40} color={Colors.primary} strokeWidth={1.5} />
+              </View>
+              <Text style={sheetStyles.illustrationTitle}>Add a Friend</Text>
+              <Text style={sheetStyles.illustrationSub}>
+                They'll receive an email invitation
+              </Text>
+            </View>
 
-        <Text style={addStyles.fieldLabel}>Friend's email</Text>
-        <View style={addStyles.inputWrap}>
-          <Icon name="Mail" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
-          <TextInput
-            style={addStyles.input}
-            placeholder="Email they use for Cairn"
-            placeholderTextColor={Colors.textMuted}
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoFocus
-          />
-        </View>
+            <Text style={sheetStyles.fieldLabel}>Friend's email</Text>
+            <View style={[sheetStyles.inputWrap, validationError ? sheetStyles.inputError : null]}>
+              <Icon name="Mail" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
+              <TextInput
+                style={sheetStyles.input}
+                placeholder="Email they use for Cairn"
+                placeholderTextColor={Colors.textMuted}
+                value={email}
+                onChangeText={(t) => { setEmail(t); if (validationError) setValidationError(''); }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoFocus
+              />
+            </View>
+            {!!validationError && (
+              <Text style={sheetStyles.errorText}>{validationError}</Text>
+            )}
 
-        <TouchableOpacity
-          style={[addStyles.sendBtn, !email.trim() && addStyles.sendBtnDisabled]}
-          onPress={() => {
-            if (!email.trim()) return;
-            Alert.alert('', `Invite sent to ${email}`, [{ text: 'OK', onPress: onBack }]);
-          }}
-          activeOpacity={email.trim() ? 0.8 : 1}
-        >
-          <Icon name="Send" size={IconSize.sm} color="#fff" strokeWidth={2} />
-          <Text style={addStyles.sendBtnText}>Send Invite</Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[sheetStyles.sendBtn, (!email.trim() || addState === 'loading') && sheetStyles.sendBtnDisabled]}
+              onPress={handleSubmit}
+              activeOpacity={email.trim() ? 0.8 : 1}
+            >
+              {addState === 'loading' ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Icon name="Send" size={IconSize.sm} color="#fff" strokeWidth={2} />
+                  <Text style={sheetStyles.sendBtnText}>Send Invite</Text>
+                </>
+              )}
+            </TouchableOpacity>
 
-        <Text style={addStyles.hint}>They'll receive an email — once accepted, you'll be connected</Text>
+            <TouchableOpacity style={sheetStyles.cancelBtn} onPress={onDismiss}>
+              <Text style={sheetStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
-    </SafeAreaView>
+    </View>
+  );
+}
+
+// ── Empty State ──────────────────────────────────────────────────────────────
+function EmptyState({ onAddFriend }: { onAddFriend: () => void }) {
+  return (
+    <View style={emptyStyles.container}>
+      <View style={emptyStyles.iconWrap}>
+        <Icon name="Users" size={56} color={Colors.textMuted} strokeWidth={1.2} />
+      </View>
+      <Text style={emptyStyles.heading}>No friends yet</Text>
+      <Text style={emptyStyles.body}>Add friends to share flags and stay connected</Text>
+      <TouchableOpacity style={emptyStyles.cta} onPress={onAddFriend}>
+        <Icon name="UserPlus" size={IconSize.sm} color="#fff" strokeWidth={2} />
+        <Text style={emptyStyles.ctaText}>Add a Friend</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -156,11 +218,8 @@ export function FriendsScreen() {
     setFriends(prev => prev.map(f => f.id === id ? { ...f, sharing: !f.sharing } : f));
   };
 
-  if (showAdd) {
-    return <AddFriendView onBack={() => setShowAdd(false)} />;
-  }
-
   const sharingCount = friends.filter(f => f.sharing).length;
+  const hasFriends = friends.length > 0;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -177,44 +236,55 @@ export function FriendsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Share summary banner */}
-      <View style={styles.shareBanner}>
-        <Text style={styles.shareBannerText}>
-          Sharing flags with {sharingCount}/{friends.length} friends
-        </Text>
-        <Text style={styles.shareBannerSub}>Toggle sharing individually per friend</Text>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {friends.map(friend => (
-          <FriendCard
-            key={friend.id}
-            friend={friend}
-            onToggleShare={() => toggleShare(friend.id)}
-          />
-        ))}
-
-        {/* Add friend card */}
-        <PressCard onPress={() => setShowAdd(true)} style={{ marginTop: Spacing.xs }}>
-          <View style={styles.addCard}>
-            <View style={styles.addCardIconWrap}>
-              <Icon name="UserPlus" size={IconSize.md} color={Colors.primary} strokeWidth={1.8} />
-            </View>
-            <View>
-              <Text style={styles.addCardLabel}>Add a friend</Text>
-              <Text style={styles.addCardHint}>Invite by email</Text>
-            </View>
+      {hasFriends ? (
+        <>
+          {/* Share summary banner */}
+          <View style={styles.shareBanner}>
+            <Text style={styles.shareBannerText}>
+              Sharing flags with {sharingCount}/{friends.length} friends
+            </Text>
+            <Text style={styles.shareBannerSub}>Toggle sharing individually per friend</Text>
           </View>
-        </PressCard>
 
-        {/* Info box */}
-        <View style={styles.infoBox}>
-          <Icon name="Info" size={14} color={Colors.textSecondary} strokeWidth={1.8} />
-          <Text style={styles.infoBoxText}>
-            When you turn off sharing, that friend won't see your new flags. Existing shared flags are not affected.
-          </Text>
-        </View>
-      </ScrollView>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            {friends.map(friend => (
+              <FriendCard
+                key={friend.id}
+                friend={friend}
+                onToggleShare={() => toggleShare(friend.id)}
+              />
+            ))}
+
+            {/* Add friend card */}
+            <PressCard onPress={() => setShowAdd(true)} style={{ marginTop: Spacing.xs }}>
+              <View style={styles.addCard}>
+                <View style={styles.addCardIconWrap}>
+                  <Icon name="UserPlus" size={IconSize.md} color={Colors.primary} strokeWidth={1.8} />
+                </View>
+                <View>
+                  <Text style={styles.addCardLabel}>Add a friend</Text>
+                  <Text style={styles.addCardHint}>Invite by email</Text>
+                </View>
+              </View>
+            </PressCard>
+
+            {/* Info box */}
+            <View style={styles.infoBox}>
+              <Icon name="Info" size={14} color={Colors.textSecondary} strokeWidth={1.8} />
+              <Text style={styles.infoBoxText}>
+                When you turn off sharing, that friend won't see your new flags. Existing shared flags are not affected.
+              </Text>
+            </View>
+          </ScrollView>
+        </>
+      ) : (
+        <EmptyState onAddFriend={() => setShowAdd(true)} />
+      )}
+
+      {/* Add Friend Sheet */}
+      {showAdd && (
+        <AddFriendSheet onDismiss={() => setShowAdd(false)} />
+      )}
     </SafeAreaView>
   );
 }
@@ -311,20 +381,30 @@ const cardStyles = StyleSheet.create({
   toggleLabel: { fontSize: FontSize.tiny, color: Colors.textMuted, fontWeight: '500' },
 });
 
-const addStyles = StyleSheet.create({
-  form: { padding: Spacing.xl, gap: Spacing.md },
-  illustration: {
-    alignItems: 'center', paddingVertical: Spacing.xl, gap: Spacing.md,
+const sheetStyles = StyleSheet.create({
+  backdrop: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
   },
+  sheet: {
+    backgroundColor: Colors.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: Spacing.xl, paddingTop: Spacing.md,
+    gap: Spacing.md,
+  },
+  handle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: Colors.border, alignSelf: 'center',
+    marginBottom: Spacing.sm,
+  },
+  illustration: { alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },
   illustrationIcon: {
-    width: 88, height: 88, borderRadius: 44,
+    width: 72, height: 72, borderRadius: 36,
     backgroundColor: Colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
   },
-  illustrationText: {
-    fontSize: FontSize.caption, color: Colors.textSecondary,
-    textAlign: 'center', lineHeight: 20,
-  },
+  illustrationTitle: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary },
+  illustrationSub: { fontSize: FontSize.small, color: Colors.textSecondary, textAlign: 'center' },
   fieldLabel: { fontSize: FontSize.caption, fontWeight: '600', color: Colors.textSecondary },
   inputWrap: {
     flexDirection: 'row', alignItems: 'center',
@@ -332,20 +412,59 @@ const addStyles = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.border,
     paddingHorizontal: Spacing.md, gap: Spacing.sm,
   },
+  inputError: { borderColor: Colors.danger },
   input: {
     flex: 1, paddingVertical: Spacing.md,
     fontSize: FontSize.body, color: Colors.textPrimary,
+  },
+  errorText: {
+    fontSize: FontSize.small, color: Colors.danger,
+    fontWeight: '600', marginTop: -Spacing.xs,
   },
   sendBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     justifyContent: 'center',
     backgroundColor: Colors.primary, borderRadius: Radius.button,
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.md, minHeight: 52,
   },
   sendBtnDisabled: { opacity: 0.4 },
   sendBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
-  hint: {
-    fontSize: FontSize.small, color: Colors.textMuted,
-    textAlign: 'center', lineHeight: 18,
+  cancelBtn: { alignItems: 'center', paddingVertical: Spacing.sm },
+  cancelText: { fontSize: FontSize.body, color: Colors.textSecondary, fontWeight: '500' },
+
+  successState: { alignItems: 'center', paddingVertical: Spacing.xl, gap: Spacing.md },
+  successIcon: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: Colors.successBg,
+    alignItems: 'center', justifyContent: 'center',
   },
+  successTitle: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.success },
+  successEmail: { fontSize: FontSize.body, color: Colors.textSecondary },
+});
+
+const emptyStyles = StyleSheet.create({
+  container: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    padding: Spacing.xl, gap: Spacing.lg,
+  },
+  iconWrap: {
+    width: 96, height: 96, borderRadius: 48,
+    backgroundColor: Colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heading: {
+    fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  body: {
+    fontSize: FontSize.body, color: Colors.textSecondary,
+    textAlign: 'center', lineHeight: 22,
+  },
+  cta: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.primary, borderRadius: Radius.button,
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  ctaText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
 });
