@@ -22,7 +22,12 @@
 ## Completed Sprints (PRD2 era)
 - Sprint 42: COMPLETE — Mapbox SDK setup, MapScreen real rendering, Kalman filter (18 tests), GlassPanel + Elevation system
 - Sprint 43: COMPLETE — Offline tile manager, HikingScreen Mapbox + track polyline, GPSStatusBar, MapBottomPanel
+- Sprint 44: COMPLETE — MapScreen full integration (panel+offline), app.json fixes
+- Sprint 45: COMPLETE — Route data model (useRouteStore), web stubs, Phase 1 architecture done
+- Sprint 46: COMPLETE — BroadcastService (P0/P1/P2 + rhythm), route deviation (11 tests), waypoint arrival, RouteDrawingSheet
+- Sprint 47: COMPLETE — SOS service + SOSButton (long-press+countdown+SMS), marker updateMarker
+- Sprint 48: COMPLETE — NavigationController (deviation+waypoint on GPS tick), tracking loop integration
 
 ## Push Status
 - Sprint 42: pushed ✓
-- Sprint 43: committed locally, push failed (network) — retry next session
+- Sprint 43-48: committed locally, push pending (GitHub network issue)
