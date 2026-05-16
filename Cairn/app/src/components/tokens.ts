@@ -112,3 +112,53 @@ export const Shadow = {
     elevation: 4,
   },
 } as const;
+
+// ── Glass / Liquid Glass tokens (Sprint 42+) ────────────────────────────────
+
+export const Glass = {
+  light: {
+    background: 'rgba(250, 247, 242, 0.72)',
+    border: 'rgba(255, 255, 255, 0.3)',
+    innerGlow: 'rgba(255, 255, 255, 0.5)',
+    blur: 20,
+  },
+  dark: {
+    background: 'rgba(26, 24, 22, 0.75)',
+    border: 'rgba(255, 255, 255, 0.08)',
+    innerGlow: 'rgba(255, 255, 255, 0.15)',
+    blur: 20,
+  },
+  subtle: {
+    background: 'rgba(255, 255, 255, 0.85)',
+    border: 'rgba(255, 255, 255, 0.4)',
+    innerGlow: 'rgba(255, 255, 255, 0.6)',
+    blur: 8,
+  },
+} as const;
+
+// ── Dark Mode Color Variants ────────────────────────────────────────────────
+
+export const DarkColors = {
+  bg: '#1a1816',
+  surface: '#2d2a26',
+  border: '#3d3935',
+  textPrimary: '#f5f2ed',
+  textSecondary: '#a89e94',
+  textMuted: '#6d6359',
+  overlay: 'rgba(0, 0, 0, 0.6)',
+} as const;
+
+// ── Animation Config ────────────────────────────────────────────────────────
+
+export const SpringConfig = {
+  default: { damping: 15, stiffness: 150, mass: 1 },
+  snappy: { damping: 20, stiffness: 300, mass: 0.8 },
+  gentle: { damping: 25, stiffness: 100, mass: 1.2 },
+  bounce: { damping: 10, stiffness: 180, mass: 1 },
+} as const;
+
+export const Timing = {
+  fast: 150,
+  normal: 250,
+  slow: 400,
+} as const;
