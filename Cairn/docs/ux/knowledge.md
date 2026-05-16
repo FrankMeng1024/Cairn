@@ -101,6 +101,18 @@ The Cairn app helps users track hikes and runs, plant location flags, and share 
 - Low friction (existing): Create Account Name field error on blur-without-input is slightly punitive for users exploring the form. Pre-existing onBlur validation behavior.
 - Low friction (new): Char counter amber window is 5 characters (25-29). Adequate for a 30-char field but tight for fast typists.
 
+## Sprint 35 Knowledge Updates
+
+- Auth flow (Splash → Sign In / Create Account) is clean, zero-error, trustworthy visual design for outdoor safety app
+- Splash button hierarchy correct: green filled "Sign In" (primary/first), outlined "Create Account" (secondary/second)
+- Small cairn icon inline-left of form titles (scale 0.5) adds brand continuity — decorative but not disruptive
+- Error banner pattern (inline pink/red box, preserves form state) is excellent for intermittent connectivity scenarios
+- Social auth buttons (Apple/Google) present with honest platform messaging — no false affordance
+- Medium friction: Privacy checkbox shown on Sign In screen — returning users should not need to re-acknowledge privacy every login. Backlog item.
+- Low friction: "Explorer mode" subtitle on Create Account assumes knowledge first-time users don't have
+- Low friction: "Cannot reach server. Check your connection." implies user fault — neutral phrasing preferable
+- Navigation regression: Splash ↔ Sign In ↔ Create Account — zero JS errors, back-button behavior correct
+
 ## Sprint 32 Knowledge Updates
 
 - Sprint 32 resolved the Sprint 30 low-friction item: Name field error-on-blur removed (STORY-00104). Validation only fires on submit — less punitive for form exploration. Confirmed by screenshot (no error on blur-without-input).

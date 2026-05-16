@@ -1,0 +1,84 @@
+/**
+ * Auth service — wraps backend API calls for register / login / me / logout.
+ * Returns a typed result so callers can handle errors inline without try/catch.
+ */
+import { API_BASE_URL } from '../config/api';
+import { saveToken, clearToken, getToken } from './tokenStore';
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface AuthResult {
+  user?: UserProfile;
+  token?: string;
+  error?: string;
+}
+
+async function post(path: string, body: object): Promise<Response> {
+  return fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function register(
+  name: string,
+  email: string,
+  password: string
+): Promise<AuthResult> {
+  try {
+    const res = await post('/api/auth/register', { name, email, password });
+    const data = await res.json();
+    if (!res.ok) {
+      return { error: data?.message || 'Registration failed.' };
+    }
+    await saveToken(data.token);
+    return { user: data.user, token: data.token };
+  } catch {
+    return { error: 'Cannot reach server. Check your connection.' };
+  }
+}
+
+export async function login(email: string, password: string): Promise<AuthResult> {
+  try {
+    const res = await post('/api/auth/login', { email, password });
+    const data = await res.json();
+    if (!res.ok) {
+      return { error: data?.message || 'Sign in failed. Check your email and password.' };
+    }
+    await saveToken(data.token);
+    return { user: data.user, token: data.token };
+  } catch {
+    return { error: 'Cannot reach server. Check your connection.' };
+  }
+}
+
+/**
+ * Called on app launch to verify stored JWT and get current user profile.
+ * Returns null if no token or token is invalid/expired.
+ */
+export async function getMe(): Promise<UserProfile | null> {
+  try {
+    const token = await getToken();
+    if (!token) return null;
+    const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      await clearToken();
+      return null;
+    }
+    const data = await res.json();
+    return data.user ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function logout(): Promise<void> {
+  await clearToken();
+}

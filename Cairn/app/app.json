@@ -17,7 +17,10 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Cairn needs your location to track your route and show nearby markers.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Cairn needs background location access to track your route while running.",
-        "UIBackgroundModes": ["location", "audio"]
+        "UIBackgroundModes": [
+          "location",
+          "audio"
+        ]
       }
     },
     "android": {
@@ -39,7 +42,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Cairn needs background location to track your route while running."
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }

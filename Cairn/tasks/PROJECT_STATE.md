@@ -1,7 +1,7 @@
 # PROJECT_STATE.md — Cairn
 
 **Status**: IN_PROGRESS
-**Current Sprint**: 34 (COMPLETE — next: Sprint 35)
+**Current Sprint**: 35 (IN_PROGRESS)
 **Last Updated**: 2026-05-16
 
 ## Key Decisions
@@ -54,6 +54,7 @@ All core GPS tracking functionality wired. Real expo-location GPS, haversineM di
 - Firebase Auth integration (AuthScreen → real login)
 - Firestore marker sync (personal → group/public sharing)
 - Cloud session backup
+- **REVISED (CR-004, Sprint 35)**: Using custom Node.js/Express + MySQL backend instead of Firebase Auth. Sprint 35 executes: real backend, JWT email auth, Google OAuth, AuthScreen UI polish.
 - Phase C: SafetyDataProvider (DOC NZ hazard alerts)
 
 ## Ongoing: UI Quality Optimization

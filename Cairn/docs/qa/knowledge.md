@@ -4,15 +4,21 @@
 
 Cairn is a React Native + Expo hiking/running companion app. Web preview at http://localhost:8082/. Uses React Navigation native stack (no bottom tabs — all navigation from Home page).
 
-## Authentication Flow
+## Authentication Flow (Sprint 35 — Real Backend)
 
-- App starts at AuthScreen when `isLoggedIn = false` (Zustand useAppStore, in-memory on web)
-- Splash has two pill buttons: "Create Account" and "Sign In"
-- Sign In form: email + password + privacy checkbox + submit
-- **Critical**: Must click privacy checkbox BEFORE submitting — otherwise validation error blocks
+- App starts at AuthScreen when `isLoggedIn = false` (Zustand useAppStore)
+- Splash has two pill buttons: **"Sign In" first (green/primary)**, "Create Account" second (outlined)
+- Both forms have small cairn icon inline-left of title text
+- Sign In form: email + password + privacy checkbox + submit + Apple/Google buttons
+- Create Account form: name + email + password + confirm + privacy checkbox + submit + Apple/Google buttons
+- **Critical**: Must click privacy checkbox BEFORE submitting — "Please agree to continue" error blocks submit
 - Privacy checkbox: click at `box.x - 20` (left of "I agree to the" text) to hit the checkbox touchable
-- Submit Sign In: use coordinate click on button center (PressCard wrapper intercepts direct ref clicks)
-- Test credentials: email=test@cairn.app, password=password123
+- Error banner: inline at top of form (pink/red box) — "Cannot reach server. Check your connection."
+- Backend: Node.js/Express on port 3001. MySQL NOT yet installed — backend starts in graceful degradation mode
+- Real JWT auth: tokens stored in expo-secure-store (native) / localStorage (web) via tokenStore.ts
+- App launch hydration: getMe() called from hydrate() — restores session if JWT valid
+- Sign Out: logout() + setUser(null) + nav.replace('Auth') in SettingsScreen
+- Test credentials (for when backend+MySQL available): any email/password meeting backend validation
 
 ## Navigation Patterns
 

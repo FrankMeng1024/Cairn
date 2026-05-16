@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore, UIMode } from '../store/useAppStore';
+import { logout } from '../services/authService';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
@@ -151,7 +152,7 @@ function SectionHeader({ title }: { title: string }) {
 // ── Main ─────────────────────────────────────────────────────────────────────
 export function SettingsScreen() {
   const nav = useNavigation<Nav>();
-  const { uiMode, setUIMode } = useAppStore();
+  const { uiMode, setUIMode, setLoggedIn, setUser } = useAppStore();
 
   const [pendingMode, setPendingMode] = useState<UIMode>(uiMode);
   const [shareAfterAdd, setShareAfterAdd] = useState(true);
@@ -310,7 +311,14 @@ export function SettingsScreen() {
             labelColor={Colors.danger}
             onPress={() => Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Sign Out', style: 'destructive' },
+              {
+                text: 'Sign Out', style: 'destructive', onPress: async () => {
+                  await logout();
+                  setLoggedIn(false);
+                  setUser(null);
+                  nav.replace('Auth');
+                },
+              },
             ])}
           />
         </View>

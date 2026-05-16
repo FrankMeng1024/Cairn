@@ -3,18 +3,43 @@
 ## Overview
 
 REST API. Backend serves as sync layer — app is offline-first, backend handles:
-- User auth (delegated to Firebase Auth)
+- User auth (custom JWT — **CR-004**: replaced Firebase Auth with Node.js/Express JWT auth)
 - Marker sync (CRUD + conflict resolution)
 - Friend management
 - DOC risk data cache/serving
 
-Base URL: `http://122.51.174.118:<PORT>/api/v1`
+Base URL (development): `http://localhost:3001`
+Base URL (production): configurable via `EXPO_PUBLIC_API_BASE_URL` env var. **HTTPS required in production** to protect JWT tokens in transit.
 
 ---
 
 ## Authentication
 
-Firebase Auth tokens. All endpoints require `Authorization: Bearer <firebase_id_token>` except `/health`.
+Custom JWT tokens issued by backend. All endpoints require `Authorization: Bearer <jwt_token>` except `/health` and the auth endpoints below.
+
+**Token lifetime**: 7 days. Tokens are stored in `expo-secure-store` (native) or `localStorage` (web).
+
+**Rate limiting**: Auth endpoints (`/api/auth/register`, `/api/auth/login`) are rate-limited to **10 requests per 15 minutes per IP**. Exceeding this returns `429 Too Many Requests`.
+
+### Auth Endpoints
+
+```
+POST /api/auth/register
+Body: { "name": string, "email": string, "password": string }
+Response 201: { "token": string, "user": { "id": number, "name": string, "email": string } }
+Response 409: { "error": "Email already registered" }
+Response 400: { "error": string } (validation failure)
+
+POST /api/auth/login
+Body: { "email": string, "password": string }
+Response 200: { "token": string, "user": { "id": number, "name": string, "email": string } }
+Response 401: { "error": "Invalid credentials" }
+
+GET /api/auth/me
+Headers: Authorization: Bearer <token>
+Response 200: { "id": number, "name": string, "email": string }
+Response 401: { "error": "Invalid or expired token" }
+```
 
 ---
 
@@ -24,7 +49,8 @@ Firebase Auth tokens. All endpoints require `Authorization: Bearer <firebase_id_
 
 ```
 GET /health
-Response: { "status": "ok", "version": "1.0.0" }
+Response 200: { "status": "ok" | "degraded", "service": "cairn-backend", "version": "1.0.0", "db": "ok" | "error: <reason>", "timestamp": ISO8601 }
+Note: Returns 503 when DB is unavailable (status: "degraded"). Extra fields (service, db, timestamp) are additive over original spec.
 ```
 
 ### Markers
