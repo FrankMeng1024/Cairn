@@ -336,3 +336,70 @@ export function smoothGPSPoint(
 
   return { lat: smoothedLat, lng: smoothedLng, alt: smoothedAlt };
 }
+
+// ── Route Deviation Detection ───────────────────────────────────────────────
+
+/**
+ * Calculate the minimum distance from a point to a polyline (series of segments).
+ * Used for route deviation detection.
+ */
+export function distanceToPolylineM(point: Coordinate, polyline: Coordinate[]): number {
+  if (polyline.length === 0) return Infinity;
+  if (polyline.length === 1) return haversineM(point, polyline[0]);
+
+  let minDist = Infinity;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const d = distanceToSegmentM(point, polyline[i], polyline[i + 1]);
+    if (d < minDist) minDist = d;
+  }
+  return minDist;
+}
+
+/**
+ * Distance from a point to a line segment (in meters).
+ * Projects the point onto the segment and computes perpendicular distance.
+ */
+function distanceToSegmentM(p: Coordinate, a: Coordinate, b: Coordinate): number {
+  const segLen = haversineM(a, b);
+  if (segLen < 0.1) return haversineM(p, a); // degenerate segment
+
+  // Project p onto line ab using dot product ratio (flat-earth for short segments)
+  const dx = b.lng - a.lng;
+  const dy = b.lat - a.lat;
+  const px = p.lng - a.lng;
+  const py = p.lat - a.lat;
+
+  const t = Math.max(0, Math.min(1, (px * dx + py * dy) / (dx * dx + dy * dy)));
+  const proj: Coordinate = {
+    lat: a.lat + t * dy,
+    lng: a.lng + t * dx,
+  };
+
+  return haversineM(p, proj);
+}
+
+/**
+ * Check if user has deviated from the active route.
+ * @param thresholdM  Deviation threshold in meters (default 50)
+ */
+export function checkRouteDeviation(
+  userPosition: Coordinate,
+  routePoints: Coordinate[],
+  thresholdM = 50,
+): { deviated: boolean; distanceM: number } {
+  const distanceM = distanceToPolylineM(userPosition, routePoints);
+  return { deviated: distanceM > thresholdM, distanceM };
+}
+
+/**
+ * Check if user has arrived at a waypoint (within trigger radius).
+ */
+export function isWithinRadius(
+  userPosition: Coordinate,
+  waypointLat: number,
+  waypointLng: number,
+  radiusM = 30,
+): boolean {
+  const dist = haversineM(userPosition, { lat: waypointLat, lng: waypointLng });
+  return dist <= radiusM;
+}
