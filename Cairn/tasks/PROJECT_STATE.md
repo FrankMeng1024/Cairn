@@ -1,8 +1,8 @@
 # PROJECT_STATE.md — Cairn
 
 **Status**: IN_PROGRESS
-**Current Sprint**: 29 (COMPLETE — next: Sprint 30)
-**Last Updated**: 2026-05-15
+**Current Sprint**: 31 (COMPLETE — next: Sprint 32)
+**Last Updated**: 2026-05-16
 
 ## Key Decisions
 - acceptance_mode: auto
@@ -32,6 +32,8 @@
 - Sprint 27: COMPLETE — UX polish: PlayCircle icon, No GPS clean label, RoutesScreen premium uplift + nav fix, MapHistory auto-select, HikingScreen back button
 - Sprint 28: COMPLETE — Token audit (7 new semantic tokens), AuthScreen input focus states, RunningScreen triple-signal selection, SettingsScreen 11px headers + Colors.night, overlay opacity standardization
 - Sprint 29: COMPLETE — Token completion (7 more tokens), Sign In auto-focus, RoutesScreen Download affordance, FlagPlantSheet note focus + char count
+- Sprint 30: COMPLETE — RoutesScreen date formatting, FlagPlantSheet char counter amber warning, Create Account Name auto-focus, Settings hint pill animation, HomeScreen contextual subtitle
+- Sprint 31: COMPLETE — MapScreen premium uplift: topo placeholder, CreateMarkerSheet 4-card grid + LinearGradient, MarkerDetailSheet gradient badge, tracking bar left-border, rgba chip overlay standard
 
 All core GPS tracking functionality wired. Real expo-location GPS, haversineM distance calc, Zustand stores persisted.
 

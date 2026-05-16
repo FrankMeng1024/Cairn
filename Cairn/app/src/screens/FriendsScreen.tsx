@@ -243,6 +243,38 @@ export function FriendsScreen() {
     MOCK_FRIENDS.map(f => ({ ...f, sharing: true }))
   );
 
+  // STORY-00109: staggered entrance animations
+  const screenOpacity = useRef(new Animated.Value(0)).current;
+  const bannerOpacity = useRef(new Animated.Value(0)).current;
+  const bannerTransY = useRef(new Animated.Value(12)).current;
+  // 4 friend cards + 1 add card = 5 card anims
+  const cardAnims = useRef(
+    Array.from({ length: 5 }, () => ({
+      opacity: new Animated.Value(0),
+      transY: new Animated.Value(16),
+    }))
+  ).current;
+
+  useEffect(() => {
+    // Screen fade-in: 280ms ease-out
+    Animated.timing(screenOpacity, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+
+    // Banner: fade + slide up, 250ms, delay 80ms
+    Animated.parallel([
+      Animated.timing(bannerOpacity, { toValue: 1, duration: 250, delay: 80, useNativeDriver: true }),
+      Animated.timing(bannerTransY, { toValue: 0, duration: 250, delay: 80, useNativeDriver: true }),
+    ]).start();
+
+    // Cards: stagger 60ms, starting at delay ~160ms
+    const cardAnimations = cardAnims.map((a) =>
+      Animated.parallel([
+        Animated.timing(a.opacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+        Animated.timing(a.transY, { toValue: 0, duration: 220, useNativeDriver: true }),
+      ])
+    );
+    setTimeout(() => Animated.stagger(60, cardAnimations).start(), 160);
+  }, []);
+
   const toggleShare = (id: string) => {
     setFriends(prev => prev.map(f => f.id === id ? { ...f, sharing: !f.sharing } : f));
   };
@@ -251,6 +283,7 @@ export function FriendsScreen() {
   const hasFriends = friends.length > 0;
 
   return (
+    <Animated.View style={[{ flex: 1 }, { opacity: screenOpacity }]}>
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Top bar */}
       <View style={styles.topBar}>
@@ -265,6 +298,7 @@ export function FriendsScreen() {
       {hasFriends ? (
         <>
           {/* Share summary banner */}
+          <Animated.View style={{ opacity: bannerOpacity, transform: [{ translateY: bannerTransY }] }}>
           <View style={styles.shareBannerRow}>
             <View style={styles.sharePill}>
               <Icon name="Users" size={12} color={Colors.primary} strokeWidth={2} />
@@ -274,18 +308,24 @@ export function FriendsScreen() {
             </View>
             <Text style={styles.shareBannerSub}>Toggle sharing individually per friend</Text>
           </View>
+          </Animated.View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-            {friends.map(friend => (
-              <FriendCard
+            {friends.map((friend, i) => (
+              <Animated.View
                 key={friend.id}
-                friend={friend}
-                onToggleShare={() => toggleShare(friend.id)}
-              />
+                style={{ opacity: cardAnims[i]?.opacity ?? 1, transform: [{ translateY: cardAnims[i]?.transY ?? 0 }] }}
+              >
+                <FriendCard
+                  friend={friend}
+                  onToggleShare={() => toggleShare(friend.id)}
+                />
+              </Animated.View>
             ))}
 
             {/* Add friend card */}
-            <PressCard onPress={() => setShowAdd(true)} style={{ marginTop: Spacing.xs }}>
+            <Animated.View style={{ opacity: cardAnims[friends.length]?.opacity ?? 1, transform: [{ translateY: cardAnims[friends.length]?.transY ?? 0 }], marginTop: Spacing.xs }}>
+            <PressCard onPress={() => setShowAdd(true)}>
               <View style={styles.addCard}>
                 <View style={styles.addCardIconWrap}>
                   <Icon name="UserPlus" size={IconSize.md} color={Colors.primary} strokeWidth={1.8} />
@@ -296,6 +336,7 @@ export function FriendsScreen() {
                 </View>
               </View>
             </PressCard>
+            </Animated.View>
 
             {/* Info box */}
             <View style={styles.infoBox}>
@@ -315,6 +356,7 @@ export function FriendsScreen() {
         <AddFriendSheet onDismiss={() => setShowAdd(false)} />
       )}
     </SafeAreaView>
+    </Animated.View>
   );
 }
 

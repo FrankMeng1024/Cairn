@@ -17,6 +17,7 @@ import {
   TextInput, Alert, Animated, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useNavigation } from '@react-navigation/native';
@@ -71,6 +72,24 @@ function MapPlaceholder({ markers, onMarkerPress }: {
   markers: Marker[];
   onMarkerPress: (id: string) => void;
 }) {
+  // GPS pulse animation — outer ring fades out, inner dot scales subtly
+  const pulseOpacity = useRef(new Animated.Value(0.3)).current;
+  const dotScale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.timing(pulseOpacity, { toValue: 0, duration: 2000, useNativeDriver: true })
+    );
+    const scaleLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dotScale, { toValue: 1.05, duration: 1000, useNativeDriver: true }),
+        Animated.timing(dotScale, { toValue: 1, duration: 1000, useNativeDriver: true }),
+      ])
+    );
+    pulseLoop.start();
+    scaleLoop.start();
+    return () => { pulseLoop.stop(); scaleLoop.stop(); };
+  }, []);
+
   return (
     <View style={styles.mapBg}>
       {/* Topo elevation rings — concentric, varying opacity */}
@@ -82,10 +101,10 @@ function MapPlaceholder({ markers, onMarkerPress }: {
       <View style={styles.trailLine} />
       <View style={styles.trailLine2} />
       <View style={styles.trailLine3} />
-      {/* Location pin at trail midpoint */}
+      {/* Location pin at trail midpoint — animated pulse */}
       <View style={styles.locationDot}>
-        <View style={styles.locationDotInner} />
-        <View style={styles.locationPulse} />
+        <Animated.View style={[styles.locationDotInner, { transform: [{ scale: dotScale }] }]} />
+        <Animated.View style={[styles.locationPulse, { opacity: pulseOpacity }]} />
       </View>
       {/* Trail Map label + subtitle + CTA */}
       <View style={styles.mapLabelWrap}>
@@ -167,7 +186,7 @@ function FlagPlantSheet({ onClose, onSave }: {
             <TouchableOpacity
               key={flag.id}
               style={[sheetStyles.typeCard, selectedType === flag.id && { borderColor: Colors.primary, backgroundColor: Colors.primaryBg }]}
-              onPress={() => setSelectedType(flag.id)}
+              onPress={() => { setSelectedType(flag.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
               activeOpacity={0.8}
             >
               <LinearGradient
@@ -197,9 +216,9 @@ function FlagPlantSheet({ onClose, onSave }: {
             onBlur={() => setNoteFocused(false)}
           />
           <View style={sheetStyles.noteFooterRow}>
-            <Text style={sheetStyles.noteMaxLabel}>Max 30 chars</Text>
+            <Text style={sheetStyles.noteMaxLabel}>Max 30 characters</Text>
             {(noteFocused || charCount > 0) && (
-              <Text style={[sheetStyles.charCount, charCount >= 30 ? { color: Colors.danger } : charCount >= 25 ? { color: Colors.warning } : null]}>{charCount}/30</Text>
+              <Text style={[sheetStyles.charCount, charCount >= 30 ? { color: Colors.danger } : charCount >= 22 ? { color: Colors.warning } : null]}>{charCount}/30</Text>
             )}
           </View>
         </View>
@@ -432,7 +451,7 @@ export function HikingScreen() {
                 </View>
               </>
             )}
-            <TouchableOpacity style={styles.stopBtn} onPress={stopTracking}>
+            <TouchableOpacity style={styles.stopBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); stopTracking(); }}>
               <Icon name="Square" size={12} color="#fff" strokeWidth={3} />
               <Text style={styles.stopBtnText}>Stop</Text>
             </TouchableOpacity>
@@ -447,7 +466,7 @@ export function HikingScreen() {
             <Animated.View style={[{ flex: 1 }, { transform: [{ scale: trackBtnScale }] }]}>
               <TouchableOpacity
                 style={styles.trackBtn}
-                onPress={startTracking}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); startTracking(); }}
                 activeOpacity={1}
                 onPressIn={() => springIn(trackBtnScale)}
                 onPressOut={() => springOut(trackBtnScale)}

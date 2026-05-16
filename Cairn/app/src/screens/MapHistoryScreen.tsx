@@ -162,10 +162,42 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
   const durationStr = formatDuration(session.durationS);
 
   const expandAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
+  // STORY-00108: stagger animations for the 3 content rows
+  const statsOpacity = useRef(new Animated.Value(0)).current;
+  const statsTransY = useRef(new Animated.Value(10)).current;
+  const previewOpacity = useRef(new Animated.Value(0)).current;
+  const previewTransY = useRef(new Animated.Value(10)).current;
+  const ctaOpacity = useRef(new Animated.Value(0)).current;
+  const ctaTransY = useRef(new Animated.Value(10)).current;
+
   useEffect(() => {
     Animated.timing(expandAnim, {
       toValue: isExpanded ? 1 : 0, duration: 200, useNativeDriver: false,
     }).start();
+
+    if (isExpanded) {
+      // Reset to 0 then stagger in
+      statsOpacity.setValue(0); statsTransY.setValue(10);
+      previewOpacity.setValue(0); previewTransY.setValue(10);
+      ctaOpacity.setValue(0); ctaTransY.setValue(10);
+      Animated.stagger(40, [
+        Animated.parallel([
+          Animated.timing(statsOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+          Animated.timing(statsTransY, { toValue: 0, duration: 200, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(previewOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+          Animated.timing(previewTransY, { toValue: 0, duration: 200, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(ctaOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+          Animated.timing(ctaTransY, { toValue: 0, duration: 200, useNativeDriver: true }),
+        ]),
+      ]).start();
+    } else {
+      // Collapse — reset immediately
+      statsOpacity.setValue(0); previewOpacity.setValue(0); ctaOpacity.setValue(0);
+    }
   }, [isExpanded]);
 
   const expandedHeight = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 210] });
@@ -203,6 +235,7 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
       </PressRow>
       {/* Inline expanded stats + route preview card */}
       <Animated.View style={[cardStyles.expandedArea, { height: expandedHeight, opacity: expandAnim }]}>
+        <Animated.View style={{ opacity: statsOpacity, transform: [{ translateY: statsTransY }] }}>
         <View style={cardStyles.expandedStats}>
           <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.primary }]}>
             <Text style={cardStyles.expandedStatVal}>{distStr}</Text>
@@ -221,8 +254,10 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
             <Text style={cardStyles.expandedStatLbl}>flags</Text>
           </View>
         </View>
+        </Animated.View>
 
-        {/* Route preview card (STORY-00103) */}
+        {/* Route preview card (STORY-00103 + STORY-00108) */}
+        <Animated.View style={{ opacity: previewOpacity, transform: [{ translateY: previewTransY }] }}>
         <View style={cardStyles.routePreviewCard}>
           {/* Topo background — contour rings */}
           <View style={cardStyles.topoRingOuter} />
@@ -239,14 +274,17 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
               <Text style={[cardStyles.previewChipText, { color: actColor }]}>{durationStr}</Text>
             </View>
           </View>
-          {/* Route label */}
-          <Text style={cardStyles.previewLabel}>Route Preview</Text>
+          {/* Route label — STORY-00108: renamed from "Route Preview" */}
+          <Text style={cardStyles.previewLabel}>Preview</Text>
         </View>
+        </Animated.View>
 
+        <Animated.View style={{ opacity: ctaOpacity, transform: [{ translateY: ctaTransY }] }}>
         <TouchableOpacity style={cardStyles.viewOnMapBtn} onPress={onViewOnMap}>
           <Icon name="Map" size={14} color="#fff" strokeWidth={2} />
           <Text style={cardStyles.viewOnMapText}>View on Map</Text>
         </TouchableOpacity>
+        </Animated.View>
       </Animated.View>
     </View>
   );

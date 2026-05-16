@@ -13,6 +13,7 @@ import {
   TextInput, Animated, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -39,13 +40,31 @@ const FLAG_TYPES: {
   { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg },
 ];
 
-// ── Map Placeholder (STORY-00095) ─────────────────────────────────────────────
+// ── Map Placeholder (STORY-00095 + STORY-00105) ───────────────────────────────
 function MapPlaceholder({
   markers, onMarkerPress,
 }: {
   markers: typeof MOCK_MARKERS;
   onMarkerPress: (m: typeof MOCK_MARKERS[0]) => void;
 }) {
+  const pulseOpacity = useRef(new Animated.Value(0.3)).current;
+  const dotScale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.timing(pulseOpacity, { toValue: 0, duration: 2000, useNativeDriver: true })
+    );
+    const scaleLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dotScale, { toValue: 1.05, duration: 1000, useNativeDriver: true }),
+        Animated.timing(dotScale, { toValue: 1, duration: 1000, useNativeDriver: true }),
+      ])
+    );
+    pulseLoop.start();
+    scaleLoop.start();
+    return () => { pulseLoop.stop(); scaleLoop.stop(); };
+  }, []);
+
   return (
     <View style={styles.mapContainer}>
       {/* Topo elevation rings — concentric, varying opacity (matches HikingScreen) */}
@@ -57,10 +76,10 @@ function MapPlaceholder({
       <View style={styles.trailLine} />
       <View style={styles.trailLine2} />
       <View style={styles.trailLine3} />
-      {/* Location pin at trail midpoint */}
+      {/* Location pin at trail midpoint — animated GPS pulse (STORY-00105) */}
       <View style={styles.locationDot}>
-        <View style={styles.locationDotInner} />
-        <View style={styles.locationPulse} />
+        <Animated.View style={[styles.locationDotInner, { transform: [{ scale: dotScale }] }]} />
+        <Animated.View style={[styles.locationPulse, { opacity: pulseOpacity }]} />
       </View>
       {/* Trail Map label + CTA */}
       <View style={styles.mapLabelWrap}>
@@ -154,7 +173,7 @@ function CreateMarkerSheet({
                 <TouchableOpacity
                   key={flag.id}
                   style={[styles.typeCard, isSelected && styles.typeCardSelected]}
-                  onPress={() => setSelectedType(flag.id)}
+                  onPress={() => { setSelectedType(flag.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                   activeOpacity={0.8}
                 >
                   <LinearGradient
@@ -192,11 +211,11 @@ function CreateMarkerSheet({
               onBlur={() => setTextFocused(false)}
             />
             <View style={styles.noteFooterRow}>
-              <Text style={styles.noteMaxLabel}>Max 30 chars</Text>
+              <Text style={styles.noteMaxLabel}>Max 30 characters</Text>
               {(textFocused || charCount > 0) && (
                 <Text style={[
                   styles.charCount,
-                  charCount >= 30 ? { color: Colors.danger } : charCount >= 25 ? { color: Colors.warning } : null,
+                  charCount >= 30 ? { color: Colors.danger } : charCount >= 22 ? { color: Colors.warning } : null,
                 ]}>{charCount}/30</Text>
               )}
             </View>

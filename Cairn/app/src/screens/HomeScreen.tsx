@@ -352,6 +352,18 @@ export function HomeScreen() {
               </>
           }
 
+          {/* STORY-00110: Contextual nudge — shown when hasData but no sessions yet */}
+          {hasData && sessions.length === 0 && (
+            <TouchableOpacity
+              style={styles.nudgeCard}
+              onPress={() => nav.navigate('Hiking')}
+              activeOpacity={0.8}
+            >
+              <Icon name="PlayCircle" size={18} color={Colors.primary} strokeWidth={2} />
+              <Text style={styles.nudgeText}>Complete your first hike to see activity here</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Activity Cards */}
           <RecentActivityStrip onPress={() => nav.navigate('MapHistory')} />
           <View style={styles.cardsSection}>
@@ -440,6 +452,16 @@ const styles = StyleSheet.create({
   divider: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.base },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
   dividerText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1 },
+
+  nudgeCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.surface, borderRadius: Radius.card,
+    borderWidth: 1, borderColor: Colors.border,
+    padding: Spacing.md, marginBottom: Spacing.base,
+  },
+  nudgeText: {
+    flex: 1, fontSize: FontSize.caption, color: Colors.textSecondary,
+  },
 
   entriesRow: { flexDirection: 'row', gap: Spacing.sm },
   entryBtn: {

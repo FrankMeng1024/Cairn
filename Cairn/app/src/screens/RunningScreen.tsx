@@ -14,6 +14,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Share,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useNavigation } from '@react-navigation/native';
@@ -109,12 +110,15 @@ export function RunningScreen() {
     if (newCount >= 2) {
       setIsLocked(false);
       setTapCount(0);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       tapTimer.current = setTimeout(() => setTapCount(0), 500);
     }
   };
 
   async function handleStart() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setActivityMode('running');
     await startTracking();
     setRunState('running');
@@ -122,6 +126,7 @@ export function RunningScreen() {
   }
 
   function handleStop() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     stopTracking();
     setRunState('stopped');
   }

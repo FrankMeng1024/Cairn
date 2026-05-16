@@ -9,7 +9,28 @@
 - [pending] STORY-00062: "Hike" badge variant still untested. Future QA: add hike session to store.
 - [resolved: Sprint 29] Low: Auth form does not auto-focus email on screen entry — fixed in STORY-00087. Email now auto-focuses on Sign In mount via autoFocus prop.
 
-## Sprint 30 — 2026-05-16
+## Sprint 32 — 2026-05-16
+- [archived: CLAUDE.md §Integration] Sprint 32: clean Sprint, no retrospective actions. Zero QA bugs (5/5 stories PASS), no integration restart loops, no Spec Drift (STORY-00102 confirmed pre-clean), no VU NOT ACCEPTED.
+- [resolved: Sprint 32] Low: Create Account Name field error on blur-without-input — STORY-00104 removes onBlur validation. Submit-only validation now. Closed.
+- [resolved: Sprint 32] Medium UX: CreateMarkerSheet/FlagPlantSheet char counter had no inline explanation — STORY-00100 adds 'Max 30 chars' label. Closed.
+- [resolved: Sprint 32] Medium: STORY-00082/STORY-00102 hardcoded rgba(61,122,181) in RoutesScreen — confirmed already absent. Closed.
+- [pending] STORY-00062: distance > 10m km-display branch still untested. Future QA: seed session with distance > 100m.
+- [pending] STORY-00062: "Hike" badge variant still untested.
+- [pending] Low: Char counter amber window is 5 characters (25-29). Tight for fast typists but functional.
+- [pending] Low UX: "Route Preview" label in MapHistoryScreen slightly overpromises — preview is illustrative topo rings, not GPS trace. Consider "Preview" label instead.
+- [pending] Low UX: "Max 30 chars" uses 'chars' shorthand — consider 'characters' for non-native English global audience.
+
+## Sprint 31 — 2026-05-16
+- [archived: CLAUDE.md §Integration] Sprint 31: clean Sprint, no retrospective actions. Zero QA bugs (5/5 stories PASS, 4 HIGH + 1 MEDIUM), no integration restart loops, no Spec Drift (one confirmed fix — map bg hardcoded color → Colors.primaryBg token), no VU NOT ACCEPTED.
+- [resolved: Sprint 31] MapScreen not wired in RootNavigator — MapScreen existed but was unreachable. Fixed by adding Map route to RootNavigator and updating HomeScreen Map button. Knowledge: new screens must be in RootNavigator AND have a Home entry point.
+- [pending] STORY-00062: distance > 10m km-display branch still untested. Future QA: seed session with distance > 100m.
+- [pending] STORY-00062: "Hike" badge variant still untested. Future QA: add hike session to store.
+- [pending] Medium: STORY-00082 named route gradient and routeCardSelected background still contain hardcoded rgba(61,122,181,...) blue values — should be tokenized. Non-blocking.
+- [pending] Low: Create Account Name field error on blur-without-input is slightly punitive. Pre-existing onBlur validation behavior.
+- [pending] Low: Char counter amber window is 5 characters (25-29). Tight for fast typists but functional.
+- [pending] Medium UX: CreateMarkerSheet char counter truncates input at 30 without inline explanation. First-time user may not understand why text was cut. Consider adding brief "max 30 chars" label.
+
+
 - [archived: CLAUDE.md §Integration] Sprint 30: clean Sprint, no retrospective actions. Zero QA bugs (5/5 stories PASS, 4 HIGH + 1 MEDIUM), no integration restart loops, no Spec Drift, no VU NOT ACCEPTED.
 - [resolved: Sprint 30] FlagPlantSheet char counter no warning state — fixed with amber at 25/30 threshold. Closed.
 - [resolved: Sprint 30] Create Account Name field auto-focus — implemented via autoFocus={isRegister}. Closed.
