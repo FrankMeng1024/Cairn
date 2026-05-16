@@ -6,14 +6,17 @@
  * - Empty state matches HomeScreen / MapHistory pattern
  */
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { useNavigation } from '@react-navigation/native';
 import { useAppStore } from '../store/useAppStore';
+import { useRouteStore, type Route } from '../store/useRouteStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
-import { MOCK_ROUTES } from '../data/mockData';
+import { formatDate } from '../utils/geo';
 
 function formatDuration(min: number) {
   const h = Math.floor(min / 60);
@@ -40,7 +43,28 @@ function formatRouteDate(isoStr: string): string {
 export function RoutesScreen() {
   const { uiMode } = useAppStore();
   const isBeginner = uiMode === 'beginner';
+  const routes = useRouteStore(s => s.routes);
+  const setActiveRoute = useRouteStore(s => s.setActiveRoute);
+  const deleteRoute = useRouteStore(s => s.deleteRoute);
   const [downloadSheet, setDownloadSheet] = useState<{ name: string } | null>(null);
+
+  const handleRoutePress = (route: Route) => {
+    setActiveRoute(route.id);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Navigate back to map with active route highlighted
+    // nav.navigate('Map'); // TODO: wire navigation
+  };
+
+  const handleDeleteRoute = (route: Route) => {
+    Alert.alert(
+      'Delete Route',
+      `Remove "${route.name}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteRoute(route.id) },
+      ],
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -51,17 +75,20 @@ export function RoutesScreen() {
       </View>
 
       <FlatList
-        data={MOCK_ROUTES}
+        data={routes}
         keyExtractor={(i) => i.id}
         contentContainerStyle={{ paddingHorizontal: Spacing.base, gap: Spacing.sm, paddingBottom: Spacing.xl }}
         renderItem={({ item }) => {
-          const isRunRoute = item.activityMode === 'running';
-          const badgeColors: [string, string] = isRunRoute
-            ? [Colors.runningLight, Colors.runningGrad]
-            : [Colors.primaryLight, Colors.primaryDeep];
-          const iconColor = isRunRoute ? Colors.running : Colors.primary;
+          const distKm = (item.distanceM / 1000).toFixed(1);
+          const badgeColors: [string, string] = [Colors.primaryLight, Colors.primaryDeep];
+          const iconColor = Colors.primary;
           return (
-            <TouchableOpacity style={styles.routeCard} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={styles.routeCard}
+              activeOpacity={0.85}
+              onPress={() => handleRoutePress(item)}
+              onLongPress={() => handleDeleteRoute(item)}
+            >
               <LinearGradient
                 colors={badgeColors}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -72,35 +99,38 @@ export function RoutesScreen() {
 
               <View style={styles.routeContent}>
                 <Text style={styles.routeName}>{item.name}</Text>
-                <Text style={styles.routeDate}>{formatRouteDate(item.date)}</Text>
+                <Text style={styles.routeDate}>
+                  {formatDate(item.lastRunAt || item.createdAt)}
+                  {item.runCount > 0 ? ` · ${item.runCount} run${item.runCount > 1 ? 's' : ''}` : ''}
+                </Text>
                 {isBeginner ? (
                   <View style={styles.statsRow}>
-                    <View style={[styles.statChip, { backgroundColor: isRunRoute ? Colors.runningLight : Colors.primaryLight }]}>
+                    <View style={[styles.statChip, { backgroundColor: Colors.primaryLight }]}>
                       <Icon name="MapPin" size={9} color={iconColor} strokeWidth={2.5} />
-                      <Text style={[styles.statValue, { color: iconColor }]}>{item.distanceKm} km</Text>
+                      <Text style={[styles.statValue, { color: iconColor }]}>{distKm} km</Text>
                     </View>
-                    <View style={[styles.statChip, { backgroundColor: isRunRoute ? Colors.runningLight : Colors.primaryLight }]}>
-                      <Icon name="Timer" size={9} color={iconColor} strokeWidth={2.5} />
-                      <Text style={[styles.statValue, { color: iconColor }]}>{formatDuration(item.durationMin)}</Text>
+                    <View style={[styles.statChip, { backgroundColor: Colors.primaryLight }]}>
+                      <Icon name="Navigation2" size={9} color={iconColor} strokeWidth={2.5} />
+                      <Text style={[styles.statValue, { color: iconColor }]}>{item.waypoints.length} wpt</Text>
                     </View>
-                    <View style={[styles.statChip, { backgroundColor: isRunRoute ? Colors.runningLight : Colors.primaryLight }]}>
-                      <Icon name="Flag" size={9} color={iconColor} strokeWidth={2.5} />
-                      <Text style={[styles.statValue, { color: iconColor }]}>{item.markerCount}</Text>
+                    <View style={[styles.statChip, { backgroundColor: Colors.primaryLight }]}>
+                      <Icon name="TrendingUp" size={9} color={iconColor} strokeWidth={2.5} />
+                      <Text style={[styles.statValue, { color: iconColor }]}>{item.elevationGainM}m</Text>
                     </View>
                   </View>
                 ) : (
                   <Text style={styles.routeCompact}>
-                    {item.distanceKm}km · {formatDuration(item.durationMin)} · {item.markerCount}pts
+                    {distKm}km · {item.waypoints.length}wpt · +{item.elevationGainM}m
                   </Text>
                 )}
-                <TouchableOpacity
-                  style={styles.downloadBtn}
-                  activeOpacity={0.7}
-                  onPress={() => setDownloadSheet({ name: item.name })}
-                >
-                  <Icon name="Download" size={12} color={Colors.primary} strokeWidth={2} />
-                  <Text style={styles.downloadBtnText}>Download</Text>
-                </TouchableOpacity>
+                {item.sharedBy && (
+                  <Text style={styles.sharedByText}>From {item.sharedBy}</Text>
+                )}
+                {item.isActive && (
+                  <View style={styles.activeBadge}>
+                    <Text style={styles.activeBadgeText}>Active</Text>
+                  </View>
+                )}
               </View>
 
               <View style={styles.chevronWrap}>
