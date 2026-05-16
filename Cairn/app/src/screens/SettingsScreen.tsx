@@ -319,16 +319,20 @@ export function SettingsScreen() {
             iconBg={Colors.dangerBg}
             label="Sign Out"
             labelColor={Colors.danger}
-            onPress={() => Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Sign Out', style: 'destructive', onPress: async () => {
-                  await logout();
-                  appLogout();
-                  nav.replace('Auth');
-                },
-              },
-            ])}
+            onPress={async () => {
+              // Alert.alert doesn't work on web — use window.confirm as fallback
+              const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
+                ? window.confirm('Are you sure you want to sign out?')
+                : await new Promise<boolean>((resolve) =>
+                    Alert.alert('Sign Out', 'Are you sure?', [
+                      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                      { text: 'Sign Out', style: 'destructive', onPress: () => resolve(true) },
+                    ])
+                  );
+              if (!confirmed) return;
+              await logout();
+              appLogout();
+            }}
           />
         </View>
 
