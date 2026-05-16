@@ -40,17 +40,21 @@ export function RootNavigator() {
     <NavigationContainer>
       <Stack.Navigator
         screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
-        initialRouteName={isLoggedIn ? 'Home' : 'Auth'}
       >
-        <Stack.Screen name="Auth" component={AuthScreen} />
-        <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="Hiking" component={HikingScreen} />
-        <Stack.Screen name="Running" component={RunningScreen} />
-        <Stack.Screen name="MapHistory" component={MapHistoryScreen} />
-        <Stack.Screen name="Map" component={MapScreen} />
-        <Stack.Screen name="Routes" component={RoutesScreen} />
-        <Stack.Screen name="Friends" component={FriendsScreen} />
-        <Stack.Screen name="Settings" component={SettingsScreen} />
+        {isLoggedIn ? (
+          <>
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Hiking" component={HikingScreen} />
+            <Stack.Screen name="Running" component={RunningScreen} />
+            <Stack.Screen name="MapHistory" component={MapHistoryScreen} />
+            <Stack.Screen name="Map" component={MapScreen} />
+            <Stack.Screen name="Routes" component={RoutesScreen} />
+            <Stack.Screen name="Friends" component={FriendsScreen} />
+            <Stack.Screen name="Settings" component={SettingsScreen} />
+          </>
+        ) : (
+          <Stack.Screen name="Auth" component={AuthScreen} />
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );

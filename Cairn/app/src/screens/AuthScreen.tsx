@@ -342,12 +342,20 @@ export function AuthScreen() {
   // Handle Google OAuth response
   useEffect(() => {
     if (googleResponse?.type !== 'success') return;
-    const idToken = googleResponse.params?.id_token;
-    if (!idToken) { setApiError('Google sign-in failed. Please try again.'); return; }
+    console.log('[Google OAuth] response params:', JSON.stringify(googleResponse.params));
+    console.log('[Google OAuth] authentication:', JSON.stringify(googleResponse.authentication));
+    const idToken = googleResponse.params?.id_token ?? (googleResponse.authentication as any)?.idToken;
+    if (!idToken) {
+      console.error('[Google OAuth] no id_token found in response');
+      setApiError('Google sign-in failed. Please try again.');
+      setGoogleLoading(false);
+      return;
+    }
     setLoading(true);
     setApiError('');
     loginWithGoogle(idToken).then((result) => {
       setLoading(false);
+      setGoogleLoading(false);
       if (result.error) { setApiError(result.error); return; }
       setLoggedIn(true);
       if (result.user) setUser(result.user);
