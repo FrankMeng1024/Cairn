@@ -26,20 +26,23 @@ router.post('/register', authLimiter, async (req, res) => {
   const { name, email, password } = req.body;
 
   // Basic validation
-  if (!name || typeof name !== 'string' || name.trim().length < 2) {
-    return res.status(400).json({ message: 'Name must be at least 2 characters.' });
+  if (!name || typeof name !== 'string' || name.trim().length < 1) {
+    return res.status(400).json({ error: 'Name is required.' });
+  }
+  if (name.trim().length > 50) {
+    return res.status(400).json({ error: 'Name must be 50 characters or fewer.' });
   }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ message: 'Please enter a valid email address.' });
+    return res.status(400).json({ error: 'Please enter a valid email address.' });
   }
   if (!password || password.length < 8) {
-    return res.status(400).json({ message: 'Password must be at least 8 characters.' });
+    return res.status(400).json({ error: 'Password must be at least 8 characters.' });
   }
 
   try {
     const existing = await User.findByEmail(email.toLowerCase());
     if (existing) {
-      return res.status(409).json({ message: 'An account with this email already exists.' });
+      return res.status(409).json({ error: 'An account with this email already exists.' });
     }
 
     const hash = await User.hashPassword(password);
@@ -50,7 +53,7 @@ router.post('/register', authLimiter, async (req, res) => {
     return res.status(201).json({ user, token });
   } catch (err) {
     console.error('[register]', err);
-    return res.status(500).json({ message: 'Server error. Please try again.' });
+    return res.status(500).json({ error: 'Server error. Please try again.' });
   }
 });
 
@@ -59,7 +62,7 @@ router.post('/login', authLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ message: 'Email and password are required.' });
+    return res.status(400).json({ error: 'Email and password are required.' });
   }
 
   try {
@@ -67,12 +70,12 @@ router.post('/login', authLimiter, async (req, res) => {
     if (!user) {
       // Consistent timing to prevent user enumeration
       await User.comparePassword(password, '$2a$12$invalid_hash_to_waste_time_only');
-      return res.status(401).json({ message: 'Incorrect email or password.' });
+      return res.status(401).json({ error: 'Incorrect email or password.' });
     }
 
     const match = await User.comparePassword(password, user.password_hash);
     if (!match) {
-      return res.status(401).json({ message: 'Incorrect email or password.' });
+      return res.status(401).json({ error: 'Incorrect email or password.' });
     }
 
     const publicUser = User.toPublic(user);
@@ -81,7 +84,7 @@ router.post('/login', authLimiter, async (req, res) => {
     return res.json({ user: publicUser, token });
   } catch (err) {
     console.error('[login]', err);
-    return res.status(500).json({ message: 'Server error. Please try again.' });
+    return res.status(500).json({ error: 'Server error. Please try again.' });
   }
 });
 
@@ -90,12 +93,12 @@ router.get('/me', authenticate, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
     if (!user) {
-      return res.status(404).json({ message: 'Account not found.' });
+      return res.status(404).json({ error: 'Account not found.' });
     }
     return res.json({ user: User.toPublic(user) });
   } catch (err) {
     console.error('[me]', err);
-    return res.status(500).json({ message: 'Server error.' });
+    return res.status(500).json({ error: 'Server error.' });
   }
 });
 

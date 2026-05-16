@@ -208,12 +208,13 @@ Cairn complies with the New Zealand Privacy Act 2020 and, where applicable, the 
 privacy@cairnapp.nz`;
 
 // ── Auth Screen ────────────────────────────────────────────────────────────
-type AuthView = 'splash' | 'login' | 'register';
+type AuthView = 'splash' | 'login' | 'register' | 'welcome';
 
 export function AuthScreen() {
   const nav = useNavigation<Nav>();
   const { setLoggedIn, setUIMode, setUser } = useAppStore();
   const [view, setView] = useState<AuthView>('splash');
+  const [welcomeName, setWelcomeName] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -259,7 +260,7 @@ export function AuthScreen() {
 
   const validatePassword = (val: string) => {
     if (!val) return 'Password is required';
-    if (val.length < 6) return 'Minimum 6 characters';
+    if (val.length < 8) return 'Minimum 8 characters';
     return '';
   };
 
@@ -271,7 +272,7 @@ export function AuthScreen() {
     const eErr = validateEmail(email); if (eErr) { setEmailError(eErr); valid = false; }
     const pErr = validatePassword(password); if (pErr) { setPasswordError(pErr); valid = false; }
     if (isRegister && password !== confirm) { setConfirmError('Passwords do not match'); valid = false; }
-    if (!privacyChecked) { setPrivacyError('Please agree to continue'); valid = false; }
+    if (isRegister && !privacyChecked) { setPrivacyError('Please agree to continue'); valid = false; }
     if (!valid) return;
 
     setLoading(true);
@@ -288,10 +289,16 @@ export function AuthScreen() {
 
       setLoggedIn(true);
       if (result.user) setUser(result.user);
-      if (isRegister) setUIMode('beginner');
-      nav.replace('Home');
+      if (isRegister) {
+        setUIMode('beginner');
+        setWelcomeName(result.user?.name || name.trim() || 'Explorer');
+        setView('welcome');
+        setTimeout(() => nav.replace('Home'), 1800);
+      } else {
+        nav.replace('Home');
+      }
     } catch (e: any) {
-      setApiError(e?.message || 'Connection failed. Is the server running?');
+      setApiError(e?.message || 'Unable to connect. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -344,6 +351,17 @@ export function AuthScreen() {
             </PressBtn>
           </View>
         </Animated.View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Welcome (post-registration) ────────────────────────────────────────
+  if (view === 'welcome') {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]} edges={['top', 'bottom']}>
+        <Icon name="CheckCircle" size={56} color={Colors.primary} strokeWidth={1.5} />
+        <Text style={[styles.appName, { marginTop: 16, marginBottom: 8 }]}>Welcome, {welcomeName}!</Text>
+        <Text style={[styles.tagline, { textAlign: 'center', color: Colors.textSecondary }]}>Your trail starts now.</Text>
       </SafeAreaView>
     );
   }
@@ -410,10 +428,13 @@ export function AuthScreen() {
           <PasswordInput
             value={password}
             onChangeText={(v) => { setPassword(v); if (passwordError) setPasswordError(''); }}
-            placeholder={isRegister ? 'Min. 6 characters' : '••••••••'}
+            placeholder={isRegister ? 'Min. 8 characters' : '••••••••'}
             error={passwordError}
             onBlur={() => setPasswordError(validatePassword(password))}
           />
+          {isRegister && !passwordError && (
+            <Text style={[formStyles.fieldError, { color: Colors.textSecondary, fontWeight: '400' }]}>Minimum 8 characters</Text>
+          )}
 
           {isRegister && (
             <>
@@ -428,33 +449,37 @@ export function AuthScreen() {
             </>
           )}
 
-          {/* Privacy row */}
-          <View style={formStyles.privacyRow}>
-            <TouchableOpacity
-              style={[formStyles.checkbox, privacyChecked && formStyles.checkboxChecked]}
-              onPress={() => { setPrivacyChecked(v => !v); setPrivacyError(''); }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
-            >
-              {privacyChecked && <Icon name="Check" size={14} color="#fff" strokeWidth={3} />}
-            </TouchableOpacity>
-            <Text style={formStyles.privacyText}>
-              {'I have read and agree to the '}
-              <Text
-                style={formStyles.privacyLink}
-                onPress={() => setPrivacyExpanded(!privacyExpanded)}
-              >
-                Privacy Policy
-              </Text>
-            </Text>
-          </View>
-          {!!privacyError && <Text style={formStyles.fieldError}>{privacyError}</Text>}
+          {/* Privacy row — register only */}
+          {isRegister && (
+            <>
+              <View style={formStyles.privacyRow}>
+                <TouchableOpacity
+                  style={[formStyles.checkbox, privacyChecked && formStyles.checkboxChecked]}
+                  onPress={() => { setPrivacyChecked(v => !v); setPrivacyError(''); }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+                >
+                  {privacyChecked && <Icon name="Check" size={14} color="#fff" strokeWidth={3} />}
+                </TouchableOpacity>
+                <Text style={formStyles.privacyText}>
+                  {'I have read and agree to the '}
+                  <Text
+                    style={formStyles.privacyLink}
+                    onPress={() => setPrivacyExpanded(!privacyExpanded)}
+                  >
+                    Privacy Policy
+                  </Text>
+                </Text>
+              </View>
+              {!!privacyError && <Text style={formStyles.fieldError}>{privacyError}</Text>}
 
-          {privacyExpanded && (
-            <View style={formStyles.privacyExpanded}>
-              <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator>
-                <Text style={formStyles.privacyContent}>{PRIVACY_POLICY}</Text>
-              </ScrollView>
-            </View>
+              {privacyExpanded && (
+                <View style={formStyles.privacyExpanded}>
+                  <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator>
+                    <Text style={formStyles.privacyContent}>{PRIVACY_POLICY}</Text>
+                  </ScrollView>
+                </View>
+              )}
+            </>
           )}
 
           <PressBtn

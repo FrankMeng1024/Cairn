@@ -34,12 +34,12 @@ export async function register(
     const res = await post('/api/auth/register', { name, email, password });
     const data = await res.json();
     if (!res.ok) {
-      return { error: data?.message || 'Registration failed.' };
+      return { error: data?.error || data?.message || 'Registration failed.' };
     }
     await saveToken(data.token);
     return { user: data.user, token: data.token };
   } catch {
-    return { error: 'Cannot reach server. Check your connection.' };
+    return { error: 'Unable to connect. Please try again.' };
   }
 }
 
@@ -48,12 +48,12 @@ export async function login(email: string, password: string): Promise<AuthResult
     const res = await post('/api/auth/login', { email, password });
     const data = await res.json();
     if (!res.ok) {
-      return { error: data?.message || 'Sign in failed. Check your email and password.' };
+      return { error: data?.error || data?.message || 'Sign in failed. Check your email and password.' };
     }
     await saveToken(data.token);
     return { user: data.user, token: data.token };
   } catch {
-    return { error: 'Cannot reach server. Check your connection.' };
+    return { error: 'Unable to connect. Please try again.' };
   }
 }
 
