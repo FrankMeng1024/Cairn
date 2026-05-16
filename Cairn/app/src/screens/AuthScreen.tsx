@@ -212,9 +212,19 @@ type AuthView = 'splash' | 'login' | 'register' | 'welcome';
 
 export function AuthScreen() {
   const nav = useNavigation<Nav>();
-  const { setLoggedIn, setUIMode, setUser } = useAppStore();
+  const { setLoggedIn, setUIMode, setUser, sessionExpired, setSessionExpired } = useAppStore();
   const [view, setView] = useState<AuthView>('splash');
   const [welcomeName, setWelcomeName] = useState('');
+  const [expiredBanner, setExpiredBanner] = useState(sessionExpired);
+
+  // Show session-expired banner for 4s then dismiss
+  useEffect(() => {
+    if (!sessionExpired) return;
+    setExpiredBanner(true);
+    setSessionExpired(false);
+    const t = setTimeout(() => setExpiredBanner(false), 4000);
+    return () => clearTimeout(t);
+  }, [sessionExpired]);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -317,6 +327,12 @@ export function AuthScreen() {
   if (view === 'splash') {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        {expiredBanner && (
+          <View style={styles.expiredBanner}>
+            <Icon name="AlertCircle" size={14} color="#fff" strokeWidth={2} />
+            <Text style={styles.expiredBannerText}>Session expired. Please sign in again.</Text>
+          </View>
+        )}
         <Animated.View style={[styles.splashInner, { opacity: splashFade, transform: [{ translateY: splashTranslate }] }]}>
           {/* Hero area — at least 40% of screen */}
           <View style={styles.logoArea}>
@@ -536,6 +552,11 @@ export function AuthScreen() {
 // ── Shared styles ──────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
+  expiredBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.danger, paddingHorizontal: Spacing.base, paddingVertical: 10,
+  },
+  expiredBannerText: { color: '#fff', fontSize: FontSize.small, fontWeight: '600', flex: 1 },
   splashInner: {
     flex: 1, justifyContent: 'space-between',
     paddingHorizontal: Spacing.xl, paddingBottom: Spacing.xxl,

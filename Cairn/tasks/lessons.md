@@ -1,5 +1,15 @@
 # Lessons Learned
 
+## Sprint 36 — 2026-05-16
+- [archived: CLAUDE.md §Integration] Sprint 36: clean Sprint — QA PASS (all 3 stories HIGH confidence), 0 bugs, no integration restart loops, no Spec Drift.
+- [resolved: Sprint 36] Backend rate limiter (express-rate-limit, in-memory) cleared on restart — managed by restarting backend when limit exceeded during testing. Knowledge: rate limit is NOT Redis-backed; test sessions must account for 10 req/15min window.
+- [resolved: Sprint 36] Old Windows Node.js process on port 3001 (stale code) could not be killed from WSL. Workaround: new backend instance on port 3002 for live testing. Production api.ts remains at localhost:3001.
+- [resolved: Sprint 36] Privacy checkbox on Sign In removed (UX friction STORY-00123). Create Account retains it.
+- [resolved: Sprint 36] Error message wording "Cannot reach server" → "Unable to connect. Please try again." (STORY-00123).
+- [resolved: Sprint 36] Backend error key standardised to `{error:"..."}` from `{message:"..."}`. Frontend reads both keys for backwards compatibility.
+- [pending] STORY-00122 Google OAuth deferred to Sprint 37 — requires Google Cloud Console Client ID from user.
+- [pending] Apple Sign In (iOS-only) — deferred until native build.
+
 ## Sprint 35 — 2026-05-16
 - [archived: CLAUDE.md §Integration] Sprint 35: clean Sprint — QA PASS (STORY-00117 HIGH, STORY-00118/00119 MEDIUM confidence), UX PASS (no Blocker/Critical), no Blocker bugs, no integration restart loops.
 - [pending] Backend requires MySQL installed to fully test auth endpoints. Sprint 35 verified all code artifacts and graceful degradation. Live happy-path test (register/login/JWT skip-auth) deferred until MySQL available — candidate for Sprint 36 environment setup Story.

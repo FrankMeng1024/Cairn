@@ -152,7 +152,7 @@ function SectionHeader({ title }: { title: string }) {
 // ── Main ─────────────────────────────────────────────────────────────────────
 export function SettingsScreen() {
   const nav = useNavigation<Nav>();
-  const { uiMode, setUIMode, setLoggedIn, setUser } = useAppStore();
+  const { uiMode, setUIMode, setLoggedIn, setUser, user, isLoggedIn } = useAppStore();
 
   const [pendingMode, setPendingMode] = useState<UIMode>(uiMode);
   const [shareAfterAdd, setShareAfterAdd] = useState(true);
@@ -281,28 +281,38 @@ export function SettingsScreen() {
         {/* ── Account ── */}
         <SectionHeader title="Account" />
         <View style={styles.card}>
-          {/* Profile row — initials avatar + mode badge */}
-          <TouchableOpacity style={rowStyles.actionRow} onPress={() => Alert.alert('Profile', 'Coming soon')} activeOpacity={0.7}>
-            <View style={profileStyles.initialsCircle}>
-              <Text style={profileStyles.initialsText}>
-                {pendingMode === 'beginner' ? 'E' : 'N'}
-              </Text>
-            </View>
-            <View style={{ flex: 1, marginRight: Spacing.sm }}>
-              <Text style={{ fontSize: FontSize.body, fontWeight: '500', color: Colors.textPrimary }}>Profile</Text>
-              <View style={[profileStyles.modeBadge, {
-                backgroundColor: pendingMode === 'beginner' ? Colors.primaryLight : Colors.flagLight,
-              }]}>
-                <Text style={[profileStyles.modeBadgeText, {
-                  color: pendingMode === 'beginner' ? Colors.primary : Colors.flag,
-                }]}>
-                  {pendingMode === 'beginner' ? 'Explorer' : 'Navigator'}
-                </Text>
+          {isLoggedIn && user ? (
+            <>
+              {/* Profile row — real name + email */}
+              <View style={rowStyles.actionRow}>
+                <View style={profileStyles.initialsCircle}>
+                  <Text style={profileStyles.initialsText}>
+                    {user.name.trim().charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, marginRight: Spacing.sm }}>
+                  <Text style={{ fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary }}>{user.name}</Text>
+                  <Text style={{ fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 1 }}>{user.email}</Text>
+                </View>
               </View>
-            </View>
-            <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
-          </TouchableOpacity>
-          <View style={styles.divider} />
+              <View style={styles.divider} />
+            </>
+          ) : (
+            <>
+              {/* Not logged in CTA */}
+              <TouchableOpacity style={rowStyles.actionRow} onPress={() => nav.replace('Auth')} activeOpacity={0.7}>
+                <View style={[rowStyles.iconWrap, { backgroundColor: Colors.primaryLight }]}>
+                  <Icon name="User" size={16} color={Colors.primary} strokeWidth={1.8} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: FontSize.body, fontWeight: '500', color: Colors.textPrimary }}>Sign in to save your data</Text>
+                  <Text style={{ fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 1 }}>Your sessions will sync across devices</Text>
+                </View>
+                <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
+              </TouchableOpacity>
+              <View style={styles.divider} />
+            </>
+          )}
           <ActionRow
             iconName="LogOut"
             iconColor={Colors.danger}
@@ -482,13 +492,5 @@ const profileStyles = StyleSheet.create({
   },
   initialsText: {
     fontSize: FontSize.body, fontWeight: '700', color: Colors.primary,
-  },
-  modeBadge: {
-    alignSelf: 'flex-start',
-    borderRadius: Radius.pill, paddingHorizontal: 7, paddingVertical: 2,
-    marginTop: 3,
-  },
-  modeBadgeText: {
-    fontSize: FontSize.tiny, fontWeight: '700', letterSpacing: 0.3,
   },
 });

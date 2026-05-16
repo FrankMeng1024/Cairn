@@ -42,6 +42,8 @@ interface AppState {
   user: UserProfile | null;
   setUser: (user: UserProfile | null) => void;
   hydrated: boolean;
+  sessionExpired: boolean;
+  setSessionExpired: (v: boolean) => void;
 
   // Hydrate persisted settings on app start
   hydrate: () => Promise<void>;
@@ -73,6 +75,8 @@ export const useAppStore = create<AppState>((set) => ({
   user: null,
   setUser: (user) => set({ user }),
   hydrated: false,
+  sessionExpired: false,
+  setSessionExpired: (v) => set({ sessionExpired: v }),
 
   hydrate: async () => {
     const saved = await storage.getItem(STORAGE_KEY_UI_MODE);
