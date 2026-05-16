@@ -419,9 +419,10 @@ const styles = StyleSheet.create({
 
   infoBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm,
-    backgroundColor: Colors.surface, borderRadius: Radius.card,
-    padding: Spacing.md, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: Radius.card,
+    padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
     marginTop: Spacing.xs,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
   infoBoxText: {
     flex: 1, fontSize: FontSize.small,
@@ -431,9 +432,11 @@ const styles = StyleSheet.create({
 
 const cardStyles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.surface, borderRadius: Radius.card,
+    backgroundColor: 'rgba(255,255,255,0.88)', borderRadius: Radius.card,
     padding: Spacing.base, flexDirection: 'row', alignItems: 'center',
-    gap: Spacing.md, ...Shadow.card,
+    gap: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
   avatarWrap: { position: 'relative' },
   avatar: {
