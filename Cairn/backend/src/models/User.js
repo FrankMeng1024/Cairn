@@ -6,6 +6,14 @@ const bcrypt = require('bcryptjs');
 
 const SALT_ROUNDS = 12;
 
+async function createGoogleUser(name, email, googleSub) {
+  const [result] = await pool.execute(
+    'INSERT INTO users (name, email, google_sub) VALUES (?, ?, ?)',
+    [name, email, googleSub]
+  );
+  return result.insertId;
+}
+
 async function createUser(name, email, passwordHash) {
   const [result] = await pool.execute(
     'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)',
@@ -42,4 +50,4 @@ function toPublic(user) {
   return { id: String(user.id), name: user.name, email: user.email };
 }
 
-module.exports = { createUser, findByEmail, findById, hashPassword, comparePassword, toPublic };
+module.exports = { createUser, createGoogleUser, findByEmail, findById, hashPassword, comparePassword, toPublic };

@@ -79,6 +79,20 @@ export async function getMe(): Promise<UserProfile | null> {
   }
 }
 
+export async function loginWithGoogle(idToken: string): Promise<AuthResult> {
+  try {
+    const res = await post('/api/auth/google', { id_token: idToken });
+    const data = await res.json();
+    if (!res.ok) {
+      return { error: data?.error || 'Google sign-in failed. Please try again.' };
+    }
+    await saveToken(data.token);
+    return { user: data.user, token: data.token };
+  } catch {
+    return { error: 'Unable to connect. Please try again.' };
+  }
+}
+
 export async function logout(): Promise<void> {
   await clearToken();
 }

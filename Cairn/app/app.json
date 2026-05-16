@@ -43,7 +43,8 @@
           "locationAlwaysAndWhenInUsePermission": "Cairn needs background location to track your route while running."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-web-browser"
     ]
   }
 }

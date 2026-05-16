@@ -1,7 +1,7 @@
 # PROJECT_STATE.md — Cairn
 
 **Status**: IN_PROGRESS
-**Current Sprint**: 37 (PLANNING)
+**Current Sprint**: 38 (PLANNING)
 **Last Updated**: 2026-05-16
 
 ## Key Decisions
@@ -39,6 +39,7 @@
 - Sprint 35: COMPLETE — Real auth foundation: Node.js/Express backend + JWT auth + MySQL schema; frontend AuthScreen UI polish; authService.ts + tokenStore.ts wired; Google OAuth deferred to Sprint 36
 
 - Sprint 36: COMPLETE — Live auth E2E (MySQL running, register/login/JWT restore/sign out); Auth UX polish (privacy on Sign In removed, welcome state); backend input validation + {error} key standardised
+- Sprint 37: COMPLETE — User data ownership: sessions table + REST API (STORY-00125); sessionService + authenticatedFetch (STORY-00126); Settings profile display (STORY-00127); JWT 401 auto-logout (STORY-00128). STORY-00122 Google OAuth BLOCKED pending Client ID.
 
  Real expo-location GPS, haversineM distance calc, Zustand stores persisted.
 

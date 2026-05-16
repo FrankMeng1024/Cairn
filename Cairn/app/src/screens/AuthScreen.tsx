@@ -1,7 +1,9 @@
 /**
  * AuthScreen — Sprint 35 auth overhaul (CR-004 / STORY-00117)
  *
- * Sprint 35 changes:
+ * Sprint 38: Google OAuth wired via expo-auth-session useIdTokenAuthRequest
+ *
+ * Previous: Sprint 35 auth overhaul (CR-004 / STORY-00117)
  * - Splash: Sign In is primary (green), Create Account is secondary — industry convention
  * - Form header: small Cairn icon inline-left of title on same line
  * - Focus ring: border-only highlight, placeholder stays fully visible at all times
@@ -27,7 +29,12 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore } from '../store/useAppStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
-import { login, register } from '../services/authService';
+import { login, register, loginWithGoogle } from '../services/authService';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { makeRedirectUri } from 'expo-auth-session';
+
+WebBrowser.maybeCompleteAuthSession();
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { height: SCREEN_H } = Dimensions.get('window');
@@ -216,6 +223,42 @@ export function AuthScreen() {
   const [view, setView] = useState<AuthView>('splash');
   const [welcomeName, setWelcomeName] = useState('');
   const [expiredBanner, setExpiredBanner] = useState(sessionExpired);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [privacyChecked, setPrivacyChecked] = useState(false);
+  const [privacyExpanded, setPrivacyExpanded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState('');
+  const [nameError, setNameError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [confirmError, setConfirmError] = useState('');
+  const [privacyError, setPrivacyError] = useState('');
+  const googleFlowActive = useRef(false);
+
+  // Google OAuth hook
+  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+    redirectUri: makeRedirectUri({ scheme: 'cairn', path: 'auth' }),
+  });
+
+  // Handle Google OAuth response
+  useEffect(() => {
+    if (googleResponse?.type !== 'success') return;
+    const idToken = googleResponse.params?.id_token;
+    if (!idToken) { setApiError('Google sign-in failed. Please try again.'); return; }
+    setLoading(true);
+    setApiError('');
+    loginWithGoogle(idToken).then((result) => {
+      setLoading(false);
+      if (result.error) { setApiError(result.error); return; }
+      setLoggedIn(true);
+      if (result.user) setUser(result.user);
+      nav.replace('Home');
+    });
+  }, [googleResponse]);
 
   // Show session-expired banner for 4s then dismiss
   useEffect(() => {
@@ -225,21 +268,6 @@ export function AuthScreen() {
     const t = setTimeout(() => setExpiredBanner(false), 4000);
     return () => clearTimeout(t);
   }, [sessionExpired]);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [privacyChecked, setPrivacyChecked] = useState(false);
-  const [privacyExpanded, setPrivacyExpanded] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [apiError, setApiError] = useState('');
-
-  // Validation errors
-  const [nameError, setNameError] = useState('');
-  const [emailError, setEmailError] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [confirmError, setConfirmError] = useState('');
-  const [privacyError, setPrivacyError] = useState('');
 
   const splashFade = useRef(new Animated.Value(0)).current;
   const splashTranslate = useRef(new Animated.Value(8)).current;
@@ -314,13 +342,11 @@ export function AuthScreen() {
     }
   };
 
-  const handleGoogleAuth = () => {
-    // Sprint 36: real Google OAuth via expo-auth-session
-    Alert.alert(
-      'Google Sign In',
-      'Google authentication will be available in the next update.',
-      [{ text: 'OK' }]
-    );
+  const handleGoogleAuth = async () => {
+    googleFlowActive.current = true;
+    resetErrors();
+    await promptGoogleAsync();
+    googleFlowActive.current = false;
   };
 
   // ── Splash ─────────────────────────────────────────────────────────────
@@ -434,7 +460,7 @@ export function AuthScreen() {
             value={email}
             onChangeText={(v) => { setEmail(v); if (emailError) setEmailError(''); }}
             error={emailError}
-            onBlur={() => setEmailError(validateEmail(email))}
+            onBlur={() => { if (!googleFlowActive.current) setEmailError(validateEmail(email)); }}
             keyboardType="email-address"
             autoCapitalize="none"
             autoFocus={!isRegister}
@@ -446,7 +472,7 @@ export function AuthScreen() {
             onChangeText={(v) => { setPassword(v); if (passwordError) setPasswordError(''); }}
             placeholder={isRegister ? 'Min. 8 characters' : '••••••••'}
             error={passwordError}
-            onBlur={() => setPasswordError(validatePassword(password))}
+            onBlur={() => { if (!googleFlowActive.current) setPasswordError(validatePassword(password)); }}
           />
           {isRegister && !passwordError && (
             <Text style={[formStyles.fieldError, { color: Colors.textSecondary, fontWeight: '400' }]}>Minimum 8 characters</Text>

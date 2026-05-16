@@ -2,15 +2,18 @@
  * Auth routes:
  *   POST /api/auth/register
  *   POST /api/auth/login
+ *   POST /api/auth/google
  *   GET  /api/auth/me  (protected)
  */
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
 const { signToken } = require('../config/jwt');
 const authenticate = require('../middleware/authenticate');
 
 const router = express.Router();
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Rate limit: max 10 auth attempts per 15 minutes per IP
 const authLimiter = rateLimit({
@@ -99,6 +102,44 @@ router.get('/me', authenticate, async (req, res) => {
   } catch (err) {
     console.error('[me]', err);
     return res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// ── POST /api/auth/google ──────────────────────────────────────────────────
+router.post('/google', authLimiter, async (req, res) => {
+  const { id_token } = req.body;
+  if (!id_token) {
+    return res.status(400).json({ error: 'id_token is required.' });
+  }
+
+  try {
+    // Verify token with Google
+    const ticket = await googleClient.verifyIdToken({
+      idToken: id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+      return res.status(401).json({ error: 'Invalid Google token.' });
+    }
+
+    const email = payload.email.toLowerCase();
+    const name = payload.name || payload.email.split('@')[0];
+
+    // Find or create user
+    let user = await User.findByEmail(email);
+    if (!user) {
+      // New Google user — create without password
+      const id = await User.createGoogleUser(name, email, payload.sub);
+      user = await User.findById(id);
+    }
+
+    const publicUser = User.toPublic(user);
+    const token = signToken({ userId: publicUser.id, email: publicUser.email });
+    return res.json({ user: publicUser, token });
+  } catch (err) {
+    console.error('[google]', err);
+    return res.status(401).json({ error: 'Google sign-in failed. Please try again.' });
   }
 });
 
