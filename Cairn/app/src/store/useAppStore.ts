@@ -41,6 +41,7 @@ interface AppState {
   setLoggedIn: (v: boolean) => void;
   user: UserProfile | null;
   setUser: (user: UserProfile | null) => void;
+  hydrated: boolean;
 
   // Hydrate persisted settings on app start
   hydrate: () => Promise<void>;
@@ -71,6 +72,7 @@ export const useAppStore = create<AppState>((set) => ({
   setLoggedIn: (v) => set({ isLoggedIn: v }),
   user: null,
   setUser: (user) => set({ user }),
+  hydrated: false,
 
   hydrate: async () => {
     const saved = await storage.getItem(STORAGE_KEY_UI_MODE);
@@ -86,5 +88,6 @@ export const useAppStore = create<AppState>((set) => ({
     } catch {
       // Network unavailable — stay logged out, user will sign in manually
     }
+    set({ hydrated: true });
   },
 }));
