@@ -85,7 +85,7 @@ export const useAppStore = create<AppState>((set) => ({
   logout: () => {
     set({ isLoggedIn: false, user: null, sessionExpired: false });
     useSessionStore.getState().clearSessions();
-    useMarkerStore.getState().clearMarkers();
+    useMarkerStore.getState().clearMarkers(); // clears in-memory only — localStorage preserved per user
   },
 
   hydrate: async () => {
@@ -98,9 +98,8 @@ export const useAppStore = create<AppState>((set) => ({
       const user = await getMe();
       if (user) {
         set({ isLoggedIn: true, user });
-        // Logged-in: fetch sessions from backend (replaces localStorage — ensures isolation).
-        // Markers are local-only for now; clear any leftover data from a previous user.
-        useMarkerStore.getState().clearMarkers();
+        // Load this user's markers from their own localStorage slot
+        await useMarkerStore.getState().hydrate(user.id);
         try {
           const remote = await fetchSessions();
           const sessions = remote.map((r) => ({
@@ -121,14 +120,14 @@ export const useAppStore = create<AppState>((set) => ({
           useSessionStore.setState({ sessions: [] });
         }
       } else {
-        // Not logged in — safe to load from localStorage (no user mixing)
+        // Not logged in — load from guest localStorage slot
         await useSessionStore.getState().hydrate();
-        await useMarkerStore.getState().hydrate();
+        await useMarkerStore.getState().hydrate('guest');
       }
     } catch {
-      // Network unavailable — stay logged out, load localStorage as fallback
+      // Network unavailable — stay logged out, load guest localStorage as fallback
       await useSessionStore.getState().hydrate();
-      await useMarkerStore.getState().hydrate();
+      await useMarkerStore.getState().hydrate('guest');
     }
     set({ hydrated: true });
   },

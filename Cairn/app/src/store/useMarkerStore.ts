@@ -28,19 +28,25 @@ export interface Marker {
   sessionId?: string;      // which tracking session this was planted in
 }
 
-const STORAGE_KEY = 'cairn_markers';
+const STORAGE_KEY_PREFIX = 'cairn_markers';
+
+function storageKey(userId: string): string {
+  return `${STORAGE_KEY_PREFIX}_${userId}`;
+}
 
 interface MarkerState {
   markers: Marker[];
+  userId: string | null;
   addMarker: (marker: Omit<Marker, 'id' | 'createdAt'>) => Marker;
   deleteMarker: (id: string) => void;
   clearMarkers: () => void;
   getMarkersForRegion: (regionCode: string) => Marker[];
-  hydrate: () => Promise<void>;
+  hydrate: (userId: string) => Promise<void>;
 }
 
 export const useMarkerStore = create<MarkerState>((set, get) => ({
   markers: [],
+  userId: null,
 
   addMarker: (data) => {
     const marker: Marker = {
@@ -50,7 +56,7 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
     };
     set((s) => {
       const next = [...s.markers, marker];
-      storage.setItem(STORAGE_KEY, JSON.stringify(next));
+      if (s.userId) storage.setItem(storageKey(s.userId), JSON.stringify(next));
       return { markers: next };
     });
     return marker;
@@ -59,30 +65,34 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
   deleteMarker: (id) => {
     set((s) => {
       const next = s.markers.filter((m) => m.id !== id);
-      storage.setItem(STORAGE_KEY, JSON.stringify(next));
+      if (s.userId) storage.setItem(storageKey(s.userId), JSON.stringify(next));
       return { markers: next };
     });
   },
 
   clearMarkers: () => {
-    storage.removeItem(STORAGE_KEY);
-    set({ markers: [] });
+    // Only clears in-memory state — localStorage is preserved per user
+    set({ markers: [], userId: null });
   },
 
   getMarkersForRegion: (regionCode) => {
     return get().markers.filter((m) => m.regionCode === regionCode);
   },
 
-  hydrate: async () => {
-    const raw = await storage.getItem(STORAGE_KEY);
+  hydrate: async (userId: string) => {
+    const key = storageKey(userId);
+    const raw = await storage.getItem(key);
     if (raw) {
       try {
         const markers: Marker[] = JSON.parse(raw);
-        set({ markers });
+        set({ markers, userId });
       } catch {
         // corrupted storage — reset
-        storage.removeItem(STORAGE_KEY);
+        storage.removeItem(key);
+        set({ markers: [], userId });
       }
+    } else {
+      set({ markers: [], userId });
     }
   },
 }));
