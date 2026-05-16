@@ -403,3 +403,64 @@ export function isWithinRadius(
   const dist = haversineM(userPosition, { lat: waypointLat, lng: waypointLng });
   return dist <= radiusM;
 }
+
+// ── Marker Spacing Enforcement ──────────────────────────────────────────────
+
+/**
+ * Check if a new marker can be placed at the given position.
+ * Prevents the same user from clustering markers too close together.
+ *
+ * @param position     Where the user wants to place a marker
+ * @param existingMarkers  User's existing markers (lat/lng pairs)
+ * @param minSpacingM  Minimum distance between markers in meters (default 20)
+ * @returns { allowed: boolean, nearestDistM: number, conflictId?: string }
+ */
+export function checkMarkerSpacing(
+  position: Coordinate,
+  existingMarkers: Array<{ id: string; lat: number; lng: number }>,
+  minSpacingM = 20,
+): { allowed: boolean; nearestDistM: number; conflictId?: string } {
+  let nearestDist = Infinity;
+  let conflictId: string | undefined;
+
+  for (const marker of existingMarkers) {
+    const dist = haversineM(position, { lat: marker.lat, lng: marker.lng });
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      if (dist < minSpacingM) {
+        conflictId = marker.id;
+      }
+    }
+  }
+
+  return {
+    allowed: nearestDist >= minSpacingM,
+    nearestDistM: nearestDist,
+    conflictId,
+  };
+}
+
+/**
+ * Filter markers by density for display — cluster dense areas.
+ * Returns markers that are at least minSpacingM apart from each other.
+ * Earlier markers (by createdAt or array position) take priority.
+ *
+ * @param markers  All markers to filter
+ * @param minSpacingM  Minimum display distance (default 15m for map, 30m for AR)
+ */
+export function filterByDensity<T extends { lat: number; lng: number }>(
+  markers: T[],
+  minSpacingM = 15,
+): T[] {
+  const result: T[] = [];
+  for (const marker of markers) {
+    const tooClose = result.some(
+      existing => haversineM(
+        { lat: existing.lat, lng: existing.lng },
+        { lat: marker.lat, lng: marker.lng },
+      ) < minSpacingM
+    );
+    if (!tooClose) result.push(marker);
+  }
+  return result;
+}
