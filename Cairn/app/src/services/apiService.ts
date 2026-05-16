@@ -27,8 +27,7 @@ export async function authenticatedFetch(
   if (res.status === 401) {
     await clearToken();
     const store = useAppStore.getState();
-    store.setLoggedIn(false);
-    store.setUser(null);
+    store.logout();
     store.setSessionExpired(true);
   }
 

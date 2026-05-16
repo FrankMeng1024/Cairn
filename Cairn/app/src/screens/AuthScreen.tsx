@@ -21,6 +21,7 @@ import {
   KeyboardAvoidingView, Platform, Animated, ScrollView, Dimensions, Alert,
   ActivityIndicator,
 } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -30,14 +31,39 @@ import { useAppStore } from '../store/useAppStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { login, register, loginWithGoogle } from '../services/authService';
-import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import { makeRedirectUri } from 'expo-auth-session';
 
-WebBrowser.maybeCompleteAuthSession();
-
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { height: SCREEN_H } = Dimensions.get('window');
+
+// ── Trail path SVG (draws from bottom to top over ~500ms) ─────────────────
+const TRAIL_PATH = 'M 60 160 Q 40 130 55 100 Q 70 70 50 45 Q 42 32 50 20';
+const TRAIL_LENGTH = 160;
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+
+function TrailPath({ onComplete }: { onComplete?: () => void }) {
+  const dashOffset = useRef(new Animated.Value(TRAIL_LENGTH)).current;
+  useEffect(() => {
+    Animated.timing(dashOffset, {
+      toValue: 0, duration: 500, useNativeDriver: false,
+    }).start(() => onComplete?.());
+  }, []);
+  return (
+    <Svg width={120} height={180} style={{ position: 'absolute', bottom: 0, left: '50%', marginLeft: -60 }}>
+      <AnimatedPath
+        d={TRAIL_PATH}
+        stroke={Colors.primary}
+        strokeWidth={2.5}
+        strokeLinecap="round"
+        fill="none"
+        strokeDasharray={`${TRAIL_LENGTH} ${TRAIL_LENGTH}`}
+        strokeDashoffset={dashOffset}
+        opacity={0.5}
+      />
+    </Svg>
+  );
+}
 
 // ── Animated Cairn Stack ───────────────────────────────────────────────────
 const STONES = [
@@ -48,14 +74,78 @@ const STONES = [
   { width: 78, color: '#4a6b38' },
 ];
 
-function AnimatedCairn({ size = 1 }: { size?: number }) {
+// ── Flag pennant with spring bounce ───────────────────────────────────────
+function AnimatedFlag({ visible }: { visible: boolean }) {
+  const scale = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!visible) return;
+    Animated.spring(scale, {
+      toValue: 1, tension: 180, friction: 6, useNativeDriver: true,
+    }).start();
+  }, [visible]);
+  return (
+    <Animated.View style={[flagStyles.wrap, { transform: [{ scale }] }]}>
+      {/* Pole */}
+      <View style={flagStyles.pole} />
+      {/* Pennant triangle (16×12 primary green) */}
+      <Svg width={16} height={12} style={flagStyles.pennant}>
+        <Path d="M 0 0 L 16 6 L 0 12 Z" fill={Colors.primary} />
+      </Svg>
+    </Animated.View>
+  );
+}
+const flagStyles = StyleSheet.create({
+  wrap: { alignItems: 'flex-start', position: 'absolute', top: -22, left: '50%', marginLeft: -1 },
+  pole: { width: 2, height: 20, backgroundColor: Colors.textPrimary, opacity: 0.7 },
+  pennant: { position: 'absolute', top: 2, left: 2 },
+});
+
+// ── Particle dust ──────────────────────────────────────────────────────────
+const PARTICLE_OFFSETS = [
+  { dx: -18, dy: -12 }, { dx: 14, dy: -16 },
+  { dx: -22, dy: 4 },  { dx: 18, dy: 2 },
+  { dx: -8, dy: -20 },
+];
+function Particles({ visible }: { visible: boolean }) {
+  const anims = useRef(PARTICLE_OFFSETS.map(() => new Animated.Value(0))).current;
+  useEffect(() => {
+    if (!visible) return;
+    Animated.stagger(40, anims.map((a) =>
+      Animated.timing(a, { toValue: 1, duration: 400, useNativeDriver: true })
+    )).start();
+  }, [visible]);
+  return (
+    <View style={{ position: 'absolute', top: -20 }} pointerEvents="none">
+      {PARTICLE_OFFSETS.map((p, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            position: 'absolute',
+            width: 3, height: 3, borderRadius: 1.5,
+            backgroundColor: Colors.primary,
+            opacity: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0.8, 0] }),
+            transform: [
+              { translateX: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0, p.dx] }) },
+              { translateY: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0, p.dy] }) },
+            ],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+function AnimatedCairn({ size = 1, onComplete }: { size?: number; onComplete?: () => void }) {
   const anims = useRef(STONES.map(() => new Animated.Value(0))).current;
   const glow = useRef(new Animated.Value(0.6)).current;
+  const [showFlag, setShowFlag] = useState(false);
 
   useEffect(() => {
     Animated.stagger(90, STONES.map((_, i) =>
       Animated.spring(anims[i], { toValue: 1, tension: 100, friction: 8, useNativeDriver: true })
     )).start(() => {
+      setShowFlag(true);
+      onComplete?.();
       Animated.sequence([
         Animated.timing(glow, { toValue: 1, duration: 400, useNativeDriver: true }),
         Animated.timing(glow, { toValue: 0.7, duration: 500, useNativeDriver: true }),
@@ -83,6 +173,9 @@ function AnimatedCairn({ size = 1 }: { size?: number }) {
           />
         );
       })}
+      {/* Flag appears on top of cairn after stones complete */}
+      <AnimatedFlag visible={showFlag} />
+      <Particles visible={showFlag} />
     </Animated.View>
   );
 }
@@ -230,6 +323,7 @@ export function AuthScreen() {
   const [privacyChecked, setPrivacyChecked] = useState(false);
   const [privacyExpanded, setPrivacyExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);  // STORY-00132: separate state
   const [apiError, setApiError] = useState('');
   const [nameError, setNameError] = useState('');
   const [emailError, setEmailError] = useState('');
@@ -237,11 +331,12 @@ export function AuthScreen() {
   const [confirmError, setConfirmError] = useState('');
   const [privacyError, setPrivacyError] = useState('');
   const googleFlowActive = useRef(false);
+  const submitAttempted = useRef(false);  // STORY-00133: only validate on blur after first submit
 
   // Google OAuth hook
   const [googleRequest, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-    redirectUri: makeRedirectUri({ scheme: 'cairn', path: 'auth' }),
+    redirectUri: makeRedirectUri(),
   });
 
   // Handle Google OAuth response
@@ -271,6 +366,38 @@ export function AuthScreen() {
 
   const splashFade = useRef(new Animated.Value(0)).current;
   const splashTranslate = useRef(new Animated.Value(8)).current;
+  // STORY-00135: wordmark + tagline sequential animations
+  const wordmarkOpacity = useRef(new Animated.Value(0)).current;
+  const wordmarkTranslate = useRef(new Animated.Value(-8)).current;
+  const tagline1Opacity = useRef(new Animated.Value(0)).current;
+  const tagline1Translate = useRef(new Animated.Value(-8)).current;
+  const tagline2Opacity = useRef(new Animated.Value(0)).current;
+  const tagline2Translate = useRef(new Animated.Value(-8)).current;
+  const [trailComplete, setTrailComplete] = useState(false);
+  void trailComplete;
+
+  const animateWordmark = () => {
+    // Wordmark fades in 200ms after stones complete
+    setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(wordmarkOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(wordmarkTranslate, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start(() => {
+        // Tagline line 1 — 80ms stagger
+        Animated.parallel([
+          Animated.timing(tagline1Opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+          Animated.timing(tagline1Translate, { toValue: 0, duration: 250, useNativeDriver: true }),
+        ]).start();
+        setTimeout(() => {
+          Animated.parallel([
+            Animated.timing(tagline2Opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+            Animated.timing(tagline2Translate, { toValue: 0, duration: 250, useNativeDriver: true }),
+          ]).start();
+        }, 80);
+      });
+    }, 200);
+  };
+
   useEffect(() => {
     if (view === 'splash') {
       Animated.parallel([
@@ -287,6 +414,7 @@ export function AuthScreen() {
 
   const handleViewChange = (v: AuthView) => {
     resetErrors();
+    submitAttempted.current = false;
     setView(v);
   };
 
@@ -304,6 +432,7 @@ export function AuthScreen() {
 
   const handleAuth = async () => {
     const isRegister = view === 'register';
+    submitAttempted.current = true;  // STORY-00133: enable blur validation after first submit
     let valid = true;
 
     if (isRegister && !name.trim()) { setNameError('Name is required'); valid = false; }
@@ -344,8 +473,10 @@ export function AuthScreen() {
 
   const handleGoogleAuth = async () => {
     googleFlowActive.current = true;
+    setGoogleLoading(true);  // STORY-00132: immediate feedback
     resetErrors();
     await promptGoogleAsync();
+    setGoogleLoading(false);
     googleFlowActive.current = false;
   };
 
@@ -360,7 +491,7 @@ export function AuthScreen() {
           </View>
         )}
         <Animated.View style={[styles.splashInner, { opacity: splashFade, transform: [{ translateY: splashTranslate }] }]}>
-          {/* Hero area — at least 40% of screen */}
+          {/* Hero area */}
           <View style={styles.logoArea}>
             <View style={styles.logoGlowWrap} pointerEvents="none">
               <LinearGradient
@@ -370,14 +501,28 @@ export function AuthScreen() {
                 end={{ x: 1, y: 1 }}
               />
             </View>
-            <AnimatedCairn />
-            <Text style={styles.appName}>Cairn</Text>
+            {/* Trail path draws first, then cairn stacks up */}
+            <View style={{ position: 'relative', alignItems: 'center' }}>
+              <TrailPath onComplete={() => setTrailComplete(true)} />
+              <AnimatedCairn onComplete={animateWordmark} />
+            </View>
+            {/* Wordmark fades in after cairn completes */}
+            <Animated.Text style={[styles.appName, {
+              opacity: wordmarkOpacity,
+              transform: [{ translateY: wordmarkTranslate }],
+            }]}>Cairn</Animated.Text>
             <View style={styles.taglineWrap}>
-              <Text style={styles.tagline}>Leave a mark.</Text>
-              <Text style={styles.tagline}>Guide the next.</Text>
+              <Animated.Text style={[styles.tagline, {
+                opacity: tagline1Opacity,
+                transform: [{ translateY: tagline1Translate }],
+              }]}>Leave a mark.</Animated.Text>
+              <Animated.Text style={[styles.tagline, {
+                opacity: tagline2Opacity,
+                transform: [{ translateY: tagline2Translate }],
+              }]}>Guide the next.</Animated.Text>
             </View>
           </View>
-          {/* CTA buttons — Sign In PRIMARY (returning users are the majority) */}
+          {/* CTA buttons */}
           <View style={styles.splashActions}>
             <PressBtn style={styles.primaryBtn} onPress={() => handleViewChange('login')}>
               <View style={styles.btnContent}>
@@ -460,7 +605,7 @@ export function AuthScreen() {
             value={email}
             onChangeText={(v) => { setEmail(v); if (emailError) setEmailError(''); }}
             error={emailError}
-            onBlur={() => { if (!googleFlowActive.current) setEmailError(validateEmail(email)); }}
+            onBlur={() => { if (!googleFlowActive.current && submitAttempted.current) setEmailError(validateEmail(email)); }}
             keyboardType="email-address"
             autoCapitalize="none"
             autoFocus={!isRegister}
@@ -472,7 +617,7 @@ export function AuthScreen() {
             onChangeText={(v) => { setPassword(v); if (passwordError) setPasswordError(''); }}
             placeholder={isRegister ? 'Min. 8 characters' : '••••••••'}
             error={passwordError}
-            onBlur={() => { if (!googleFlowActive.current) setPasswordError(validatePassword(password)); }}
+            onBlur={() => { if (!googleFlowActive.current && submitAttempted.current) setPasswordError(validatePassword(password)); }}
           />
           {isRegister && !passwordError && (
             <Text style={[formStyles.fieldError, { color: Colors.textSecondary, fontWeight: '400' }]}>Minimum 8 characters</Text>
@@ -560,12 +705,13 @@ export function AuthScreen() {
           <Text style={formStyles.socialHint}>Requires iOS device</Text>
 
           {/* Google — Sprint 36 real OAuth */}
-          <PressBtn style={formStyles.googleBtn} onPress={handleGoogleAuth} scale={0.98}>
+          <PressBtn style={formStyles.googleBtn} onPress={handleGoogleAuth} scale={0.98} disabled={googleLoading || loading}>
             <View style={styles.btnContent}>
-              <View style={formStyles.googleG}>
-                <Text style={formStyles.googleGText}>G</Text>
-              </View>
-              <Text style={formStyles.googleBtnText}>Continue with Google</Text>
+              {googleLoading
+                ? <ActivityIndicator size="small" color={Colors.primary} />
+                : <View style={formStyles.googleG}><Text style={formStyles.googleGText}>G</Text></View>
+              }
+              <Text style={formStyles.googleBtnText}>{googleLoading ? 'Connecting…' : 'Continue with Google'}</Text>
             </View>
           </PressBtn>
 

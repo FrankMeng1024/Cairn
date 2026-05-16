@@ -34,3 +34,19 @@ User directive (2026-05-16): Build real backend with database. Each user's data 
 
 **Status**: Approved — Sprint 35 begins execution
 **Stories**: STORY-00117 (UI polish), STORY-00118 (backend), STORY-00119 (frontend wire), STORY-00120 (Google OAuth)
+
+---
+
+## CR-005: Auth UX Unification + User Data Isolation + Splash Uplift (Sprint 39)
+
+Four issues found post-Sprint 38:
+
+1. **Auth flow standardisation**: Social login buttons (Google/Apple) must appear identically on both Sign In and Create Account — no special-casing. Google button shows immediate inline loading spinner on tap, then opens OAuth popup. Industry standard (Strava/AllTrails/Komoot pattern).
+
+2. **Form UX polish**: Email/password focus states should NOT trigger validation on blur of empty fields. Validation fires only after first submit attempt. Error messages inline under field, compact and non-intrusive.
+
+3. **User data isolation**: Sessions currently loaded from shared localStorage (all users see same data). Must wire `fetchSessions()` from backend API into `useSessionStore.hydrate()` — sessions fetched per JWT token = per user. On logout, clear local session cache.
+
+4. **Splash animation uplift**: Current cairn-stone-stack animation lacks "hiking trail" soul. Needs: trail path drawing (SVG stroke animation), flag/banner plant at top of cairn with bounce, subtle particle dust on flag impact. Reference: premium outdoor app onboarding (summit flag moment).
+
+**Status**: Approved — Sprint 39 execution target

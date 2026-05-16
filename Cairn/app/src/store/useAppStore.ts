@@ -5,6 +5,8 @@
 import { create } from 'zustand';
 import { storage } from './storage';
 import { getMe } from '../services/authService';
+import { fetchSessions } from '../services/sessionService';
+import { useSessionStore, type ActivityMode as SessionActivityMode, type TrackPoint } from './useSessionStore';
 
 export type UIMode = 'beginner' | 'expert';
 export type ActivityMode = 'hiking' | 'running';
@@ -44,6 +46,7 @@ interface AppState {
   hydrated: boolean;
   sessionExpired: boolean;
   setSessionExpired: (v: boolean) => void;
+  logout: () => void;
 
   // Hydrate persisted settings on app start
   hydrate: () => Promise<void>;
@@ -78,6 +81,11 @@ export const useAppStore = create<AppState>((set) => ({
   sessionExpired: false,
   setSessionExpired: (v) => set({ sessionExpired: v }),
 
+  logout: () => {
+    set({ isLoggedIn: false, user: null, sessionExpired: false });
+    useSessionStore.getState().clearSessions();
+  },
+
   hydrate: async () => {
     const saved = await storage.getItem(STORAGE_KEY_UI_MODE);
     if (saved === 'beginner' || saved === 'expert') {
@@ -88,6 +96,25 @@ export const useAppStore = create<AppState>((set) => ({
       const user = await getMe();
       if (user) {
         set({ isLoggedIn: true, user });
+        // STORY-00134: load this user's sessions from backend (per-user, not shared)
+        try {
+          const remote = await fetchSessions();
+          const sessions = remote.map((r) => ({
+            id: String(r.id),
+            activityMode: r.type as SessionActivityMode,
+            regionCode: 'nz',
+            startedAt: new Date(r.start_time).getTime(),
+            endedAt: new Date(r.end_time).getTime(),
+            durationS: r.duration_s,
+            distanceM: r.distance_m,
+            elevationGainM: 0,
+            trackPoints: [] as TrackPoint[],
+            markerIds: [] as string[],
+          }));
+          useSessionStore.setState({ sessions });
+        } catch {
+          // Session fetch failed — show empty state, don't crash
+        }
       }
     } catch {
       // Network unavailable — stay logged out, user will sign in manually

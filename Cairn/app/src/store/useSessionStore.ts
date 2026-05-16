@@ -38,6 +38,7 @@ interface SessionState {
   sessions: TrackingSession[];
   addSession: (session: TrackingSession) => void;
   deleteSession: (id: string) => void;
+  clearSessions: () => void;       // called on logout to remove prior user's data
   getSessions: () => TrackingSession[];
   getSessionsByRegion: (regionCode: string) => TrackingSession[];
   hydrate: () => Promise<void>;
@@ -63,6 +64,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       return { sessions: next };
     });
+  },
+
+  clearSessions: () => {
+    storage.removeItem(STORAGE_KEY);
+    set({ sessions: [] });
   },
 
   deleteSession: (id) => {

@@ -152,7 +152,7 @@ function SectionHeader({ title }: { title: string }) {
 // ── Main ─────────────────────────────────────────────────────────────────────
 export function SettingsScreen() {
   const nav = useNavigation<Nav>();
-  const { uiMode, setUIMode, setLoggedIn, setUser, user, isLoggedIn } = useAppStore();
+  const { uiMode, setUIMode, user, isLoggedIn, logout: appLogout } = useAppStore();
 
   const [pendingMode, setPendingMode] = useState<UIMode>(uiMode);
   const [shareAfterAdd, setShareAfterAdd] = useState(true);
@@ -324,8 +324,7 @@ export function SettingsScreen() {
               {
                 text: 'Sign Out', style: 'destructive', onPress: async () => {
                   await logout();
-                  setLoggedIn(false);
-                  setUser(null);
+                  appLogout();
                   nav.replace('Auth');
                 },
               },
