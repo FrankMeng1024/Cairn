@@ -2,10 +2,10 @@
   "expo": {
     "name": "Cairn",
     "slug": "cairn",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -14,6 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
+      "bundleIdentifier": "com.cairn.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Cairn needs your location to track your route and show nearby markers.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Cairn needs background location access to track your route while running.",
@@ -24,6 +25,7 @@
       }
     },
     "android": {
+      "package": "com.cairn.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#faf7f2"
@@ -44,7 +46,14 @@
         }
       ],
       "expo-secure-store",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsDownloadToken": "MAPBOX_TOKEN_PLACEHOLDER"
+        }
+      ],
+      "react-native-reanimated"
     ]
   }
 }

@@ -128,3 +128,211 @@ export function getRelativeTime(ts: number): string {
   if (diffD === 1) return 'yesterday';
   return `${diffD} days ago`;
 }
+
+// ── Kalman Filter for GPS Smoothing ─────────────────────────────────────────
+
+/**
+ * 1D Kalman filter state.
+ * Used independently for latitude, longitude, and altitude.
+ */
+export interface KalmanState {
+  x: number;       // estimated value
+  p: number;       // estimation error covariance
+  q: number;       // process noise (how much we expect the value to change)
+  r: number;       // measurement noise (GPS accuracy)
+}
+
+/**
+ * Initialize a 1D Kalman filter with the first measurement.
+ * @param initialValue  First GPS reading
+ * @param accuracy      GPS reported accuracy in meters (feeds into R)
+ * @param processNoise  How volatile we expect movement to be (default 0.00001 for lat/lng)
+ */
+export function kalmanInit(
+  initialValue: number,
+  accuracy: number,
+  processNoise = 0.00001,
+): KalmanState {
+  // Convert accuracy (meters) to approximate degrees for lat/lng
+  // ~111,000 meters per degree of latitude
+  const r = accuracy > 0 ? (accuracy / 111000) ** 2 : 0.0001;
+  return {
+    x: initialValue,
+    p: r,  // initial uncertainty = measurement uncertainty
+    q: processNoise,
+    r,
+  };
+}
+
+/**
+ * Update Kalman filter with a new measurement.
+ * Returns the smoothed estimate.
+ */
+export function kalmanUpdate(state: KalmanState, measurement: number, accuracy?: number): number {
+  // Prediction step
+  const pPredicted = state.p + state.q;
+
+  // Update measurement noise if new accuracy provided
+  if (accuracy != null && accuracy > 0) {
+    state.r = (accuracy / 111000) ** 2;
+  }
+
+  // Kalman gain
+  const k = pPredicted / (pPredicted + state.r);
+
+  // Update estimate
+  state.x = state.x + k * (measurement - state.x);
+  state.p = (1 - k) * pPredicted;
+
+  return state.x;
+}
+
+// ── GPS Point Validation ────────────────────────────────────────────────────
+
+export interface GPSPoint {
+  lat: number;
+  lng: number;
+  alt?: number | null;
+  accuracy?: number;
+  speed?: number | null;
+  heading?: number | null;
+  timestamp: number;
+}
+
+/**
+ * Check if a new GPS point is consistent with the previous trajectory.
+ * Rejects points that imply impossible movement (teleportation/drift).
+ *
+ * @param prev     Previous accepted point
+ * @param current  New candidate point
+ * @returns true if the point should be accepted
+ */
+export function isConsistentPoint(prev: GPSPoint, current: GPSPoint): boolean {
+  const dt = (current.timestamp - prev.timestamp) / 1000; // seconds
+  if (dt <= 0) return false;
+
+  const distance = haversineM(
+    { lat: prev.lat, lng: prev.lng },
+    { lat: current.lat, lng: current.lng },
+  );
+
+  const impliedSpeed = distance / dt; // m/s
+
+  // Reject if implied speed > 50 m/s (180 km/h — impossible on foot/trail)
+  if (impliedSpeed > 50) return false;
+
+  // Reject if direction change > 150° at very low speed (drift detection)
+  // Only apply at speeds below 1.0 m/s — at walking/running speed, sharp turns are valid
+  if (prev.heading != null && current.heading != null && impliedSpeed < 1.0) {
+    const angleDiff = Math.abs(current.heading - prev.heading);
+    const normalized = angleDiff > 180 ? 360 - angleDiff : angleDiff;
+    if (normalized > 150) return false;
+  }
+
+  return true;
+}
+
+// ── Dynamic Sampling Rate ───────────────────────────────────────────────────
+
+export type MovementState = 'static' | 'walking' | 'running';
+
+/**
+ * Determine movement state from speed.
+ * @param speedMs  Speed in m/s (from GPS or calculated)
+ * @returns Movement state classification
+ */
+export function classifyMovement(speedMs: number): MovementState {
+  if (speedMs < 0.5) return 'static';
+  if (speedMs <= 2.5) return 'walking';
+  return 'running';
+}
+
+/**
+ * Get the appropriate GPS sampling interval in milliseconds.
+ * @param movement    Current movement state
+ * @param batteryLow  Whether battery is below 20%
+ * @returns Sampling interval in ms
+ */
+export function getSamplingInterval(movement: MovementState, batteryLow = false): number {
+  if (batteryLow) return 2000; // 0.5Hz forced
+
+  switch (movement) {
+    case 'static':  return 10000; // 0.1Hz
+    case 'walking': return 1000;  // 1Hz
+    case 'running': return 500;   // 2Hz
+  }
+}
+
+// ── GPS Track Smoother (combines Kalman + validation) ───────────────────────
+
+export interface SmoothedTrackState {
+  latFilter: KalmanState | null;
+  lngFilter: KalmanState | null;
+  altFilter: KalmanState | null;
+  lastAccepted: GPSPoint | null;
+  movement: MovementState;
+  staticCount: number; // consecutive static readings
+}
+
+export function createTrackSmoother(): SmoothedTrackState {
+  return {
+    latFilter: null,
+    lngFilter: null,
+    altFilter: null,
+    lastAccepted: null,
+    movement: 'static',
+    staticCount: 0,
+  };
+}
+
+/**
+ * Process a raw GPS point through Kalman filter + validation.
+ * Returns smoothed coordinate or null if point rejected.
+ */
+export function smoothGPSPoint(
+  state: SmoothedTrackState,
+  raw: GPSPoint,
+): Coordinate | null {
+  const accuracy = raw.accuracy ?? 10;
+
+  // First point: initialize filters
+  if (state.latFilter === null) {
+    state.latFilter = kalmanInit(raw.lat, accuracy);
+    state.lngFilter = kalmanInit(raw.lng, accuracy);
+    if (raw.alt != null) {
+      state.altFilter = kalmanInit(raw.alt, accuracy, 0.1); // altitude more volatile
+    }
+    state.lastAccepted = raw;
+    state.movement = classifyMovement(raw.speed ?? 0);
+    return { lat: raw.lat, lng: raw.lng, alt: raw.alt };
+  }
+
+  // Validate consistency
+  if (state.lastAccepted && !isConsistentPoint(state.lastAccepted, raw)) {
+    return null; // reject this point
+  }
+
+  // Update movement state
+  const speed = raw.speed ?? 0;
+  const newMovement = classifyMovement(speed);
+  if (newMovement === 'static') {
+    state.staticCount++;
+    // Only transition to static after 10 consecutive readings
+    if (state.staticCount >= 10) state.movement = 'static';
+  } else {
+    state.staticCount = 0;
+    state.movement = newMovement;
+  }
+
+  // Apply Kalman filter
+  const smoothedLat = kalmanUpdate(state.latFilter, raw.lat, accuracy);
+  const smoothedLng = kalmanUpdate(state.lngFilter!, raw.lng, accuracy);
+  let smoothedAlt: number | null = null;
+  if (raw.alt != null && state.altFilter) {
+    smoothedAlt = kalmanUpdate(state.altFilter, raw.alt, accuracy);
+  }
+
+  state.lastAccepted = raw;
+
+  return { lat: smoothedLat, lng: smoothedLng, alt: smoothedAlt };
+}

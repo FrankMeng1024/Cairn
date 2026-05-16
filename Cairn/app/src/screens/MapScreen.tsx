@@ -1,11 +1,10 @@
 /**
- * MapScreen — Sprint 31 premium uplift
+ * MapScreen — Sprint 42: Real Mapbox + Glass Panel
  *
- * - STORY-00095: Map placeholder → topo rings + S-curve trail + GPS pill + Download CTA
- * - STORY-00096: CreateMarkerSheet → 4-card grid, LinearGradient badges, CircleCheck selection, 3-tier char counter
- * - STORY-00097: MarkerDetailSheet → LinearGradient type badge, outlined Helpful pill
- * - STORY-00098: Tracking bar → Colors.surface + Shadow.elevated + 3px green left-border, red FAB badge
- * - STORY-00099: GPS/mode chips → rgba(255,255,255,0.95), LinearGradient in activity modal
+ * Phase 1: Real Mapbox rendering replaces SVG placeholder.
+ * - STORY-00137: Real Mapbox MapView with NZ outdoor tiles
+ * - STORY-00138: Markers rendered at real GPS coordinates
+ * - Visual quality: GlassPanel bottom panel, elevation shadows
  */
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -22,7 +21,26 @@ import { useAppStore } from '../store/useAppStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
+import { GlassPanel, Elevation } from '../components/GlassPanel';
 import { MOCK_MARKERS, MARKER_META, MarkerType } from '../data/mockData';
+import { getCurrentRegion } from '../config/regions';
+
+// Mapbox — conditional import (won't work in Expo Go, only dev client)
+let MapboxGL: any = null;
+let MapView: any = null;
+let Camera: any = null;
+let PointAnnotation: any = null;
+let UserLocation: any = null;
+try {
+  const Mapbox = require('@rnmapbox/maps');
+  MapboxGL = Mapbox.default || Mapbox;
+  MapView = Mapbox.MapView;
+  Camera = Mapbox.Camera;
+  PointAnnotation = Mapbox.PointAnnotation;
+  UserLocation = Mapbox.UserLocation;
+} catch {
+  // Mapbox not available (Expo Go) — will render fallback
+}
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -40,75 +58,90 @@ const FLAG_TYPES: {
   { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg },
 ];
 
-// ── Map Placeholder (STORY-00095 + STORY-00105) ───────────────────────────────
-function MapPlaceholder({
+// ── Map Component (Real Mapbox or Fallback) ─────────────────────────────────
+function RealMap({
   markers, onMarkerPress,
 }: {
   markers: typeof MOCK_MARKERS;
   onMarkerPress: (m: typeof MOCK_MARKERS[0]) => void;
 }) {
-  const pulseOpacity = useRef(new Animated.Value(0.3)).current;
-  const dotScale = useRef(new Animated.Value(1)).current;
+  const region = getCurrentRegion();
 
-  useEffect(() => {
-    const pulseLoop = Animated.loop(
-      Animated.timing(pulseOpacity, { toValue: 0, duration: 2000, useNativeDriver: true })
+  // If Mapbox not available (Expo Go), show upgrade prompt
+  if (!MapView) {
+    return (
+      <View style={styles.mapContainer}>
+        <View style={[styles.mapFallback]}>
+          <Icon name="Map" size={48} color={Colors.primaryMuted} />
+          <Text style={styles.mapFallbackTitle}>Real Map Available</Text>
+          <Text style={styles.mapFallbackText}>
+            Build with EAS to enable Mapbox{'\n'}outdoor maps with offline support
+          </Text>
+        </View>
+        {/* Still show markers in approximate positions for dev/testing */}
+        {markers.map((m) => {
+          const meta = MARKER_META[m.type];
+          const flagType = FLAG_TYPES.find(f => f.id === m.type);
+          return (
+            <TouchableOpacity
+              key={m.id}
+              style={[styles.mapMarker, {
+                left: m.x * W - 16,
+                top: m.y * (H * 0.65) - 16,
+                borderColor: meta.color,
+                backgroundColor: meta.bg,
+              }]}
+              onPress={() => onMarkerPress(m)}
+            >
+              <Icon name={(flagType?.icon ?? meta.iconName) as IconName} size={14} color={meta.color} strokeWidth={2.5} />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     );
-    const scaleLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(dotScale, { toValue: 1.05, duration: 1000, useNativeDriver: true }),
-        Animated.timing(dotScale, { toValue: 1, duration: 1000, useNativeDriver: true }),
-      ])
-    );
-    pulseLoop.start();
-    scaleLoop.start();
-    return () => { pulseLoop.stop(); scaleLoop.stop(); };
-  }, []);
+  }
 
+  // Real Mapbox rendering
   return (
     <View style={styles.mapContainer}>
-      {/* Topo elevation rings — concentric, varying opacity (matches HikingScreen) */}
-      <View style={[styles.topoRing, { width: 320, height: 320, borderRadius: 160, top: 100, left: W / 2 - 160, borderColor: Colors.primaryDim }]} />
-      <View style={[styles.topoRing, { width: 240, height: 240, borderRadius: 120, top: 140, left: W / 2 - 120, borderColor: Colors.primaryDeep }]} />
-      <View style={[styles.topoRing, { width: 165, height: 165, borderRadius: 83, top: 178, left: W / 2 - 83, borderColor: Colors.primaryMuted }]} />
-      <View style={[styles.topoRing, { width: 96, height: 96, borderRadius: 48, top: 212, left: W / 2 - 48, borderColor: Colors.primaryMuted, backgroundColor: 'rgba(93,124,70,0.06)' }]} />
-      {/* Trail S-curve — three segments */}
-      <View style={styles.trailLine} />
-      <View style={styles.trailLine2} />
-      <View style={styles.trailLine3} />
-      {/* Location pin at trail midpoint — animated GPS pulse (STORY-00105) */}
-      <View style={styles.locationDot}>
-        <Animated.View style={[styles.locationDotInner, { transform: [{ scale: dotScale }] }]} />
-        <Animated.View style={[styles.locationPulse, { opacity: pulseOpacity }]} />
-      </View>
-      {/* Trail Map label + CTA */}
-      <View style={styles.mapLabelWrap}>
-        <Text style={styles.mapLabel}>Trail Map</Text>
-        <Text style={styles.mapSubLabel}>Download an offline pack to get started</Text>
-        <TouchableOpacity style={styles.downloadBtn} activeOpacity={0.8}>
-          <Icon name="Download" size={12} color={Colors.primary} strokeWidth={2.5} />
-          <Text style={styles.downloadBtnText}>Download Map</Text>
-        </TouchableOpacity>
-      </View>
-      {/* Mock markers */}
-      {markers.map((m) => {
-        const meta = MARKER_META[m.type];
-        const flagType = FLAG_TYPES.find(f => f.id === m.type);
-        return (
-          <TouchableOpacity
-            key={m.id}
-            style={[styles.mapMarker, {
-              left: m.x * W - 16,
-              top: m.y * (H * 0.75) - 16,
-              borderColor: meta.color,
-              backgroundColor: meta.bg,
-            }]}
-            onPress={() => onMarkerPress(m)}
-          >
-            <Icon name={(flagType?.icon ?? meta.iconName) as IconName} size={14} color={meta.color} strokeWidth={2.5} />
-          </TouchableOpacity>
-        );
-      })}
+      <MapView
+        style={StyleSheet.absoluteFillObject}
+        styleURL="mapbox://styles/mapbox/outdoors-v12"
+        logoEnabled={false}
+        attributionEnabled={false}
+        compassEnabled={true}
+        scaleBarEnabled={false}
+      >
+        <Camera
+          defaultSettings={{
+            centerCoordinate: [region.centerLng, region.centerLat],
+            zoomLevel: region.defaultZoom,
+          }}
+          minZoomLevel={4}
+          maxZoomLevel={18}
+        />
+        <UserLocation visible={true} renderMode="native" />
+        {markers.map((m) => {
+          // For real Mapbox, markers need real lat/lng
+          // Phase 1: use mock positions mapped to region bounds for demo
+          const lat = region.boundingBox.minLat + m.y * (region.boundingBox.maxLat - region.boundingBox.minLat);
+          const lng = region.boundingBox.minLng + m.x * (region.boundingBox.maxLng - region.boundingBox.minLng);
+          const meta = MARKER_META[m.type];
+          const flagType = FLAG_TYPES.find(f => f.id === m.type);
+          return (
+            <PointAnnotation
+              key={m.id}
+              id={m.id}
+              coordinate={[lng, lat]}
+              onSelected={() => onMarkerPress(m)}
+            >
+              <View style={[styles.markerPin, { borderColor: meta.color, backgroundColor: meta.bg }]}>
+                <Icon name={(flagType?.icon ?? meta.iconName) as IconName} size={14} color={meta.color} strokeWidth={2.5} />
+              </View>
+            </PointAnnotation>
+          );
+        })}
+      </MapView>
     </View>
   );
 }
@@ -348,7 +381,7 @@ export function MapScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* Map — full bleed topo placeholder */}
-      <MapPlaceholder markers={markers} onMarkerPress={(m) => setSelectedMarker(m)} />
+      <RealMap markers={markers} onMarkerPress={(m) => setSelectedMarker(m)} />
 
       {/* Top bar — STORY-00099: rgba(255,255,255,0.95) overlay chips */}
       <SafeAreaView style={styles.topBar} edges={['top']} pointerEvents="box-none">
@@ -517,10 +550,24 @@ export function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  // ── Map Placeholder (STORY-00095) ───────────────────────────────────────────
+  // ── Map (Sprint 42 — Real Mapbox + Fallback) ────────────────────────────────
   mapContainer: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: Colors.primaryBg, overflow: 'hidden',
+  },
+  mapFallback: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md,
+  },
+  mapFallbackTitle: {
+    fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary,
+  },
+  mapFallbackText: {
+    fontSize: FontSize.body, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22,
+  },
+  markerPin: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, ...Elevation[2],
   },
   topoRing: {
     position: 'absolute',
