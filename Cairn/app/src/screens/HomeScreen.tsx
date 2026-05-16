@@ -301,10 +301,15 @@ const cardStyles = StyleSheet.create({
   card: {
     borderRadius: Radius.cardLg,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(255,255,255,0.3)',
     overflow: 'hidden',
     flexDirection: 'row',
-    ...Shadow.card,
+    // Upgraded shadow: deeper, more layered (elevation-3 feel)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 6,
   },
   leftPanel: {
     position: 'absolute',
@@ -328,11 +333,12 @@ const cardStyles = StyleSheet.create({
   textCol: { flex: 1, gap: 5 },
   title: { fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
   subtitle: { fontSize: FontSize.small, color: Colors.textSecondary, lineHeight: 17 },
-  accentLine: { width: 24, height: 3, borderRadius: 2, marginTop: 4 },
+  accentLine: { width: 28, height: 3, borderRadius: 2, marginTop: 4, opacity: 0.8 },
   chevron: {
-    width: 32, height: 32, borderRadius: Radius.card,
+    width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
+    backgroundColor: 'rgba(255,255,255,0.6)',
   },
 });
 
