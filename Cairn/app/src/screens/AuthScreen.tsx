@@ -30,7 +30,7 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore } from '../store/useAppStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
-import { login, register, loginWithGoogle } from '../services/authService';
+import { login, register, loginWithGoogle, verifyCode, resendCode } from '../services/authService';
 import * as Google from 'expo-auth-session/providers/google';
 import { makeRedirectUri } from 'expo-auth-session';
 
@@ -308,13 +308,18 @@ Cairn complies with the New Zealand Privacy Act 2020 and, where applicable, the 
 privacy@cairnapp.nz`;
 
 // ── Auth Screen ────────────────────────────────────────────────────────────
-type AuthView = 'splash' | 'login' | 'register' | 'welcome';
+type AuthView = 'splash' | 'login' | 'register' | 'verify' | 'welcome';
 
 export function AuthScreen() {
   const nav = useNavigation<Nav>();
   const { setLoggedIn, setUIMode, setUser, sessionExpired, setSessionExpired } = useAppStore();
   const [view, setView] = useState<AuthView>('splash');
   const [welcomeName, setWelcomeName] = useState('');
+  const [verifyEmail, setVerifyEmail] = useState('');   // email to verify after register
+  const [verifyCode_, setVerifyCode_] = useState('');   // 6-digit code input
+  const [verifyError, setVerifyError] = useState('');
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0); // seconds remaining
   const [expiredBanner, setExpiredBanner] = useState(sessionExpired);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -342,11 +347,8 @@ export function AuthScreen() {
   // Handle Google OAuth response
   useEffect(() => {
     if (googleResponse?.type !== 'success') return;
-    console.log('[Google OAuth] response params:', JSON.stringify(googleResponse.params));
-    console.log('[Google OAuth] authentication:', JSON.stringify(googleResponse.authentication));
     const idToken = googleResponse.params?.id_token ?? (googleResponse.authentication as any)?.idToken;
     if (!idToken) {
-      console.error('[Google OAuth] no id_token found in response');
       setApiError('Google sign-in failed. Please try again.');
       setGoogleLoading(false);
       return;
@@ -458,7 +460,22 @@ export function AuthScreen() {
         : await login(email.trim().toLowerCase(), password);
 
       if (result.error) {
-        setApiError(result.error);
+        // 409 = email already registered — guide user to sign in instead
+        if (result.error.includes('already exists') || result.error.includes('already registered')) {
+          setApiError('An account with this email already exists. Please sign in instead, or use "Continue with Google" if you signed up with Google.');
+        } else {
+          setApiError(result.error);
+        }
+        return;
+      }
+
+      // 2-step registration: backend sent a code to the user's email
+      if (result.step === 'verify') {
+        setVerifyEmail(result.email || email.trim().toLowerCase());
+        setVerifyCode_('');
+        setVerifyError('');
+        setResendCooldown(60);
+        setView('verify');
         return;
       }
 
@@ -486,6 +503,37 @@ export function AuthScreen() {
     await promptGoogleAsync();
     setGoogleLoading(false);
     googleFlowActive.current = false;
+  };
+
+  // Resend cooldown countdown
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(s => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
+  const handleVerify = async () => {
+    const trimmed = verifyCode_.replace(/\s/g, '');
+    if (trimmed.length !== 6) { setVerifyError('Please enter the 6-digit code.'); return; }
+    setVerifyLoading(true);
+    setVerifyError('');
+    const result = await verifyCode(verifyEmail, trimmed);
+    setVerifyLoading(false);
+    if (result.error) { setVerifyError(result.error); return; }
+    setLoggedIn(true);
+    if (result.user) setUser(result.user);
+    setUIMode('beginner');
+    setWelcomeName(result.user?.name || 'Explorer');
+    setView('welcome');
+    setTimeout(() => nav.replace('Home'), 1800);
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0) return;
+    setVerifyError('');
+    const result = await resendCode(verifyEmail);
+    if (result.error) { setVerifyError(result.error); return; }
+    setResendCooldown(60);
   };
 
   // ── Splash ─────────────────────────────────────────────────────────────
@@ -546,6 +594,85 @@ export function AuthScreen() {
             </PressBtn>
           </View>
         </Animated.View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Email Verification ──────────────────────────────────────────────────
+  if (view === 'verify') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={formStyles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+            <TouchableOpacity style={formStyles.backBtn} onPress={() => handleViewChange('register')}>
+              <Icon name="ChevronLeft" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
+              <Text style={formStyles.backText}>Back</Text>
+            </TouchableOpacity>
+
+            <View style={formStyles.titleRow}>
+              <AnimatedCairn size={0.5} />
+              <Text style={formStyles.title}>Check your email</Text>
+            </View>
+            <Text style={formStyles.sub}>
+              {'We sent a 6-digit code to '}
+              <Text style={{ fontWeight: '600', color: Colors.textPrimary }}>{verifyEmail}</Text>
+              {'. Enter it below to verify your account.'}
+            </Text>
+
+            {!!verifyError && (
+              <View style={formStyles.apiBanner}>
+                <Icon name="AlertCircle" size={14} color={Colors.danger} strokeWidth={2} />
+                <Text style={formStyles.apiError}>{verifyError}</Text>
+              </View>
+            )}
+
+            <Text style={formStyles.label}>Verification Code</Text>
+            <View style={[formStyles.inputWrap, verifyError ? formStyles.inputError : null]}>
+              <View style={formStyles.inputIcon}>
+                <Icon name="Shield" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={1.8} />
+              </View>
+              <TextInput
+                style={formStyles.inputInner}
+                placeholder="123456"
+                placeholderTextColor={Colors.textMuted}
+                value={verifyCode_}
+                onChangeText={(v) => { setVerifyCode_(v.replace(/[^0-9]/g, '').slice(0, 6)); setVerifyError(''); }}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+                textContentType="oneTimeCode"
+              />
+            </View>
+
+            <PressBtn
+              style={[styles.primaryBtn, formStyles.submitBtn]}
+              onPress={handleVerify}
+              disabled={verifyLoading}
+            >
+              <View style={styles.btnContent}>
+                {verifyLoading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Icon name="CheckCircle" size={IconSize.sm} color="#fff" strokeWidth={2} />
+                }
+                <Text style={styles.primaryBtnText}>Verify Email</Text>
+              </View>
+            </PressBtn>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.md, alignItems: 'center', gap: 4 }}>
+              <Text style={{ fontSize: FontSize.small, color: Colors.textSecondary }}>Didn't receive it?</Text>
+              <TouchableOpacity onPress={handleResend} disabled={resendCooldown > 0} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <Text style={[
+                  { fontSize: FontSize.small, fontWeight: '600' },
+                  resendCooldown > 0 ? { color: Colors.textSecondary } : { color: Colors.primary },
+                ]}>
+                  {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -691,37 +818,42 @@ export function AuthScreen() {
             </View>
           </PressBtn>
 
-          <View style={formStyles.divider}>
-            <View style={formStyles.divLine} />
-            <Text style={formStyles.divText}>or continue with</Text>
-            <View style={formStyles.divLine} />
-          </View>
-
-          {/* Apple — disabled on web, requires physical iOS device */}
-          <PressBtn
-            style={formStyles.appleBtn}
-            onPress={() => Alert.alert('Apple Sign In', 'Apple Sign In is available on iOS devices. Download the Cairn app from the App Store to use this feature.')}
-            scale={0.98}
-          >
-            <View style={styles.btnContent}>
-              <Icon name="Apple" size={IconSize.sm} color="#fff" strokeWidth={1.8} />
-              <View>
-                <Text style={formStyles.appleBtnText}>Continue with Apple</Text>
+          {/* Social login — Sign In only, not on Create Account */}
+          {!isRegister && (
+            <>
+              <View style={formStyles.divider}>
+                <View style={formStyles.divLine} />
+                <Text style={formStyles.divText}>or continue with</Text>
+                <View style={formStyles.divLine} />
               </View>
-            </View>
-          </PressBtn>
-          <Text style={formStyles.socialHint}>Requires iOS device</Text>
 
-          {/* Google — Sprint 36 real OAuth */}
-          <PressBtn style={formStyles.googleBtn} onPress={handleGoogleAuth} scale={0.98} disabled={googleLoading || loading}>
-            <View style={styles.btnContent}>
-              {googleLoading
-                ? <ActivityIndicator size="small" color={Colors.primary} />
-                : <View style={formStyles.googleG}><Text style={formStyles.googleGText}>G</Text></View>
-              }
-              <Text style={formStyles.googleBtnText}>{googleLoading ? 'Connecting…' : 'Continue with Google'}</Text>
-            </View>
-          </PressBtn>
+              {/* Apple — disabled on web, requires physical iOS device */}
+              <PressBtn
+                style={formStyles.appleBtn}
+                onPress={() => Alert.alert('Apple Sign In', 'Apple Sign In is available on iOS devices. Download the Cairn app from the App Store to use this feature.')}
+                scale={0.98}
+              >
+                <View style={styles.btnContent}>
+                  <Icon name="Apple" size={IconSize.sm} color="#fff" strokeWidth={1.8} />
+                  <View>
+                    <Text style={formStyles.appleBtnText}>Continue with Apple</Text>
+                  </View>
+                </View>
+              </PressBtn>
+              <Text style={formStyles.socialHint}>Requires iOS device</Text>
+
+              {/* Google */}
+              <PressBtn style={formStyles.googleBtn} onPress={handleGoogleAuth} scale={0.98} disabled={googleLoading || loading}>
+                <View style={styles.btnContent}>
+                  {googleLoading
+                    ? <ActivityIndicator size="small" color={Colors.primary} />
+                    : <View style={formStyles.googleG}><Text style={formStyles.googleGText}>G</Text></View>
+                  }
+                  <Text style={formStyles.googleBtnText}>{googleLoading ? 'Connecting…' : 'Continue with Google'}</Text>
+                </View>
+              </PressBtn>
+            </>
+          )}
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -813,8 +945,8 @@ const formStyles = StyleSheet.create({
   inputFocused: { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },  // border + subtle bg (Material 3 standard)
   inputIcon: { marginRight: Spacing.xs },
   inputInner: {
-    flex: 1, paddingVertical: Spacing.md, fontSize: FontSize.body, color: Colors.textPrimary,
-    // backgroundColor transparent so placeholder remains visible
+    flex: 1, paddingVertical: Spacing.md, paddingLeft: Spacing.xs,
+    fontSize: FontSize.body, color: Colors.textPrimary,
     backgroundColor: 'transparent',
   },
   eyeBtn: { padding: Spacing.xs },

@@ -15,6 +15,9 @@ export interface AuthResult {
   user?: UserProfile;
   token?: string;
   error?: string;
+  // 2-step registration: backend sent a code, frontend shows verify screen
+  step?: 'verify';
+  email?: string;
 }
 
 async function post(path: string, body: object): Promise<Response> {
@@ -36,8 +39,33 @@ export async function register(
     if (!res.ok) {
       return { error: data?.error || data?.message || 'Registration failed.' };
     }
+    // Backend sends a verification code — frontend must show the verify screen
+    return { step: 'verify', email: data.email };
+  } catch {
+    return { error: 'Unable to connect. Please try again.' };
+  }
+}
+
+export async function verifyCode(email: string, code: string): Promise<AuthResult> {
+  try {
+    const res = await post('/api/auth/verify', { email, code });
+    const data = await res.json();
+    if (!res.ok) {
+      return { error: data?.error || 'Verification failed.' };
+    }
     await saveToken(data.token);
     return { user: data.user, token: data.token };
+  } catch {
+    return { error: 'Unable to connect. Please try again.' };
+  }
+}
+
+export async function resendCode(email: string): Promise<{ error?: string }> {
+  try {
+    const res = await post('/api/auth/resend', { email });
+    const data = await res.json();
+    if (!res.ok) return { error: data?.error || 'Could not resend code.' };
+    return {};
   } catch {
     return { error: 'Unable to connect. Please try again.' };
   }
