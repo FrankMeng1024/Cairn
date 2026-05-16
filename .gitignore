@@ -3,6 +3,9 @@ FrankProject/
 PodScribe/
 TankWarGame/
 
+# Claude Code settings (may contain API tokens)
+.claude/
+
 # Temp files
 *.log
 *.txt
