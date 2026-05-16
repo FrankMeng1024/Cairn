@@ -347,9 +347,11 @@ const cardStyles = StyleSheet.create({
 const recentStyles = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: Colors.surface, borderRadius: Radius.card,
+    backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: Radius.card,
     paddingHorizontal: Spacing.md, paddingVertical: 10,
-    borderWidth: 1, borderColor: Colors.border,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
   dot: {
     width: 28, height: 28, borderRadius: 8,
