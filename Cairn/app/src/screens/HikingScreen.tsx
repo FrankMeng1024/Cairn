@@ -672,8 +672,10 @@ const styles = StyleSheet.create({
   },
   gpsChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.md, paddingVertical: 7, ...Shadow.card,
+    backgroundColor: 'rgba(255,255,255,0.82)', borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md, paddingVertical: 7,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
   gpsChipOffline: {
     backgroundColor: Colors.dangerBg,
@@ -694,11 +696,12 @@ const styles = StyleSheet.create({
 
   trackingBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.88)',
     marginHorizontal: Spacing.base, marginTop: Spacing.sm,
     borderRadius: Radius.card, padding: Spacing.md,
-    gap: Spacing.sm, ...Shadow.elevated,
-    borderWidth: 1, borderColor: Colors.border,
+    gap: Spacing.sm,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 24, elevation: 6,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
     borderLeftWidth: 3, borderLeftColor: Colors.primary,
   },
   trackingStat: { alignItems: 'center', flex: 1 },
