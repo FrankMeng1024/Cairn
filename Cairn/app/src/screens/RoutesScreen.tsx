@@ -5,8 +5,8 @@
  * - Stat chips with colored left-border capsule style
  * - Empty state matches HomeScreen / MapHistory pattern
  */
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppStore } from '../store/useAppStore';
@@ -40,6 +40,7 @@ function formatRouteDate(isoStr: string): string {
 export function RoutesScreen() {
   const { uiMode } = useAppStore();
   const isBeginner = uiMode === 'beginner';
+  const [downloadSheet, setDownloadSheet] = useState<{ name: string } | null>(null);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -95,7 +96,7 @@ export function RoutesScreen() {
                 <TouchableOpacity
                   style={styles.downloadBtn}
                   activeOpacity={0.7}
-                  onPress={() => Alert.alert('Download Route', `"${item.name}" saved for offline use.`)}
+                  onPress={() => setDownloadSheet({ name: item.name })}
                 >
                   <Icon name="Download" size={12} color={Colors.primary} strokeWidth={2} />
                   <Text style={styles.downloadBtnText}>Download</Text>
@@ -120,6 +121,39 @@ export function RoutesScreen() {
           </View>
         }
       />
+
+      {/* Download premium overlay sheet (STORY-00101) */}
+      <Modal
+        visible={!!downloadSheet}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDownloadSheet(null)}
+      >
+        <TouchableOpacity style={dlStyles.scrim} activeOpacity={1} onPress={() => setDownloadSheet(null)} />
+        <View style={dlStyles.sheet}>
+          <View style={dlStyles.handle} />
+          <TouchableOpacity style={dlStyles.closeBtn} onPress={() => setDownloadSheet(null)}>
+            <Icon name="X" size={18} color={Colors.textSecondary} strokeWidth={2.5} />
+          </TouchableOpacity>
+          <View style={dlStyles.iconWrap}>
+            <LinearGradient
+              colors={[Colors.primaryLight, Colors.primaryBg]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={dlStyles.iconBadge}
+            >
+              <Icon name="Download" size={32} color={Colors.primary} strokeWidth={1.8} />
+            </LinearGradient>
+          </View>
+          <Text style={dlStyles.title}>Download for Offline Use</Text>
+          <Text style={dlStyles.desc}>
+            Save routes to your device and access them without internet — perfect for remote trails.
+          </Text>
+          <TouchableOpacity style={dlStyles.upgradeBtn} activeOpacity={0.85} onPress={() => setDownloadSheet(null)}>
+            <Icon name="Star" size={16} color="#fff" strokeWidth={2} />
+            <Text style={dlStyles.upgradeBtnText}>Upgrade to Premium</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -240,5 +274,53 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     paddingHorizontal: Spacing.xl,
+  },
+});
+
+// ── Download premium overlay sheet styles (STORY-00101) ──────────────────────
+const dlStyles = StyleSheet.create({
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: Colors.overlayDark,
+  },
+  sheet: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.cardLg, borderTopRightRadius: Radius.cardLg,
+    padding: Spacing.xl, paddingBottom: Spacing.xxl,
+    alignItems: 'center',
+    ...Shadow.overlay,
+  },
+  handle: {
+    width: 44, height: 5, borderRadius: 3,
+    backgroundColor: Colors.border, marginBottom: Spacing.lg,
+  },
+  closeBtn: {
+    position: 'absolute', top: Spacing.xl, right: Spacing.xl,
+    padding: 4,
+  },
+  iconWrap: { marginBottom: Spacing.base },
+  iconBadge: {
+    width: 72, height: 72, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  title: {
+    fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary,
+    textAlign: 'center', marginBottom: Spacing.sm,
+  },
+  desc: {
+    fontSize: FontSize.caption, color: Colors.textSecondary,
+    textAlign: 'center', lineHeight: 20,
+    paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl,
+  },
+  upgradeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.primary, borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+    minHeight: 48, ...Shadow.fab,
+  },
+  upgradeBtnText: {
+    fontSize: FontSize.body, fontWeight: '700', color: '#fff',
   },
 });

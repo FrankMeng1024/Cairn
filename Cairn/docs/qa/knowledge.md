@@ -241,3 +241,19 @@ Cairn is a React Native + Expo hiking/running companion app. Web preview at http
 - STORY-00097 (MarkerDetailSheet premium): PASS HIGH
 - STORY-00098 (Tracking bar + FAB): PASS HIGH
 - STORY-00099 (Top bar chips + activity modal): PASS MEDIUM
+
+## Sprint 32 Updates
+
+- FlagPlantSheet and CreateMarkerSheet now use flex row layout for char counter: [Max 30 chars] label on left, [N/30] counter on right (space-between). Old absolute-positioned charCount removed.
+- RoutesScreen Download uses Modal bottom sheet pattern (not Alert.alert). Pattern: drag handle, X close button, gradient icon badge, "Download for Offline Use" title, description, green "Upgrade to Premium" CTA. This is the premium upsell modal pattern.
+- MapHistoryScreen expanded card height is now 210px (was 128px). Route preview card (120px) added above "View on Map" button: topo/terrain background with concentric ring depth elements, stat chips (distance + duration) overlaid, "Route Preview" label.
+- AuthScreen Create Account: Name field validation fires only on form submit (onBlur validation removed). No error shown when user blurs Name field without typing.
+- Navigation regression Sprint 32 PASS: Home → Routes → MapHistory → Friends → Settings → Map all pass with zero JS errors. Pre-existing Wake Lock browser limitation only.
+
+## Sprint 32 Verification Summary
+
+- STORY-00100 (Char counter Max 30 chars label): PASS HIGH
+- STORY-00101 (RoutesScreen Download modal): PASS HIGH
+- STORY-00102 (Token cleanup — hardcoded blue values): PASS HIGH
+- STORY-00103 (MapHistoryScreen route preview card): PASS MEDIUM
+- STORY-00104 (AuthScreen Create Account Name blur): PASS MEDIUM

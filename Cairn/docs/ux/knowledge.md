@@ -100,3 +100,13 @@ The Cairn app helps users track hikes and runs, plant location flags, and share 
 - Navigation regression Sprint 30: zero new console errors across all paths. Only pre-existing Wake Lock warnings (browser limitation, not app bug).
 - Low friction (existing): Create Account Name field error on blur-without-input is slightly punitive for users exploring the form. Pre-existing onBlur validation behavior.
 - Low friction (new): Char counter amber window is 5 characters (25-29). Adequate for a 30-char field but tight for fast typists.
+
+## Sprint 32 Knowledge Updates
+
+- Sprint 32 resolved the Sprint 30 low-friction item: Name field error-on-blur removed (STORY-00104). Validation only fires on submit — less punitive for form exploration. Confirmed by screenshot (no error on blur-without-input).
+- Sprint 32 resolved the Sprint 29 item: RoutesScreen Download no longer uses Alert.alert() system dialog. Replaced with premium Modal bottom sheet (drag handle, X close, gradient icon, CTA). Significant quality uplift.
+- Char counter pattern established: flex row layout [Max 30 chars] + [N/30] used consistently in both FlagPlantSheet and CreateMarkerSheet. Reusable pattern across the app.
+- MapHistoryScreen session card expanded height is now 210px with route preview area (120px) + full-width green CTA. Container structure: topo preview card → stat chips overlay → View on Map button.
+- Low friction: "Route Preview" label slightly overpromises — first-time users may expect GPS trace overlay, but preview is illustrative (topo rings). Consider "Preview" or "Route Area" label in future sprint.
+- Low friction: "Max 30 chars" uses 'chars' shorthand. 'characters' would be marginally clearer for non-native English global audience.
+- Navigation regression clean: Home → Routes → MapHistory → Friends → Settings → Map all pass with zero JS console errors.

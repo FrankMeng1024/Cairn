@@ -196,9 +196,12 @@ function FlagPlantSheet({ onClose, onSave }: {
             onFocus={() => setNoteFocused(true)}
             onBlur={() => setNoteFocused(false)}
           />
-          {(noteFocused || charCount > 0) && (
-            <Text style={[sheetStyles.charCount, charCount >= 30 ? { color: Colors.danger } : charCount >= 25 ? { color: Colors.warning } : null]}>{charCount}/30</Text>
-          )}
+          <View style={sheetStyles.noteFooterRow}>
+            <Text style={sheetStyles.noteMaxLabel}>Max 30 chars</Text>
+            {(noteFocused || charCount > 0) && (
+              <Text style={[sheetStyles.charCount, charCount >= 30 ? { color: Colors.danger } : charCount >= 25 ? { color: Colors.warning } : null]}>{charCount}/30</Text>
+            )}
+          </View>
         </View>
         {/* Save button */}
         <TouchableOpacity
@@ -686,8 +689,14 @@ const sheetStyles = StyleSheet.create({
   noteInputError: {
     borderColor: Colors.danger,
   },
+  noteFooterRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: 4, paddingHorizontal: 2,
+  },
+  noteMaxLabel: {
+    fontSize: FontSize.tiny, color: Colors.textMuted,
+  },
   charCount: {
-    position: 'absolute', bottom: 8, right: Spacing.sm,
     fontSize: FontSize.tiny, color: Colors.textMuted,
   },
   saveBtn: {

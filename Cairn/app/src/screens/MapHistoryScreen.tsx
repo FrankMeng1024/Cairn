@@ -168,7 +168,7 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
     }).start();
   }, [isExpanded]);
 
-  const expandedHeight = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 128] });
+  const expandedHeight = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 210] });
 
   return (
     <View style={{ marginBottom: Spacing.sm }}>
@@ -201,7 +201,7 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
           </View>
         </View>
       </PressRow>
-      {/* Inline expanded stats */}
+      {/* Inline expanded stats + route preview card */}
       <Animated.View style={[cardStyles.expandedArea, { height: expandedHeight, opacity: expandAnim }]}>
         <View style={cardStyles.expandedStats}>
           <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.primary }]}>
@@ -221,6 +221,28 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
             <Text style={cardStyles.expandedStatLbl}>flags</Text>
           </View>
         </View>
+
+        {/* Route preview card (STORY-00103) */}
+        <View style={cardStyles.routePreviewCard}>
+          {/* Topo background — contour rings */}
+          <View style={cardStyles.topoRingOuter} />
+          <View style={cardStyles.topoRingMid} />
+          <View style={cardStyles.topoRingInner} />
+          {/* Stat chips overlaid */}
+          <View style={cardStyles.previewChipsRow}>
+            <View style={cardStyles.previewChip}>
+              <Icon name="MapPin" size={10} color={actColor} strokeWidth={2.5} />
+              <Text style={[cardStyles.previewChipText, { color: actColor }]}>{distStr}</Text>
+            </View>
+            <View style={cardStyles.previewChip}>
+              <Icon name="Timer" size={10} color={actColor} strokeWidth={2.5} />
+              <Text style={[cardStyles.previewChipText, { color: actColor }]}>{durationStr}</Text>
+            </View>
+          </View>
+          {/* Route label */}
+          <Text style={cardStyles.previewLabel}>Route Preview</Text>
+        </View>
+
         <TouchableOpacity style={cardStyles.viewOnMapBtn} onPress={onViewOnMap}>
           <Icon name="Map" size={14} color="#fff" strokeWidth={2} />
           <Text style={cardStyles.viewOnMapText}>View on Map</Text>
@@ -712,14 +734,68 @@ const cardStyles = StyleSheet.create({
   expandedStatLbl: { fontSize: FontSize.tiny, color: Colors.textMuted, fontWeight: '600', marginTop: 1 },
   viewOnMapBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'center',
     backgroundColor: Colors.primary,
     borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.lg, paddingVertical: 8,
+    paddingHorizontal: Spacing.lg, paddingVertical: 10,
     marginBottom: Spacing.sm,
+    marginHorizontal: Spacing.md,
+    justifyContent: 'center',
     ...Shadow.card,
   },
   viewOnMapText: { fontSize: FontSize.small, fontWeight: '700', color: '#fff' },
+
+  // Route preview card styles (STORY-00103)
+  routePreviewCard: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
+    height: 120,
+    backgroundColor: Colors.primaryBg,
+    borderRadius: Radius.card,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.primary + '20',
+    ...Shadow.card,
+    position: 'relative',
+  },
+  topoRingOuter: {
+    position: 'absolute',
+    width: 200, height: 200, borderRadius: 100,
+    borderWidth: 1.5, borderColor: Colors.primary + '18',
+    top: -40, left: -20,
+  },
+  topoRingMid: {
+    position: 'absolute',
+    width: 140, height: 140, borderRadius: 70,
+    borderWidth: 1.5, borderColor: Colors.primary + '22',
+    top: -10, left: 10,
+  },
+  topoRingInner: {
+    position: 'absolute',
+    width: 80, height: 80, borderRadius: 40,
+    borderWidth: 1.5, borderColor: Colors.primary + '28',
+    top: 20, left: 40,
+  },
+  previewChipsRow: {
+    flexDirection: 'row', gap: Spacing.sm,
+    position: 'absolute', top: Spacing.sm, right: Spacing.sm,
+  },
+  previewChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(255,255,255,0.90)',
+    borderRadius: Radius.pill,
+    paddingHorizontal: 8, paddingVertical: 3,
+    ...Shadow.card,
+  },
+  previewChipText: {
+    fontSize: FontSize.tiny, fontWeight: '700',
+  },
+  previewLabel: {
+    fontSize: FontSize.caption, fontWeight: '600',
+    color: Colors.primary, opacity: 0.6,
+    marginTop: Spacing.xxl,
+  },
 });
 
 const flagStyles = StyleSheet.create({

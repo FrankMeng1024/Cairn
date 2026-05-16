@@ -191,12 +191,15 @@ function CreateMarkerSheet({
               onFocus={() => setTextFocused(true)}
               onBlur={() => setTextFocused(false)}
             />
-            {(textFocused || charCount > 0) && (
-              <Text style={[
-                styles.charCount,
-                charCount >= 30 ? { color: Colors.danger } : charCount >= 25 ? { color: Colors.warning } : null,
-              ]}>{charCount}/30</Text>
-            )}
+            <View style={styles.noteFooterRow}>
+              <Text style={styles.noteMaxLabel}>Max 30 chars</Text>
+              {(textFocused || charCount > 0) && (
+                <Text style={[
+                  styles.charCount,
+                  charCount >= 30 ? { color: Colors.danger } : charCount >= 25 ? { color: Colors.warning } : null,
+                ]}>{charCount}/30</Text>
+              )}
+            </View>
           </View>
 
           {/* Permission selector — outlined pill style */}
@@ -678,8 +681,14 @@ const styles = StyleSheet.create({
   },
   noteInputFocused: { borderColor: Colors.primary },
   noteInputError: { borderColor: Colors.danger },
+  noteFooterRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: 4, paddingHorizontal: 2,
+  },
+  noteMaxLabel: {
+    fontSize: FontSize.tiny, color: Colors.textMuted,
+  },
   charCount: {
-    position: 'absolute', bottom: 8, right: Spacing.sm,
     fontSize: FontSize.tiny, color: Colors.textMuted,
   },
 

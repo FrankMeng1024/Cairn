@@ -305,7 +305,6 @@ export function AuthScreen() {
                 value={name}
                 onChangeText={(v) => { setName(v); if (nameError) setNameError(''); }}
                 error={nameError}
-                onBlur={() => { if (!name.trim()) setNameError('Name is required'); }}
                 autoFocus={isRegister}
               />
             </>
