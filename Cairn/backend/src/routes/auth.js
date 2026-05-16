@@ -26,6 +26,14 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts. Please wait 15 minutes.' },
 });
 
+// OAuth tokens are short-lived and already validated by Google — brute-force not applicable.
+// Higher limit so dev testing doesn't hit the wall.
+const oauthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 60,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again shortly.' },
+});
+
 const resendLimiter = rateLimit({
   windowMs: 60 * 1000, max: 2,
   standardHeaders: true, legacyHeaders: false,
@@ -213,7 +221,7 @@ router.post('/login', authLimiter, async (req, res) => {
 });
 
 // ── POST /api/auth/google ──────────────────────────────────────────────────
-router.post('/google', authLimiter, async (req, res) => {
+router.post('/google', oauthLimiter, async (req, res) => {
   const { id_token } = req.body;
   if (!id_token)
     return res.status(400).json({ error: 'id_token is required.' });
