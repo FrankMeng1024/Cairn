@@ -501,8 +501,10 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    backgroundColor: Colors.surface, marginHorizontal: Spacing.base,
-    borderRadius: Radius.card, ...Shadow.card, overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.88)', marginHorizontal: Spacing.base,
+    borderRadius: Radius.card, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
   divider: { height: 1, backgroundColor: Colors.border, marginLeft: 52 },
 
