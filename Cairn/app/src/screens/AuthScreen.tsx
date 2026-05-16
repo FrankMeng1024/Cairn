@@ -343,6 +343,7 @@ export function AuthScreen() {
   const [googleRequest, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
     redirectUri: makeRedirectUri(),
+    prompt: 'select_account',  // always show account picker, never use cached credentials
   });
 
   // Handle Google OAuth response

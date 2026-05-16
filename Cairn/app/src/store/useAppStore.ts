@@ -96,7 +96,8 @@ export const useAppStore = create<AppState>((set) => ({
       const user = await getMe();
       if (user) {
         set({ isLoggedIn: true, user });
-        // STORY-00134: load this user's sessions from backend (per-user, not shared)
+        // STORY-00134: load this user's sessions from backend (per-user, not shared).
+        // This REPLACES any localStorage sessions — ensures data isolation between users.
         try {
           const remote = await fetchSessions();
           const sessions = remote.map((r) => ({
@@ -114,10 +115,15 @@ export const useAppStore = create<AppState>((set) => ({
           useSessionStore.setState({ sessions });
         } catch {
           // Session fetch failed — show empty state, don't crash
+          useSessionStore.setState({ sessions: [] });
         }
+      } else {
+        // Not logged in — safe to load from localStorage (no user mixing)
+        await useSessionStore.getState().hydrate();
       }
     } catch {
-      // Network unavailable — stay logged out, user will sign in manually
+      // Network unavailable — stay logged out, load localStorage as fallback
+      await useSessionStore.getState().hydrate();
     }
     set({ hydrated: true });
   },

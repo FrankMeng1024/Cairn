@@ -10,7 +10,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Switch, Alert, Animated,
+  Switch, Alert, Animated, TextInput, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +19,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore, UIMode } from '../store/useAppStore';
 import { logout } from '../services/authService';
+import { getToken } from '../services/tokenStore';
+import { API_BASE_URL } from '../config/api';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
@@ -157,6 +159,39 @@ export function SettingsScreen() {
   const [pendingMode, setPendingMode] = useState<UIMode>(uiMode);
   const [shareAfterAdd, setShareAfterAdd] = useState(true);
   const [nightMode, setNightMode] = useState(false);
+
+  // ── Change Password ─────────────────────────────────────────────────────
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwError, setPwError] = useState('');
+  const [pwSuccess, setPwSuccess] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+
+  const handleChangePassword = async () => {
+    setPwError(''); setPwSuccess('');
+    if (newPw.length < 8) { setPwError('New password must be at least 8 characters.'); return; }
+    if (newPw !== confirmPw) { setPwError('New passwords do not match.'); return; }
+    setPwLoading(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/api/auth/password`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword: currentPw || undefined, newPassword: newPw }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setPwError(data?.error || 'Failed to update password.'); return; }
+      setPwSuccess('Password updated successfully.');
+      setCurrentPw(''); setNewPw(''); setConfirmPw('');
+      setTimeout(() => { setShowChangePw(false); setPwSuccess(''); }, 1500);
+    } catch {
+      setPwError('Unable to connect. Please try again.');
+    } finally {
+      setPwLoading(false);
+    }
+  };
   const [broadcastEnabled, setBroadcastEnabled] = useState(true);
   const [locationShare, setLocationShare] = useState(false);
 
@@ -295,6 +330,66 @@ export function SettingsScreen() {
                   <Text style={{ fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 1 }}>{user.email}</Text>
                 </View>
               </View>
+              <View style={styles.divider} />
+              {/* Change Password — email-registered users only */}
+              <ActionRow
+                iconName="KeyRound"
+                iconColor={Colors.primary}
+                iconBg={Colors.primaryLight}
+                label="Change Password"
+                onPress={() => { setShowChangePw(v => !v); setPwError(''); setPwSuccess(''); }}
+              />
+              {showChangePw && (
+                <View style={pwStyles.form}>
+                  {!!pwError && (
+                    <Text style={pwStyles.error}>{pwError}</Text>
+                  )}
+                  {!!pwSuccess && (
+                    <Text style={pwStyles.success}>{pwSuccess}</Text>
+                  )}
+                  <Text style={pwStyles.label}>Current Password</Text>
+                  <TextInput
+                    style={pwStyles.input}
+                    value={currentPw}
+                    onChangeText={setCurrentPw}
+                    placeholder="Leave blank if not set yet"
+                    placeholderTextColor={Colors.textMuted}
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
+                  <Text style={pwStyles.label}>New Password</Text>
+                  <TextInput
+                    style={pwStyles.input}
+                    value={newPw}
+                    onChangeText={setNewPw}
+                    placeholder="Min. 8 characters"
+                    placeholderTextColor={Colors.textMuted}
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
+                  <Text style={pwStyles.label}>Confirm New Password</Text>
+                  <TextInput
+                    style={pwStyles.input}
+                    value={confirmPw}
+                    onChangeText={setConfirmPw}
+                    placeholder="Re-enter new password"
+                    placeholderTextColor={Colors.textMuted}
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={[pwStyles.btn, pwLoading && { opacity: 0.6 }]}
+                    onPress={handleChangePassword}
+                    disabled={pwLoading}
+                    activeOpacity={0.8}
+                  >
+                    {pwLoading
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={pwStyles.btnText}>Update Password</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              )}
               <View style={styles.divider} />
             </>
           ) : (
@@ -496,4 +591,28 @@ const profileStyles = StyleSheet.create({
   initialsText: {
     fontSize: FontSize.body, fontWeight: '700', color: Colors.primary,
   },
+});
+
+const pwStyles = StyleSheet.create({
+  form: {
+    paddingHorizontal: Spacing.base,
+    paddingBottom: Spacing.md,
+  },
+  label: {
+    fontSize: FontSize.small, fontWeight: '600',
+    color: Colors.textSecondary, marginBottom: 4, marginTop: Spacing.sm,
+  },
+  input: {
+    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.sm, paddingVertical: 10,
+    fontSize: FontSize.body, color: Colors.textPrimary,
+    backgroundColor: Colors.surface,
+  },
+  btn: {
+    backgroundColor: Colors.primary, borderRadius: Radius.sm,
+    paddingVertical: 12, alignItems: 'center', marginTop: Spacing.md,
+  },
+  btnText: { fontSize: FontSize.body, fontWeight: '600', color: '#fff' },
+  error: { fontSize: FontSize.small, color: Colors.danger, marginTop: Spacing.sm },
+  success: { fontSize: FontSize.small, color: Colors.primary, fontWeight: '600', marginTop: Spacing.sm },
 });
