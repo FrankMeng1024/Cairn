@@ -28,6 +28,8 @@ import {
   RotateCcw, Download,
   // Sprint 27
   PlayCircle,
+  // Sprint 42+ (Phase 1-2)
+  Pause, Pencil, Undo2, TrendingUp, Phone, Signal, MessageCircle,
 } from 'lucide-react-native';
 import { IconSize } from './tokens';
 
@@ -46,6 +48,7 @@ const ICON_MAP = {
   Apple,
   RotateCcw, Download,
   PlayCircle,
+  Pause, Pencil, Undo2, TrendingUp, Phone, Signal, MessageCircle,
 } as const;
 
 export type IconName = keyof typeof ICON_MAP;

@@ -304,6 +304,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: Spacing.xl,
   },
+  sharedByText: {
+    fontSize: FontSize.tiny,
+    color: Colors.info,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  activeBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.primaryBg,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: 4,
+  },
+  activeBadgeText: {
+    fontSize: FontSize.tiny,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
 });
 
 // ── Download premium overlay sheet styles (STORY-00101) ──────────────────────
