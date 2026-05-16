@@ -1,8 +1,8 @@
 # PROJECT_STATE.md — Cairn
 
 **Status**: IN_PROGRESS
-**Current Sprint**: 40 (COMPLETE — pending QA)
-**Last Updated**: 2026-05-16
+**Current Sprint**: 41 (COMPLETE)
+**Last Updated**: 2026-05-17
 
 ## Key Decisions
 - acceptance_mode: auto
@@ -42,6 +42,7 @@
 - Sprint 37: COMPLETE — User data ownership: sessions table + REST API (STORY-00125); sessionService + authenticatedFetch (STORY-00126); Settings profile display (STORY-00127); JWT 401 auto-logout (STORY-00128). STORY-00122 Google OAuth BLOCKED pending Client ID.
 - Sprint 39: COMPLETE — Auth UX uplift (social buttons, validation timing), user data isolation, splash animation
 - Sprint 40: COMPLETE — 2-step email verification flow, auth system rebuild (user_oauth + pending_registrations), nodemailer/Gmail SMTP emailService
+- Sprint 41: COMPLETE — HomeScreen full-screen redesign: CairnLogo SVG, RecentRow above cards with relative time, left-panel card layout, fill-screen height calculation
 
  Real expo-location GPS, haversineM distance calc, Zustand stores persisted.
 
