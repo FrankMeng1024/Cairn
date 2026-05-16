@@ -285,10 +285,12 @@ const styles = StyleSheet.create({
 
   statsRow: { flexDirection: 'row', gap: Spacing.sm },
   statChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: Colors.surface, borderRadius: Radius.pill,
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderWidth: 1, borderColor: Colors.border,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: Radius.pill,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
   statText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
 
