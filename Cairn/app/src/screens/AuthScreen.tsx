@@ -802,7 +802,7 @@ const formStyles = StyleSheet.create({
     // No background color change on focus — only border changes
   },
   inputError: { borderColor: Colors.danger },
-  inputFocused: { borderColor: Colors.primary },  // border-only, bg unchanged
+  inputFocused: { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },  // border + subtle bg (Material 3 standard)
   inputIcon: { marginRight: Spacing.xs },
   inputInner: {
     flex: 1, paddingVertical: Spacing.md, fontSize: FontSize.body, color: Colors.textPrimary,
