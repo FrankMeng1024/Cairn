@@ -1,303 +1,164 @@
 /**
- * HomeScreen — Sprint 18 recent activity strip
+ * HomeScreen — Sprint 41 full-screen layout
  *
- * Design: design_interpretation.md page 2
- * - Time-based English greeting (Good morning/afternoon/evening)
- * - Recent activity strip (last session, if any)
- * - 2 large activity cards: Hiking, Running
- * - 3 entry buttons: Map, Friends, Settings
- * - No bottom tab bar (per design doc)
- * - Spring press animations + staggered entrance
- * - Competitor quality: AllTrails/Strava card hierarchy
+ * Layout: flex column, no ScrollView, fills SafeArea exactly.
+ * Hierarchy: Header → Stats? → Recent? → Activity Cards (dominant) → Tools row
+ * Design: Golden ratio φ=1.618 applied to card proportions and spacing.
  */
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, StatusBar,
-  ScrollView, Animated,
+  View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, LayoutChangeEvent,
 } from 'react-native';
+import Svg, { Rect } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
+import { Colors, Spacing, Radius, FontSize, Shadow } from '../components/tokens';
 import { Icon, type IconName } from '../components/Icon';
 import { useAppStore } from '../store/useAppStore';
 import { useSessionStore } from '../store/useSessionStore';
 import { useMarkerStore } from '../store/useMarkerStore';
-import { formatDistance, formatDuration, formatDate } from '../utils/geo';
+import { formatDistance, formatDuration, getRelativeTime } from '../utils/geo';
 import { getCurrentRegion } from '../config/regions';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-// ── Time greeting ─────────────────────────────────────────────────────────────
-function getGreeting(mode: 'beginner' | 'expert', hasData: boolean) {
-  if (!hasData) return 'Welcome to Cairn';
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function getGreeting(mode: 'beginner' | 'expert') {
   const h = new Date().getHours();
-  const modeLabel = mode === 'expert' ? 'Navigator' : 'Explorer';
-  if (h >= 5 && h < 12) return `Good morning, ${modeLabel}`;
-  if (h >= 12 && h < 18) return `Good afternoon, ${modeLabel}`;
-  return `Good evening, ${modeLabel}`;
+  const label = mode === 'expert' ? 'Navigator' : 'Explorer';
+  if (h >= 5 && h < 12) return `Good morning, ${label}`;
+  if (h >= 12 && h < 18) return `Good afternoon, ${label}`;
+  return `Good evening, ${label}`;
 }
 
-const SUBTITLES: Record<string, string[]> = {
-  morning: [
-    'The hills are calling — will you answer?',
-    'Best trails start with early boots.',
-    'Catch the light before the crowds do.',
-    'Every summit earns its view.',
-    'Fresh air waits just past the trailhead.',
-  ],
-  afternoon: [
-    'Where are you headed today?',
-    'The ridge won\'t hike itself.',
-    'Great routes are made, not found.',
-    'Afternoon light hits the peaks just right.',
-    'Pick a trail. Any trail. Go.',
-  ],
-  evening: [
-    'Golden hour on the track — don\'t miss it.',
-    'One last stretch before the stars come out.',
-    'Twilight trails are trails remembered.',
-    'Wind down with a walk, not a screen.',
-    'Even short routes leave big footprints.',
-  ],
-  night: [
-    'Rest up. Tomorrow\'s trail is ready.',
-    'Log today. Plan tomorrow.',
-    'The mountains will wait for morning.',
-    'Good nights make great mornings on the track.',
-    'Recover well. The outdoors isn\'t going anywhere.',
-  ],
-};
-
-function getSubtitle(hour: number): string {
-  let pool: string[];
-  if (hour >= 5 && hour < 12) pool = SUBTITLES.morning;
-  else if (hour >= 12 && hour < 18) pool = SUBTITLES.afternoon;
-  else if (hour >= 18 && hour < 24) pool = SUBTITLES.evening;
-  else pool = SUBTITLES.night;
-  return pool[hour % pool.length];
-}
-
-// ── Quick Stats Row ───────────────────────────────────────────────────────────
-function QuickStats({ sessions, markerCount }: { sessions: any[]; markerCount: number }) {
-  const totalDistM = sessions.reduce((acc, s) => acc + s.distanceM, 0);
-  const stat1Anim = useRef(new Animated.Value(0)).current;
-  const stat2Anim = useRef(new Animated.Value(0)).current;
-  const stat3Anim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.stagger(60, [
-      Animated.timing(stat1Anim, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.timing(stat2Anim, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.timing(stat3Anim, { toValue: 1, duration: 300, useNativeDriver: true }),
-    ]).start();
-  }, []);
-
-  const capsule = (anim: Animated.Value, icon: IconName, value: string, unit: string, color: string, bg: string) => (
-    <Animated.View style={[statsStyles.capsule, { opacity: anim, borderLeftColor: color }]}>
-      <View style={[statsStyles.capIcon, { backgroundColor: bg }]}>
-        <Icon name={icon} size={14} color={color} strokeWidth={1.8} />
-      </View>
-      <View style={statsStyles.capTextCol}>
-        <Text style={statsStyles.capValue}>{value}</Text>
-        <Text style={statsStyles.capUnit}>{unit}</Text>
-      </View>
-    </Animated.View>
-  );
-
-  return (
-    <View style={statsStyles.row}>
-      {capsule(stat1Anim, 'Route', String(sessions.length), sessions.length === 1 ? 'session' : 'sessions', Colors.primary, Colors.primaryLight)}
-      {capsule(stat2Anim, 'Map', totalDistM < 10 ? '0' : formatDistance(totalDistM, 'km', 1), 'km', Colors.running, Colors.runningLight)}
-      {capsule(stat3Anim, 'Flag', String(markerCount), markerCount === 1 ? 'flag' : 'flags', Colors.flag, Colors.flagLight)}
-    </View>
-  );
-}
-
-// ── Empty State ───────────────────────────────────────────────────────────────
-function HomeEmptyState({ onPress }: { onPress: () => void }) {
-  const pulse = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.05, duration: 1500, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1.0, duration: 1500, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-
-  return (
-    <View style={emptyStyles.card}>
-      <View style={emptyStyles.iconRow}>
-        <Animated.View style={[emptyStyles.iconCircle, { backgroundColor: Colors.primaryLight, transform: [{ scale: pulse }] }]}>
-          <Icon name="Mountain" size={24} color={Colors.primary} strokeWidth={1.5} />
-        </Animated.View>
-        <View style={[emptyStyles.iconCircle, { backgroundColor: Colors.runningLight, marginLeft: -10 }]}>
-          <Icon name="Flag" size={20} color={Colors.running} strokeWidth={1.5} />
-        </View>
-      </View>
-      <Text style={emptyStyles.heading}>Your adventure begins here</Text>
-      <Text style={emptyStyles.body}>Start your first hike or run to see your stats and history</Text>
-      <TouchableOpacity style={emptyStyles.cta} onPress={onPress} activeOpacity={0.8}>
-        <Icon name="Play" size={14} color="#fff" strokeWidth={2.5} />
-        <Text style={emptyStyles.ctaText}>Start a Hike</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// ── How It Works Row ──────────────────────────────────────────────────────────
-function HowItWorks() {
-  const steps = [
-    {
-      icon: 'Flag' as IconName, label: 'Plant flags', color: Colors.primary,
-      gradStart: Colors.primaryLight, gradEnd: Colors.primaryDeep,
-    },
-    {
-      icon: 'Users' as IconName, label: 'Share with friends', color: Colors.running,
-      gradStart: Colors.runningLight, gradEnd: Colors.runningGrad,
-    },
-    {
-      icon: 'Compass' as IconName, label: 'Guide others', color: Colors.flag,
-      gradStart: Colors.flagLight, gradEnd: Colors.flagGrad,
-    },
+// ── Small static cairn logo (3 stacked stones, inline SVG) ───────────────────
+function CairnLogo({ size = 22 }: { size?: number }) {
+  const s = size / 22;
+  const stones = [
+    { w: 14 * s, h: 5 * s, color: Colors.primary },
+    { w: 19 * s, h: 5 * s, color: '#7a9e5a' },
+    { w: 12 * s, h: 5 * s, color: Colors.primary },
   ];
+  const gap = 2 * s;
+  const totalH = stones.reduce((acc, st) => acc + st.h, 0) + gap * (stones.length - 1);
+  const maxW = Math.max(...stones.map(st => st.w));
   return (
-    <View style={howStyles.row}>
-      {steps.map((s, i) => (
-        <View key={i} style={howStyles.step}>
-          <LinearGradient
-            colors={[s.gradStart, s.gradEnd]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={howStyles.iconBadge}
-          >
-            <Icon name={s.icon} size={18} color={s.color} strokeWidth={1.8} />
-          </LinearGradient>
-          <Text style={howStyles.label}>{s.label}</Text>
-        </View>
-      ))}
-    </View>
+    <Svg width={maxW} height={totalH} style={{ overflow: 'visible' }}>
+      {stones.map((stone, i) => {
+        const y = i * (stones[0].h + gap);
+        const x = (maxW - stone.w) / 2;
+        return (
+          <Rect
+            key={i}
+            x={x} y={y}
+            width={stone.w} height={stone.h}
+            rx={stone.h / 2}
+            fill={stone.color}
+          />
+        );
+      })}
+    </Svg>
   );
 }
 
-// ── Recent Activity Strip ─────────────────────────────────────────────────────
-function RecentActivityStrip({ onPress }: { onPress: () => void }) {
+// ── Compact recent activity row — placed ABOVE cards ─────────────────────────
+function RecentRow({ onPress }: { onPress: () => void }) {
   const sessions = useSessionStore(s => s.sessions);
   if (sessions.length === 0) return null;
 
-  const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
-  const last = sorted[0];
+  const last = sessions.reduce((best, s) => s.startedAt > best.startedAt ? s : best);
   const isRun = last.activityMode === 'running';
-  const accentColor = isRun ? Colors.running : Colors.primary;
-  const lightBg = isRun ? Colors.runningLight : Colors.primaryLight;
-  const badgeLabel = isRun ? 'Run' : 'Hike';
-
-  // Primary stat: distance if > 10m, else duration
-  const showDist = last.distanceM > 10;
-  const primaryStat = showDist
+  const accent = isRun ? Colors.running : Colors.primary;
+  const bg = isRun ? Colors.runningLight : Colors.primaryLight;
+  const label = isRun ? 'Run' : 'Hike';
+  const stat = last.distanceM > 10
     ? `${formatDistance(last.distanceM, 'km', 1)} km`
     : formatDuration(last.durationS);
-
-  // Secondary line: date · duration
-  const secondaryLine = `${formatDate(last.startedAt)} · ${formatDuration(last.durationS)}`;
+  const when = getRelativeTime(last.startedAt);
 
   return (
-    <View style={recentStyles.stripWrap}>
-      <TouchableOpacity style={recentStyles.strip} onPress={onPress} activeOpacity={0.8}>
-        <View style={[recentStyles.iconWrap, { backgroundColor: lightBg }]}>
-          <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={20} color={accentColor} strokeWidth={1.8} />
-        </View>
-        <View style={recentStyles.info}>
-          <View style={[recentStyles.typeBadge, { backgroundColor: lightBg }]}>
-            <Text style={[recentStyles.typeBadgeText, { color: accentColor }]}>{badgeLabel}</Text>
-          </View>
-          <Text style={recentStyles.primaryStat}>{primaryStat}</Text>
-          <Text style={recentStyles.secondaryLine}>{secondaryLine}</Text>
-        </View>
-        <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
-      </TouchableOpacity>
-      {sessions.length >= 2 && (
-        <TouchableOpacity style={recentStyles.viewAll} onPress={onPress}>
-          <Text style={recentStyles.viewAllText}>View all</Text>
-          <Icon name="ChevronRight" size={12} color={Colors.primary} strokeWidth={2.5} />
-        </TouchableOpacity>
-      )}
-    </View>
+    <TouchableOpacity style={recentStyles.row} onPress={onPress} activeOpacity={0.7}>
+      <View style={[recentStyles.dot, { backgroundColor: bg }]}>
+        <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={14} color={accent} strokeWidth={2} />
+      </View>
+      <View style={recentStyles.textGroup}>
+        <Text style={[recentStyles.badge, { color: accent }]}>{label}</Text>
+        <Text style={recentStyles.stat}>{stat}</Text>
+      </View>
+      <Text style={recentStyles.when}>{when}</Text>
+      <Icon name="ChevronRight" size={14} color={Colors.textMuted} strokeWidth={2} />
+    </TouchableOpacity>
   );
 }
 
-
+// ── Big activity card — golden-ratio proportioned ────────────────────────────
 function ActivityCard({
-  iconName, title, subtitle, accentColor, lightBg, gradientColors, onPress, entranceAnim,
+  iconName, title, subtitle, accentColor, lightBg, cardBg, onPress, anim, cardHeight,
 }: {
   iconName: IconName;
   title: string;
   subtitle: string;
   accentColor: string;
   lightBg: string;
-  gradientColors: [string, string, string];
+  cardBg: string;
   onPress: () => void;
-  entranceAnim: Animated.Value;
+  anim: Animated.Value;
+  cardHeight: number;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
-
-  const onPressIn = () => {
-    Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, tension: 200, friction: 10 }).start();
-  };
-  const onPressOut = () => {
-    Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 200, friction: 8 }).start();
-  };
-
-  const translateY = entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [22, 0] });
+  const h = cardHeight > 0 ? cardHeight : 150;
+  const panelW = Math.min(Math.round(h * 0.38), 130);
+  const iconSize = Math.round(panelW * 0.55);
 
   return (
-    <Animated.View style={{ opacity: entranceAnim, transform: [{ scale }, { translateY }] }}>
-      <TouchableOpacity activeOpacity={1} onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
-        <LinearGradient
-          colors={gradientColors}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.activityCard}
-        >
-          <LinearGradient
-            colors={[lightBg, accentColor + '22']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={styles.activityIconBadge}
-          >
-            <Icon name={iconName} size={IconSize.xl} color={accentColor} strokeWidth={1.8} />
-          </LinearGradient>
-          <View style={styles.activityText}>
-            <Text style={styles.activityTitle}>{title}</Text>
-            <Text style={styles.activitySubtitle} numberOfLines={2}>{subtitle}</Text>
+    <Animated.View style={{ height: h, opacity: anim, transform: [{ scale }] }}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={onPress}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, tension: 200, friction: 10 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 200, friction: 8 }).start()}
+        style={[cardStyles.card, { backgroundColor: cardBg, height: h, flex: 1 }]}
+      >
+        {/* Left panel — absolute position ensures it fills card height regardless of RN Web flex quirks */}
+        <View style={[cardStyles.leftPanel, { width: panelW, height: h, backgroundColor: lightBg }]}>
+          <Icon name={iconName} size={iconSize} color={accentColor} strokeWidth={1.4} />
+        </View>
+
+        {/* Text area — explicit height ensures vertical centering on RN Web */}
+        <View style={[cardStyles.innerRow, { marginLeft: panelW, height: h }]}>
+          <View style={cardStyles.textCol}>
+            <Text style={[cardStyles.title, { color: Colors.textPrimary }]}>{title}</Text>
+            <Text style={cardStyles.subtitle}>{subtitle}</Text>
+            <View style={[cardStyles.accentLine, { backgroundColor: accentColor }]} />
           </View>
-          <View style={[styles.activityChevronPill, { backgroundColor: lightBg }]}>
-            <Icon name="ChevronRight" size={12} color={accentColor} strokeWidth={2.5} />
+          <View style={[cardStyles.chevron, { backgroundColor: lightBg }]}>
+            <Icon name="ChevronRight" size={16} color={accentColor} strokeWidth={2.5} />
           </View>
-        </LinearGradient>
+        </View>
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-// ── Entry Button ──────────────────────────────────────────────────────────────
-function EntryButton({ iconName, label, onPress }: {
-  iconName: IconName; label: string; onPress: () => void;
-}) {
+// ── Tool button ───────────────────────────────────────────────────────────────
+function ToolBtn({ iconName, label, onPress }: { iconName: IconName; label: string; onPress: () => void }) {
   const scale = useRef(new Animated.Value(1)).current;
-  const onPressIn = () => Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, tension: 300, friction: 10 }).start();
-  const onPressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 300, friction: 8 }).start();
-
   return (
-    <Animated.View style={[{ flex: 1 }, { transform: [{ scale }] }]}>
-      <TouchableOpacity style={styles.entryBtn} onPress={onPress} activeOpacity={1} onPressIn={onPressIn} onPressOut={onPressOut}>
-        <View style={styles.entryIconWrap}>
-          <Icon name={iconName} size={IconSize.lg} color={Colors.primary} strokeWidth={1.8} />
+    <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
+      <TouchableOpacity
+        style={toolStyles.btn}
+        onPress={onPress}
+        activeOpacity={1}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.93, useNativeDriver: true, tension: 300, friction: 10 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 300, friction: 8 }).start()}
+      >
+        <View style={toolStyles.iconWrap}>
+          <Icon name={iconName} size={20} color={Colors.primary} strokeWidth={1.8} />
         </View>
-        <Text style={styles.entryLabel}>{label}</Text>
+        <Text style={toolStyles.label}>{label}</Text>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -312,247 +173,197 @@ export function HomeScreen() {
   const region = getCurrentRegion();
   const markerCount = allMarkers.filter(m => m.regionCode === region.code).length;
   const hasData = sessions.length > 0 || markerCount > 0;
+  const hasRecent = sessions.length > 0;
 
-  const screenOpacity = useRef(new Animated.Value(0)).current;
-  const card1Anim = useRef(new Animated.Value(0)).current;
-  const card2Anim = useRef(new Animated.Value(0)).current;
+  const [screenH, setScreenH] = useState(0);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const card1 = useRef(new Animated.Value(0)).current;
+  const card2 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(screenOpacity, { toValue: 1, duration: 280, useNativeDriver: true }).start();
-    Animated.stagger(80, [
-      Animated.spring(card1Anim, { toValue: 1, tension: 120, friction: 10, useNativeDriver: true }),
-      Animated.spring(card2Anim, { toValue: 1, tension: 120, friction: 10, useNativeDriver: true }),
+    Animated.timing(opacity, { toValue: 1, duration: 260, useNativeDriver: true }).start();
+    Animated.stagger(70, [
+      Animated.spring(card1, { toValue: 1, tension: 120, friction: 10, useNativeDriver: true }),
+      Animated.spring(card2, { toValue: 1, tension: 120, friction: 10, useNativeDriver: true }),
     ]).start();
   }, []);
 
+  // Compute explicit card heights for RN Web flex compatibility.
+  // Count direct children of screen: header + cardsArea + toolsRow (always) + optional rows
+  const siblingCount = 3 + (hasData ? 1 : 0) + (hasRecent ? 1 : 0);
+  const FIXED_H = 44 + (hasData ? 36 : 0) + (hasRecent ? 46 : 0) + 72 + 20 + Spacing.sm * (siblingCount - 1);
+  const cardsH = screenH > 0 ? Math.max(screenH - FIXED_H, 280) : 280;
+  const cardH = Math.floor((cardsH - Spacing.sm) / 2);
+
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
-      <Animated.View style={[{ flex: 1 }, { opacity: screenOpacity }]}>
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <Animated.View
+        style={[styles.screen, { opacity }]}
+        onLayout={(e: LayoutChangeEvent) => setScreenH(e.nativeEvent.layout.height)}
+      >
 
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.logoRow}>
-              <Text style={styles.logo}>Cairn</Text>
-              <View style={styles.logoBadge}>
-                <Text style={styles.logoBadgeText}>β</Text>
-              </View>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.logoRow}>
+            <CairnLogo size={22} />
+            <Text style={styles.logo}>Cairn</Text>
+          </View>
+          <Text style={styles.greeting}>{getGreeting(uiMode)}</Text>
+        </View>
+
+        {/* Stats strip — only when data exists */}
+        {hasData && (
+          <View style={styles.statsRow}>
+            <View style={styles.statChip}>
+              <Icon name="Route" size={12} color={Colors.primary} strokeWidth={2} />
+              <Text style={styles.statText}>{plural(sessions.length, 'session')}</Text>
             </View>
-            <Text style={styles.greeting}>{getGreeting(uiMode, hasData)}</Text>
-            <Text style={styles.headerSub}>{getSubtitle(new Date().getHours())}</Text>
+            <View style={styles.statChip}>
+              <Icon name="Flag" size={12} color={Colors.flag} strokeWidth={2} />
+              <Text style={styles.statText}>{plural(markerCount, 'flag')}</Text>
+            </View>
           </View>
+        )}
 
-          {/* Quick Stats or Empty State */}
-          {hasData
-            ? <QuickStats sessions={sessions} markerCount={markerCount} />
-            : <>
-                <HomeEmptyState onPress={() => nav.navigate('Hiking')} />
-                <HowItWorks />
-              </>
-          }
+        {/* Recent activity — above the cards so user sees it before cards */}
+        {hasRecent && <RecentRow onPress={() => nav.navigate('MapHistory')} />}
 
-          {/* STORY-00110: Contextual nudge — shown when hasData but no sessions yet */}
-          {hasData && sessions.length === 0 && (
-            <TouchableOpacity
-              style={styles.nudgeCard}
-              onPress={() => nav.navigate('Hiking')}
-              activeOpacity={0.8}
-            >
-              <Icon name="PlayCircle" size={18} color={Colors.primary} strokeWidth={2} />
-              <Text style={styles.nudgeText}>Complete your first hike to see activity here</Text>
-            </TouchableOpacity>
-          )}
+        {/* Activity Cards — dominant, fill remaining space */}
+        <View style={[styles.cardsArea, { height: cardsH }]}>
+          <ActivityCard
+            iconName="Mountain"
+            title="Hiking"
+            subtitle="Navigate trails · Plant flags · Explore"
+            accentColor={Colors.primary}
+            lightBg={Colors.primaryLight}
+            cardBg="#eef4e8"
+            onPress={() => nav.navigate('Hiking')}
+            anim={card1}
+            cardHeight={cardH}
+          />
+          <ActivityCard
+            iconName="PersonStanding"
+            title="Running"
+            subtitle="Route planning · Voice guidance · Lock mode"
+            accentColor={Colors.running}
+            lightBg={Colors.runningLight}
+            cardBg="#e8f1f8"
+            onPress={() => nav.navigate('Running')}
+            anim={card2}
+            cardHeight={cardH}
+          />
+        </View>
 
-          {/* Activity Cards */}
-          <RecentActivityStrip onPress={() => nav.navigate('MapHistory')} />
-          <View style={styles.cardsSection}>
-            <ActivityCard
-              iconName="Mountain"
-              title="Hiking"
-              subtitle="Navigate trails · Plant flags · Explore"
-              accentColor={Colors.primary}
-              lightBg={Colors.primaryLight}
-              gradientColors={['#ffffff', '#f6f9f3', '#eef4e8']}
-              onPress={() => nav.navigate('Hiking')}
-              entranceAnim={card1Anim}
-            />
-            <ActivityCard
-              iconName="PersonStanding"
-              title="Running"
-              subtitle="Route planning · Voice guidance · Lock mode"
-              accentColor={Colors.running}
-              lightBg={Colors.runningLight}
-              gradientColors={['#ffffff', '#f3f7fc', '#e8f1f8']}
-              onPress={() => nav.navigate('Running')}
-              entranceAnim={card2Anim}
-            />
-          </View>
+        {/* Tools */}
+        <View style={styles.toolsRow}>
+          <ToolBtn iconName="Map" label="Map" onPress={() => nav.navigate('Map')} />
+          <ToolBtn iconName="Route" label="Routes" onPress={() => nav.navigate('Routes')} />
+          <ToolBtn iconName="Users" label="Friends" onPress={() => nav.navigate('Friends')} />
+          <ToolBtn iconName="Settings2" label="Settings" onPress={() => nav.navigate('Settings')} />
+        </View>
 
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Tools</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Entry Buttons */}
-          <View style={styles.entriesRow}>
-            <EntryButton iconName="Map" label="Map" onPress={() => nav.navigate('Map')} />
-            <EntryButton iconName="Route" label="Routes" onPress={() => nav.navigate('Routes')} />
-            <EntryButton iconName="Users" label="Friends" onPress={() => nav.navigate('Friends')} />
-            <EntryButton iconName="Settings2" label="Settings" onPress={() => nav.navigate('Settings')} />
-          </View>
-
-        </ScrollView>
       </Animated.View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  scroll: {
-    flexGrow: 1,
+  safe: { flex: 1, backgroundColor: Colors.bg },
+  screen: {
+    flex: 1,
     paddingHorizontal: Spacing.base,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.xxl,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
   },
 
-  header: { marginBottom: Spacing.xl },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 6 },
-  logo: { fontSize: 36, fontWeight: '900', color: Colors.textPrimary, letterSpacing: -1.5 },
-  logoBadge: {
-    backgroundColor: Colors.primary, borderRadius: Radius.pill,
-    paddingHorizontal: 7, paddingVertical: 2, marginBottom: 4,
-  },
-  logoBadgeText: { fontSize: FontSize.tiny, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
-  greeting: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, marginBottom: 2 },
-  headerSub: { fontSize: FontSize.body, color: Colors.textSecondary },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logo: { fontSize: FontSize.h1, fontWeight: '900', color: Colors.textPrimary, letterSpacing: -1 },
+  greeting: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textSecondary },
 
-  cardsSection: { gap: Spacing.md, marginBottom: Spacing.xl },
-  activityCard: {
-    borderRadius: Radius.cardLg ?? 20,
-    flexDirection: 'row', alignItems: 'center',
-    padding: Spacing.base, gap: Spacing.md,
-    ...Shadow.card, borderWidth: 1, borderColor: Colors.border,
-  },
-  activityIconBadge: {
-    width: 68, height: 68, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  activityText: { flex: 1 },
-  activityTitle: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
-  activitySubtitle: { fontSize: FontSize.small, color: Colors.textSecondary, lineHeight: 17 },
-  activityChevronPill: {
-    width: 20, height: 20, borderRadius: Radius.circle ?? 50,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
-  divider: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.base },
-  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
-  dividerText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 1 },
-
-  nudgeCard: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: Colors.surface, borderRadius: Radius.card,
+  statsRow: { flexDirection: 'row', gap: Spacing.sm },
+  statChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.surface, borderRadius: Radius.pill,
+    paddingHorizontal: 10, paddingVertical: 5,
     borderWidth: 1, borderColor: Colors.border,
-    padding: Spacing.md, marginBottom: Spacing.base,
   },
-  nudgeText: {
-    flex: 1, fontSize: FontSize.caption, color: Colors.textSecondary,
-  },
+  statText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
 
-  entriesRow: { flexDirection: 'row', gap: Spacing.sm },
-  entryBtn: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.card,
-    alignItems: 'center', paddingVertical: Spacing.lg, gap: Spacing.xs,
-    ...Shadow.card, borderWidth: 1, borderColor: Colors.border,
-    minHeight: 80, justifyContent: 'center',
+  cardsArea: { gap: Spacing.sm },
+
+  toolsRow: { flexDirection: 'row', gap: Spacing.sm },
+});
+
+const cardStyles = StyleSheet.create({
+  card: {
+    borderRadius: Radius.cardLg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    ...Shadow.card,
   },
-  entryIconWrap: {
-    width: 44, height: 44, borderRadius: 12,
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 2,
+  leftPanel: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  entryLabel: { fontSize: FontSize.caption, fontWeight: '600', color: Colors.textSecondary },
+  innerRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.base,
+    gap: Spacing.sm,
+  },
+  iconBadge: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  textCol: { flex: 1, gap: 5 },
+  title: { fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
+  subtitle: { fontSize: FontSize.small, color: Colors.textSecondary, lineHeight: 17 },
+  accentLine: { width: 24, height: 3, borderRadius: 2, marginTop: 4 },
+  chevron: {
+    width: 32, height: 32, borderRadius: Radius.card,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
 });
 
 const recentStyles = StyleSheet.create({
-  stripWrap: { marginBottom: Spacing.md },
-  strip: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     backgroundColor: Colors.surface, borderRadius: Radius.card,
-    padding: Spacing.md,
+    paddingHorizontal: Spacing.md, paddingVertical: 10,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  dot: {
+    width: 28, height: 28, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  textGroup: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  badge: { fontSize: FontSize.small, fontWeight: '700' },
+  stat: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary },
+  when: { fontSize: FontSize.small, color: Colors.textMuted, flexShrink: 0 },
+});
+
+const toolStyles = StyleSheet.create({
+  btn: {
+    flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.card,
+    alignItems: 'center', paddingVertical: Spacing.md, gap: 4,
     borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
   },
   iconWrap: {
-    width: 40, height: 40, borderRadius: 10,
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: Colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
   },
-  info: { flex: 1, gap: 3 },
-  typeBadge: {
-    alignSelf: 'flex-start', borderRadius: Radius.pill,
-    paddingHorizontal: 8, paddingVertical: 2,
-  },
-  typeBadgeText: { fontSize: FontSize.tiny, fontWeight: '700', letterSpacing: 0.3 },
-  primaryStat: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
-  secondaryLine: { fontSize: FontSize.small, fontWeight: '400', color: Colors.textSecondary },
-  viewAll: {
-    flexDirection: 'row', alignItems: 'center', gap: 2,
-    alignSelf: 'flex-end', paddingTop: Spacing.xs, paddingRight: 2,
-  },
-  viewAllText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.primary },
-});
-
-const statsStyles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.xl },
-  capsule: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.surface, borderRadius: Radius.button ?? 12,
-    paddingVertical: 10, paddingHorizontal: 10,
-    borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
-    borderLeftWidth: 3,
-  },
-  capIcon: {
-    width: 28, height: 28, borderRadius: 8,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  capTextCol: { flex: 1 },
-  capValue: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, lineHeight: 22 },
-  capUnit: { fontSize: FontSize.tiny, color: Colors.textMuted, fontWeight: '600' },
-});
-
-const emptyStyles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.surface, borderRadius: Radius.cardLg ?? 20,
-    alignItems: 'center', padding: Spacing.xl, marginBottom: Spacing.xl,
-    borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
-  },
-  iconRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.md },
-  iconCircle: {
-    width: 48, height: 48, borderRadius: 16,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  heading: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, marginBottom: 6, textAlign: 'center' },
-  body: { fontSize: FontSize.body, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: Spacing.lg },
-  cta: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: Colors.primary, borderRadius: Radius.button ?? 12,
-    paddingHorizontal: Spacing.lg, paddingVertical: 10,
-  },
-  ctaText: { fontSize: FontSize.caption, fontWeight: '700', color: '#fff' },
-});
-
-const howStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.xl,
-    justifyContent: 'space-between',
-  },
-  step: { flex: 1, alignItems: 'center', gap: 6 },
-  iconBadge: {
-    width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  label: { fontSize: FontSize.tiny, color: Colors.textSecondary, textAlign: 'center', fontWeight: '500', lineHeight: 14 },
+  label: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
 });

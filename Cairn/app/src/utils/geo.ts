@@ -114,3 +114,17 @@ export function formatDate(timestamp: number): string {
                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${months[date.getMonth()]} ${date.getDate()}`;
 }
+
+/**
+ * Relative time label: "just now", "5m ago", "3h ago", "yesterday", "4 days ago".
+ */
+export function getRelativeTime(ts: number): string {
+  const diffMs = Date.now() - ts;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 60) return diffMin <= 1 ? 'just now' : `${diffMin}m ago`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH}h ago`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD === 1) return 'yesterday';
+  return `${diffD} days ago`;
+}
