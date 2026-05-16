@@ -18,6 +18,7 @@ export interface AuthResult {
   // 2-step registration: backend sent a code, frontend shows verify screen
   step?: 'verify';
   email?: string;
+  devCode?: string;  // only present in dev builds — backend returns code directly
 }
 
 async function post(path: string, body: object): Promise<Response> {
@@ -40,7 +41,8 @@ export async function register(
       return { error: data?.error || data?.message || 'Registration failed.' };
     }
     // Backend sends a verification code — frontend must show the verify screen
-    return { step: 'verify', email: data.email };
+    // dev_code is only present in non-production builds
+    return { step: 'verify', email: data.email, devCode: data.dev_code };
   } catch {
     return { error: 'Unable to connect. Please try again.' };
   }

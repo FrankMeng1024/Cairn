@@ -80,7 +80,9 @@ router.post('/register', authLimiter, async (req, res) => {
       console.error('[email] failed to send verification code:', err.message)
     );
 
-    return res.status(200).json({ message: 'Verification code sent.', email: normalEmail });
+    // DEV MODE: return code in response so dev can test without email setup
+    const devPayload = process.env.NODE_ENV !== 'production' ? { dev_code: code } : {};
+    return res.status(200).json({ message: 'Verification code sent.', email: normalEmail, ...devPayload });
   } catch (err) {
     console.error('[register]', err);
     return res.status(500).json({ error: 'Server error. Please try again.' });

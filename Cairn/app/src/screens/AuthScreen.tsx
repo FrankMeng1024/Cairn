@@ -320,6 +320,7 @@ export function AuthScreen() {
   const [verifyError, setVerifyError] = useState('');
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0); // seconds remaining
+  const [devCode, setDevCode] = useState('');            // dev-only: code returned by backend
   const [expiredBanner, setExpiredBanner] = useState(sessionExpired);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -475,6 +476,7 @@ export function AuthScreen() {
         setVerifyCode_('');
         setVerifyError('');
         setResendCooldown(60);
+        if (result.devCode) setDevCode(result.devCode);
         setView('verify');
         return;
       }
@@ -619,6 +621,14 @@ export function AuthScreen() {
               <Text style={{ fontWeight: '600', color: Colors.textPrimary }}>{verifyEmail}</Text>
               {'. Enter it below to verify your account.'}
             </Text>
+
+            {/* DEV ONLY: show code inline since email SMTP may not be configured */}
+            {!!devCode && (
+              <View style={{ backgroundColor: '#fff3cd', borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#ffc107' }}>
+                <Text style={{ fontSize: 12, color: '#856404', fontWeight: '600' }}>DEV MODE — verification code:</Text>
+                <Text style={{ fontSize: 28, fontWeight: '900', color: '#856404', letterSpacing: 8, marginTop: 4 }}>{devCode}</Text>
+              </View>
+            )}
 
             {!!verifyError && (
               <View style={formStyles.apiBanner}>
