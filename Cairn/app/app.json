@@ -50,10 +50,9 @@
       [
         "@rnmapbox/maps",
         {
-          "RNMapboxMapsDownloadToken": "MAPBOX_TOKEN_PLACEHOLDER"
+          "RNMapboxMapsImpl": "mapbox"
         }
-      ],
-      "react-native-reanimated"
+      ]
     ]
   }
 }

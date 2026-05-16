@@ -1,7 +1,7 @@
 # PROJECT_STATE.md — Cairn
 
 **Status**: IN_PROGRESS
-**Current Sprint**: 42 (Phase 1 — Map + GPS)
+**Current Sprint**: 44 (Phase 1 — RunningScreen + Map interactions)
 **Last Updated**: 2026-05-17
 **Governing Document**: docs/PRD2.md (supersedes PRD.md)
 
@@ -19,6 +19,10 @@
 - Phase 2.5: E-004 (Friends) + E-009 (Weather/Road)
 - Phase 3: E-003 (AR) + E-005 (Community)
 
-## Current Sprint: 42
-- Goal: Mapbox real map rendering + offline tile download foundation
-- Status: PLANNING
+## Completed Sprints (PRD2 era)
+- Sprint 42: COMPLETE — Mapbox SDK setup, MapScreen real rendering, Kalman filter (18 tests), GlassPanel + Elevation system
+- Sprint 43: COMPLETE — Offline tile manager, HikingScreen Mapbox + track polyline, GPSStatusBar, MapBottomPanel
+
+## Push Status
+- Sprint 42: pushed ✓
+- Sprint 43: committed locally, push failed (network) — retry next session

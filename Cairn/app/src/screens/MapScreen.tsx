@@ -22,6 +22,8 @@ import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../componen
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
 import { GlassPanel, Elevation } from '../components/GlassPanel';
+import { MapBottomPanel, type PanelMarkerItem } from '../components/MapBottomPanel';
+import { OfflineMapSheet } from '../components/OfflineMapSheet';
 import { MOCK_MARKERS, MARKER_META, MarkerType } from '../data/mockData';
 import { getCurrentRegion } from '../config/regions';
 
@@ -346,6 +348,7 @@ export function MapScreen() {
   const [createVisible, setCreateVisible] = useState(false);
   const [selectedMarker, setSelectedMarker] = useState<typeof MOCK_MARKERS[0] | null>(null);
   const [showModeModal, setShowModeModal] = useState(false);
+  const [offlineVisible, setOfflineVisible] = useState(false);
 
   // Spring scales for buttons
   const fabScale = useRef(new Animated.Value(1)).current;
@@ -505,6 +508,30 @@ export function MapScreen() {
       <MarkerDetailSheet
         marker={selectedMarker}
         onClose={() => setSelectedMarker(null)}
+      />
+
+      {/* Bottom Panel — nearby markers + offline access */}
+      {!isTracking && (
+        <MapBottomPanel
+          markers={markers.map(m => ({
+            id: m.id,
+            type: m.type,
+            title: m.text || m.title || MARKER_META[m.type]?.label || 'Marker',
+            distance: m.distanceM ? `${m.distanceM}m` : '--',
+            timeAgo: m.timeAgo || 'unknown',
+          }))}
+          onMarkerPress={(id) => {
+            const m = markers.find(mk => mk.id === id);
+            if (m) setSelectedMarker(m);
+          }}
+          onOfflinePress={() => setOfflineVisible(true)}
+        />
+      )}
+
+      {/* Offline Map Download Sheet */}
+      <OfflineMapSheet
+        visible={offlineVisible}
+        onClose={() => setOfflineVisible(false)}
       />
 
       {/* Activity mode modal — STORY-00099: LinearGradient icon badges */}
