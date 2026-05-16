@@ -27,10 +27,11 @@ import { useAppStore } from '../store/useAppStore';
 import { useTrackingStore } from '../store/useTrackingStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { getCurrentRegion } from '../config/regions';
-import { formatDistance, formatDuration, haversineM } from '../utils/geo';
+import { formatDistance, formatDuration, haversineM, createTrackSmoother, smoothGPSPoint, getSamplingInterval, classifyMovement, type SmoothedTrackState, type GPSPoint } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon, type IconName } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
+import { GPSStatusBar } from '../components/GPSStatusBar';
 import { MARKER_META, type MarkerType } from '../data/mockData';
 import type { Marker } from '../store/useMarkerStore';
 
@@ -67,64 +68,127 @@ function MarkerPin({ type, x, y, onPress }: {
   );
 }
 
-// ── Map placeholder ──────────────────────────────────────────────────────
-function MapPlaceholder({ markers, onMarkerPress }: {
+// ── Mapbox conditional import ────────────────────────────────────────────
+let MapView: any = null;
+let CameraComponent: any = null;
+let PointAnnotation: any = null;
+let UserLocationComponent: any = null;
+let LineLayer: any = null;
+let ShapeSource: any = null;
+try {
+  const Mapbox = require('@rnmapbox/maps');
+  MapView = Mapbox.MapView;
+  CameraComponent = Mapbox.Camera;
+  PointAnnotation = Mapbox.PointAnnotation;
+  UserLocationComponent = Mapbox.UserLocation;
+  LineLayer = Mapbox.LineLayer;
+  ShapeSource = Mapbox.ShapeSource;
+} catch {
+  // Mapbox not available
+}
+
+// ── Map component (real Mapbox or fallback) ─────────────────────────────
+function HikingMap({ markers, trackPoints, onMarkerPress }: {
   markers: Marker[];
+  trackPoints: Array<{ lat: number; lng: number }>;
   onMarkerPress: (id: string) => void;
 }) {
-  // GPS pulse animation — outer ring fades out, inner dot scales subtly
-  const pulseOpacity = useRef(new Animated.Value(0.3)).current;
-  const dotScale = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const pulseLoop = Animated.loop(
-      Animated.timing(pulseOpacity, { toValue: 0, duration: 2000, useNativeDriver: true })
+  const region = getCurrentRegion();
+
+  // Build GeoJSON for track polyline
+  const trackGeoJSON = {
+    type: 'FeatureCollection' as const,
+    features: trackPoints.length >= 2 ? [{
+      type: 'Feature' as const,
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: trackPoints.map(p => [p.lng, p.lat]),
+      },
+      properties: {},
+    }] : [],
+  };
+
+  // Fallback when Mapbox not available
+  if (!MapView) {
+    return (
+      <View style={styles.mapBg}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md }}>
+          <Icon name="Map" size={48} color={Colors.primaryMuted} />
+          <Text style={{ fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary }}>
+            Real Map (EAS Build)
+          </Text>
+          <Text style={{ fontSize: FontSize.body, color: Colors.textSecondary, textAlign: 'center' }}>
+            Build with EAS to enable live tracking map
+          </Text>
+        </View>
+        {markers.map((m, i) => (
+          <MarkerPin
+            key={m.id}
+            type={m.type}
+            x={80 + (i % 5) * 55}
+            y={200 + (i % 3) * 100}
+            onPress={() => onMarkerPress(m.id)}
+          />
+        ))}
+      </View>
     );
-    const scaleLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(dotScale, { toValue: 1.05, duration: 1000, useNativeDriver: true }),
-        Animated.timing(dotScale, { toValue: 1, duration: 1000, useNativeDriver: true }),
-      ])
-    );
-    pulseLoop.start();
-    scaleLoop.start();
-    return () => { pulseLoop.stop(); scaleLoop.stop(); };
-  }, []);
+  }
 
   return (
     <View style={styles.mapBg}>
-      {/* Topo elevation rings — concentric, varying opacity */}
-      <View style={[styles.topoRing, { width: 320, height: 320, borderRadius: 160, top: 100, left: W / 2 - 160, borderColor: Colors.primaryDim }]} />
-      <View style={[styles.topoRing, { width: 240, height: 240, borderRadius: 120, top: 140, left: W / 2 - 120, borderColor: Colors.primaryDeep }]} />
-      <View style={[styles.topoRing, { width: 165, height: 165, borderRadius: 83, top: 178, left: W / 2 - 83, borderColor: Colors.primaryMuted }]} />
-      <View style={[styles.topoRing, { width: 96, height: 96, borderRadius: 48, top: 212, left: W / 2 - 48, borderColor: Colors.primaryMuted, backgroundColor: 'rgba(93,124,70,0.06)' }]} />
-      {/* Trail S-curve — three segments forming gentle S */}
-      <View style={styles.trailLine} />
-      <View style={styles.trailLine2} />
-      <View style={styles.trailLine3} />
-      {/* Location pin at trail midpoint — animated pulse */}
-      <View style={styles.locationDot}>
-        <Animated.View style={[styles.locationDotInner, { transform: [{ scale: dotScale }] }]} />
-        <Animated.View style={[styles.locationPulse, { opacity: pulseOpacity }]} />
-      </View>
-      {/* Trail Map label + subtitle + CTA */}
-      <View style={styles.mapLabelWrap}>
-        <Text style={styles.mapLabel}>Trail Map</Text>
-        <Text style={styles.mapSubLabel}>Download an offline pack to get started</Text>
-        <TouchableOpacity style={styles.downloadBtn} activeOpacity={0.8}>
-          <Icon name="Download" size={12} color={Colors.primary} strokeWidth={2.5} />
-          <Text style={styles.downloadBtnText}>Download Map</Text>
-        </TouchableOpacity>
-      </View>
-      {/* Real marker pins */}
-      {markers.map((m, i) => (
-        <MarkerPin
-          key={m.id}
-          type={m.type}
-          x={80 + (i % 5) * 55}
-          y={200 + (i % 3) * 100}
-          onPress={() => onMarkerPress(m.id)}
+      <MapView
+        style={StyleSheet.absoluteFillObject}
+        styleURL="mapbox://styles/mapbox/outdoors-v12"
+        logoEnabled={false}
+        attributionEnabled={false}
+        compassEnabled={true}
+        scaleBarEnabled={false}
+      >
+        <CameraComponent
+          followUserLocation={true}
+          followZoomLevel={15}
+          followPitch={0}
+          animationDuration={1000}
         />
-      ))}
+        <UserLocationComponent visible={true} renderMode="native" />
+
+        {/* Track polyline */}
+        {trackPoints.length >= 2 && (
+          <ShapeSource id="track-line" shape={trackGeoJSON}>
+            <LineLayer
+              id="track-line-layer"
+              style={{
+                lineColor: Colors.primary,
+                lineWidth: 3,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </ShapeSource>
+        )}
+
+        {/* Markers */}
+        {markers.map((m) => (
+          <PointAnnotation
+            key={m.id}
+            id={m.id}
+            coordinate={[m.lng, m.lat]}
+            onSelected={() => onMarkerPress(m.id)}
+          >
+            <View style={[styles.markerPin, {
+              borderColor: MARKER_META[m.type]?.color ?? Colors.textSecondary,
+              backgroundColor: MARKER_META[m.type]?.bg ?? Colors.surface,
+            }]}>
+              <Icon
+                name={(FLAG_TYPES.find(f => f.id === m.type)?.icon || 'Flag') as IconName}
+                size={14}
+                color={MARKER_META[m.type]?.color ?? Colors.textSecondary}
+                strokeWidth={2.5}
+              />
+            </View>
+          </PointAnnotation>
+        ))}
+      </MapView>
     </View>
   );
 }
@@ -346,6 +410,7 @@ export function HikingScreen() {
   const locationAvailable = useTrackingStore(s => s.locationAvailable);
   const lastCoordinate = useTrackingStore(s => s.lastCoordinate);
   const sessionId = useTrackingStore(s => s.sessionId);
+  const trackPoints = useTrackingStore(s => s.trackPoints);
   const startTracking = useTrackingStore(s => s.startTracking);
   const stopTracking = useTrackingStore(s => s.stopTracking);
   const linkMarker = useTrackingStore(s => s.linkMarker);
@@ -408,8 +473,9 @@ export function HikingScreen() {
 
   return (
     <View style={styles.container}>
-      <MapPlaceholder
+      <HikingMap
         markers={markers}
+        trackPoints={trackPoints.map(tp => ({ lat: tp.lat, lng: tp.lng }))}
         onMarkerPress={(id) => { setSelectedMarkerId(id); setUi('detail'); }}
       />
 
