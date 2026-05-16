@@ -280,13 +280,27 @@ export function SettingsScreen() {
         {/* ── Account ── */}
         <SectionHeader title="Account" />
         <View style={styles.card}>
-          <ActionRow
-            iconName="User"
-            iconColor={Colors.textSecondary}
-            iconBg={Colors.border}
-            label="Profile"
-            onPress={() => Alert.alert('Profile', 'Coming soon')}
-          />
+          {/* Profile row — initials avatar + mode badge */}
+          <TouchableOpacity style={rowStyles.actionRow} onPress={() => Alert.alert('Profile', 'Coming soon')} activeOpacity={0.7}>
+            <View style={profileStyles.initialsCircle}>
+              <Text style={profileStyles.initialsText}>
+                {pendingMode === 'beginner' ? 'E' : 'N'}
+              </Text>
+            </View>
+            <View style={{ flex: 1, marginRight: Spacing.sm }}>
+              <Text style={{ fontSize: FontSize.body, fontWeight: '500', color: Colors.textPrimary }}>Profile</Text>
+              <View style={[profileStyles.modeBadge, {
+                backgroundColor: pendingMode === 'beginner' ? Colors.primaryLight : Colors.flagLight,
+              }]}>
+                <Text style={[profileStyles.modeBadgeText, {
+                  color: pendingMode === 'beginner' ? Colors.primary : Colors.flag,
+                }]}>
+                  {pendingMode === 'beginner' ? 'Explorer' : 'Navigator'}
+                </Text>
+              </View>
+            </View>
+            <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
+          </TouchableOpacity>
           <View style={styles.divider} />
           <ActionRow
             iconName="LogOut"
@@ -449,4 +463,24 @@ const rowStyles = StyleSheet.create({
     minHeight: 54,
   },
   actionLabel: { flex: 1, fontSize: FontSize.body, fontWeight: '500', color: Colors.textPrimary },
+});
+
+const profileStyles = StyleSheet.create({
+  initialsCircle: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: Spacing.md, flexShrink: 0,
+  },
+  initialsText: {
+    fontSize: FontSize.body, fontWeight: '700', color: Colors.primary,
+  },
+  modeBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: Radius.pill, paddingHorizontal: 7, paddingVertical: 2,
+    marginTop: 3,
+  },
+  modeBadgeText: {
+    fontSize: FontSize.tiny, fontWeight: '700', letterSpacing: 0.3,
+  },
 });

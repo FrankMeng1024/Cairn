@@ -409,22 +409,24 @@ export function MapHistoryScreen() {
         {/* Selected session stat bar on map */}
         {selectedSession && (
           <View style={styles.trackStatBar}>
-            <View style={styles.trackStat}>
-              <Text style={styles.trackStatValue}>{formatDistance(selectedSession.distanceM, 'km', 2)}</Text>
+            <View style={[styles.trackStat, { borderLeftWidth: 2, borderLeftColor: Colors.running }]}>
+              <Text style={styles.trackStatValue}>
+                {selectedSession.distanceM < 10 ? '0' : formatDistance(selectedSession.distanceM, 'km', 2)}
+              </Text>
               <Text style={styles.trackStatUnit}>km</Text>
             </View>
             <View style={styles.trackStatDivider} />
-            <View style={styles.trackStat}>
+            <View style={[styles.trackStat, { borderLeftWidth: 2, borderLeftColor: Colors.primary }]}>
               <Text style={styles.trackStatValue}>{formatDuration(selectedSession.durationS)}</Text>
               <Text style={styles.trackStatUnit}>time</Text>
             </View>
             <View style={styles.trackStatDivider} />
-            <View style={styles.trackStat}>
+            <View style={[styles.trackStat, { borderLeftWidth: 2, borderLeftColor: Colors.flag }]}>
               <Text style={styles.trackStatValue}>{selectedSession.markerIds.length}</Text>
               <Text style={styles.trackStatUnit}>flags</Text>
             </View>
             <View style={styles.trackStatDivider} />
-            <View style={styles.trackStat}>
+            <View style={[styles.trackStat, { borderLeftWidth: 2, borderLeftColor: Colors.textMuted }]}>
               <Text style={styles.trackStatValue}>+{selectedSession.elevationGainM}m</Text>
               <Text style={styles.trackStatUnit}>elev</Text>
             </View>
@@ -638,7 +640,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.card, paddingVertical: Spacing.sm,
     ...Shadow.card,
   },
-  trackStat: { flex: 1, alignItems: 'center' },
+  trackStat: { flex: 1, alignItems: 'center', paddingLeft: Spacing.xs },
   trackStatValue: { fontSize: FontSize.caption, fontWeight: '800', color: Colors.textPrimary },
   trackStatUnit: { fontSize: FontSize.tiny, color: Colors.textSecondary, marginTop: 1 },
   trackStatDivider: { width: 1, height: 24, backgroundColor: Colors.border },
@@ -735,7 +737,7 @@ const cardStyles = StyleSheet.create({
   actTypePillText: { fontSize: FontSize.tiny, fontWeight: '700', letterSpacing: 0.3 },
   routePrimary: { fontSize: FontSize.body, fontWeight: '700', color: Colors.textPrimary },
   routeName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
-  routeMeta: { fontSize: FontSize.small, color: Colors.textSecondary },
+  routeMeta: { fontSize: FontSize.small, color: Colors.textMuted },
   routeChevron: {},
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,

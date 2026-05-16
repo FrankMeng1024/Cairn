@@ -1,5 +1,25 @@
 # Lessons Learned
 
+## Sprint 34 — 2026-05-16
+- [archived: CLAUDE.md §Integration] Sprint 34: clean Sprint, no retrospective actions. Zero QA bugs (6/6 stories PASS, all HIGH/MEDIUM confidence), no integration restart loops, no Spec Drift, no VU NOT ACCEPTED.
+- [resolved: Sprint 34] Low UX: "-- km" in HomeScreen stats bar — resolved as STORY-00113 null-state guard now shows "0 km" safely. Closed.
+- [pending] Sprint 34 Arch issue: `statUnit` style in RoutesScreen StyleSheet is dead code (no JSX reference). Medium severity. Candidate for cleanup Story in Sprint 35.
+- [pending] Sprint 34 Arch issue: GPS pill logic split between `useTrackingStore.status` (HikingScreen) and `useAppStore.trackingState` (MapScreen) — two stores for same UX concept, divergence risk. Medium severity. Candidate for refactor Story.
+- [pending] STORY-00062: distance > 10m km-display branch still untested.
+- [pending] STORY-00062: "Hike" badge variant still untested.
+- [pending] Low UX: FriendsScreen sharing state resets to 4/4 on remount (in-memory store). May warrant a persistence Story in future Sprint.
+
+
+- [archived: CLAUDE.md §Integration] Sprint 33: clean Sprint, no retrospective actions. Zero QA bugs (6/6 stories PASS), no integration restart loops, no Spec Drift, no VU NOT ACCEPTED.
+- [resolved: Sprint 33] Low UX: "Route Preview" label overpromises — changed to "Preview" (STORY-00108 DONE).
+- [resolved: Sprint 33] Low: Char counter amber window — lowered threshold from 25/30 to 22/30 for earlier warning (STORY-00107 DONE).
+- [resolved: Sprint 33] Medium: RunningScreen handleStop() missing haptic — caught by Arch Code Review, fixed before Integration. haptic now fires on Stop in both HikingScreen and RunningScreen (STORY-00106 DONE).
+- [pending] STORY-00062: distance > 10m km-display branch still untested. Future QA: seed session with distance > 100m.
+- [pending] STORY-00062: "Hike" badge variant still untested.
+- [pending] Low UX: "-- km" in HomeScreen stats bar ambiguous for first-time user — could mean zero, untracked, or error. Consider "0 km" or null-state label.
+- [pending] Low UX: FriendsScreen sharing state resets to 4/4 on remount (in-memory store). May warrant a persistence Story in future Sprint.
+- [pending] Low: "Max 30 characters" uses 'characters' — consistent with global English. Closed as acceptable.
+
 ## Sprint 28 — 2026-05-15
 - [archived: CLAUDE.md §Integration] Sprint 28: clean Sprint, no retrospective actions. Zero QA bugs (5/5 stories PASS, 4 HIGH + 1 MEDIUM), no integration restart loops, no Spec Drift, no VU NOT ACCEPTED.
 - [resolved: Sprint 28] RotateCcw icon on New Run button — already resolved in Sprint 27 as PlayCircle. Closed.

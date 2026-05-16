@@ -110,7 +110,7 @@ function QuickStats({ sessions, markerCount }: { sessions: any[]; markerCount: n
   return (
     <View style={statsStyles.row}>
       {capsule(stat1Anim, 'Route', String(sessions.length), sessions.length === 1 ? 'session' : 'sessions', Colors.primary, Colors.primaryLight)}
-      {capsule(stat2Anim, 'Map', totalDistM < 10 ? '--' : formatDistance(totalDistM, 'km', 1), 'km', Colors.running, Colors.runningLight)}
+      {capsule(stat2Anim, 'Map', totalDistM < 10 ? '0' : formatDistance(totalDistM, 'km', 1), 'km', Colors.running, Colors.runningLight)}
       {capsule(stat3Anim, 'Flag', String(markerCount), markerCount === 1 ? 'flag' : 'flags', Colors.flag, Colors.flagLight)}
     </View>
   );
@@ -272,7 +272,7 @@ function ActivityCard({
           </LinearGradient>
           <View style={styles.activityText}>
             <Text style={styles.activityTitle}>{title}</Text>
-            <Text style={styles.activitySubtitle}>{subtitle}</Text>
+            <Text style={styles.activitySubtitle} numberOfLines={2}>{subtitle}</Text>
           </View>
           <View style={[styles.activityChevronPill, { backgroundColor: lightBg }]}>
             <Icon name="ChevronRight" size={12} color={accentColor} strokeWidth={2.5} />
@@ -443,7 +443,7 @@ const styles = StyleSheet.create({
   },
   activityText: { flex: 1 },
   activityTitle: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
-  activitySubtitle: { fontSize: FontSize.caption, color: Colors.textSecondary, lineHeight: 18 },
+  activitySubtitle: { fontSize: FontSize.small, color: Colors.textSecondary, lineHeight: 17 },
   activityChevronPill: {
     width: 20, height: 20, borderRadius: Radius.circle ?? 50,
     alignItems: 'center', justifyContent: 'center',

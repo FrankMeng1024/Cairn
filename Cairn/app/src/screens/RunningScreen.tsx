@@ -190,10 +190,16 @@ export function RunningScreen() {
           </TouchableOpacity>
         </View>
         <View style={preStyles.footer}>
-          <TouchableOpacity style={preStyles.startBtn} onPress={() => { setRunState('pre'); }}>
-            <Icon name="PlayCircle" size={IconSize.md} color="#fff" strokeWidth={2} />
-            <Text style={preStyles.startBtnText}>New Run</Text>
-          </TouchableOpacity>
+          <TouchableOpacity onPress={() => { setRunState('pre'); }}>
+              <LinearGradient
+                colors={[Colors.primary, Colors.primaryDark]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={preStyles.startBtn}
+              >
+                <Icon name="PlayCircle" size={IconSize.md} color="#fff" strokeWidth={2} />
+                <Text style={preStyles.startBtnText}>New Run</Text>
+              </LinearGradient>
+            </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -270,14 +276,19 @@ export function RunningScreen() {
         <View style={preStyles.footer}>
           <Animated.View style={{ transform: [{ scale: startBtnScale }] }}>
             <TouchableOpacity
-              style={preStyles.startBtn}
               activeOpacity={1}
               onPress={handleStart}
               onPressIn={onStartPressIn}
               onPressOut={onStartPressOut}
             >
-              <Icon name="Play" size={IconSize.md} color="#fff" strokeWidth={2} />
-              <Text style={preStyles.startBtnText}>Start Running</Text>
+              <LinearGradient
+                colors={[Colors.primary, Colors.primaryDark]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={preStyles.startBtn}
+              >
+                <Icon name="Play" size={IconSize.md} color="#fff" strokeWidth={2} />
+                <Text style={preStyles.startBtnText}>Start Running</Text>
+              </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
           <View style={preStyles.lockHintRow}>
@@ -420,7 +431,7 @@ const preStyles = StyleSheet.create({
 
   footer: { padding: Spacing.xl, gap: Spacing.sm },
   startBtn: {
-    backgroundColor: Colors.primary, borderRadius: Radius.button,
+    borderRadius: Radius.button,
     paddingVertical: Spacing.lg, alignItems: 'center',
     flexDirection: 'row', gap: Spacing.sm, justifyContent: 'center',
   },

@@ -358,9 +358,11 @@ export function MapScreen() {
             <Icon name="ChevronLeft" size={16} color={Colors.primary} strokeWidth={2.5} />
             <Text style={styles.backChipText}>Back</Text>
           </TouchableOpacity>
-          <View style={styles.gpsChip}>
-            <View style={styles.gpsDot} />
-            <Text style={styles.chipText}>GPS Connected ±5m</Text>
+          <View style={[styles.gpsChip, !isTracking && styles.gpsChipAmber]}>
+            <View style={[styles.gpsDot, { backgroundColor: isTracking ? Colors.success : Colors.warning }]} />
+            <Text style={[styles.chipText, !isTracking && styles.chipTextAmber]}>
+              {isTracking ? 'GPS Connected ±5m' : 'Enable GPS'}
+            </Text>
           </View>
         </View>
 
@@ -594,6 +596,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,
     paddingHorizontal: Spacing.md, paddingVertical: 7, ...Shadow.card,
   },
+  gpsChipAmber: { backgroundColor: Colors.warningBg },
+  chipTextAmber: { color: Colors.warning },
   gpsDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.success },
   modeChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,

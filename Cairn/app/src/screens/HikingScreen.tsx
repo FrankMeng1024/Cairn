@@ -417,10 +417,22 @@ export function HikingScreen() {
       <SafeAreaView style={styles.topOverlay} edges={['top']} pointerEvents="box-none">
         <View style={styles.topRow}>
           <BackButton variant="pill" />
-          <View style={[styles.gpsChip, !locationAvailable && styles.gpsChipOffline]}>
-            <View style={[styles.gpsDot, { backgroundColor: locationAvailable ? Colors.success : Colors.danger }]} />
-            <Text style={[styles.gpsText, !locationAvailable && styles.gpsTextOffline]}>
-              {locationAvailable ? 'GPS Connected ±5m' : 'GPS Offline'}
+          <View style={[
+            styles.gpsChip,
+            status === 'idle' ? styles.gpsChipAmber : (!locationAvailable && styles.gpsChipOffline),
+          ]}>
+            <View style={[styles.gpsDot, {
+              backgroundColor: locationAvailable
+                ? Colors.success
+                : status === 'idle' ? Colors.warning : Colors.danger,
+            }]} />
+            <Text style={[
+              styles.gpsText,
+              status === 'idle' ? styles.gpsTextAmber : (!locationAvailable && styles.gpsTextOffline),
+            ]}>
+              {locationAvailable
+                ? 'GPS Connected ±5m'
+                : status === 'idle' ? 'Enable GPS' : 'GPS Offline'}
             </Text>
           </View>
         </View>
@@ -600,9 +612,13 @@ const styles = StyleSheet.create({
   gpsChipOffline: {
     backgroundColor: Colors.dangerBg,
   },
+  gpsChipAmber: {
+    backgroundColor: Colors.warningBg,
+  },
   gpsDot: { width: 8, height: 8, borderRadius: 4 },
   gpsText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary },
   gpsTextOffline: { color: Colors.danger },
+  gpsTextAmber: { color: Colors.warning },
   backChip: {
     flexDirection: 'row', alignItems: 'center', gap: 2,
     backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,

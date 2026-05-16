@@ -75,17 +75,17 @@ export function RoutesScreen() {
                 <Text style={styles.routeDate}>{formatRouteDate(item.date)}</Text>
                 {isBeginner ? (
                   <View style={styles.statsRow}>
-                    <View style={[styles.statChip, { borderLeftColor: iconColor }]}>
-                      <Text style={styles.statValue}>{item.distanceKm}</Text>
-                      <Text style={styles.statUnit}> km</Text>
+                    <View style={[styles.statChip, { backgroundColor: isRunRoute ? Colors.runningLight : Colors.primaryLight }]}>
+                      <Icon name="MapPin" size={9} color={iconColor} strokeWidth={2.5} />
+                      <Text style={[styles.statValue, { color: iconColor }]}>{item.distanceKm} km</Text>
                     </View>
-                    <View style={[styles.statChip, { borderLeftColor: iconColor }]}>
-                      <Text style={styles.statValue}>{formatDuration(item.durationMin)}</Text>
-                      <Text style={styles.statUnit}> time</Text>
+                    <View style={[styles.statChip, { backgroundColor: isRunRoute ? Colors.runningLight : Colors.primaryLight }]}>
+                      <Icon name="Timer" size={9} color={iconColor} strokeWidth={2.5} />
+                      <Text style={[styles.statValue, { color: iconColor }]}>{formatDuration(item.durationMin)}</Text>
                     </View>
-                    <View style={[styles.statChip, { borderLeftColor: iconColor }]}>
-                      <Text style={styles.statValue}>{item.markerCount}</Text>
-                      <Text style={styles.statUnit}> flags</Text>
+                    <View style={[styles.statChip, { backgroundColor: isRunRoute ? Colors.runningLight : Colors.primaryLight }]}>
+                      <Icon name="Flag" size={9} color={iconColor} strokeWidth={2.5} />
+                      <Text style={[styles.statValue, { color: iconColor }]}>{item.markerCount}</Text>
                     </View>
                   </View>
                 ) : (
@@ -210,15 +210,14 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
   statChip: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    backgroundColor: Colors.bg,
+    alignItems: 'center',
+    gap: 3,
     borderRadius: Radius.pill,
-    borderLeftWidth: 3,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
   },
   statValue: {
-    fontSize: FontSize.caption,
+    fontSize: FontSize.tiny,
     fontWeight: '700',
     color: Colors.textPrimary,
   },
