@@ -4,7 +4,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { useAppStore } from './src/store/useAppStore';
-import { useMarkerStore } from './src/store/useMarkerStore';
 
 // Must run at app entry — handles Google OAuth popup redirect on web
 WebBrowser.maybeCompleteAuthSession();
@@ -12,14 +11,11 @@ WebBrowser.maybeCompleteAuthSession();
 function AppRoot() {
   const hydrate = useAppStore(s => s.hydrate);
   const hydrated = useAppStore(s => s.hydrated);
-  const hydrateMarkers = useMarkerStore(s => s.hydrate);
   useEffect(() => {
-    // hydrate() handles both auth restore AND per-user session fetch from backend.
-    // hydrateSessions() (localStorage) must NOT run in parallel — it would overwrite
-    // the backend-fetched sessions with the previous user's cached data.
-    // useAppStore.hydrate() calls useSessionStore.hydrate() itself when not logged in.
+    // hydrate() handles auth restore, per-user session fetch from backend,
+    // and marker isolation. Do NOT call hydrateMarkers/hydrateSessions in
+    // parallel — they would overwrite backend data with previous user's cache.
     hydrate();
-    hydrateMarkers();
   }, []);
   if (!hydrated) return <View style={{ flex: 1 }} />;
   return <RootNavigator />;

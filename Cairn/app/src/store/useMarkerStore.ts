@@ -34,6 +34,7 @@ interface MarkerState {
   markers: Marker[];
   addMarker: (marker: Omit<Marker, 'id' | 'createdAt'>) => Marker;
   deleteMarker: (id: string) => void;
+  clearMarkers: () => void;
   getMarkersForRegion: (regionCode: string) => Marker[];
   hydrate: () => Promise<void>;
 }
@@ -61,6 +62,11 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
       storage.setItem(STORAGE_KEY, JSON.stringify(next));
       return { markers: next };
     });
+  },
+
+  clearMarkers: () => {
+    storage.removeItem(STORAGE_KEY);
+    set({ markers: [] });
   },
 
   getMarkersForRegion: (regionCode) => {
