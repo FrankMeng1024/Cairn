@@ -1,6 +1,18 @@
 # Lessons Learned
 
-## Sprint 34 — 2026-05-16
+## Sprint 35 — 2026-05-16
+- [archived: CLAUDE.md §Integration] Sprint 35: clean Sprint — QA PASS (STORY-00117 HIGH, STORY-00118/00119 MEDIUM confidence), UX PASS (no Blocker/Critical), no Blocker bugs, no integration restart loops.
+- [pending] Backend requires MySQL installed to fully test auth endpoints. Sprint 35 verified all code artifacts and graceful degradation. Live happy-path test (register/login/JWT skip-auth) deferred until MySQL available — candidate for Sprint 36 environment setup Story.
+- [pending] UX Medium: Privacy checkbox on Sign In screen adds friction for returning users — should only be required at registration. Backlog Story candidate.
+- [pending] UX Low: "Explorer mode" subtitle on Create Account uninformative for first-time users — backlog polish.
+- [pending] UX Low: Error message "Cannot reach server. Check your connection." implies user fault — neutral phrasing "Unable to connect. Please try again." preferred.
+- [resolved: Sprint 35] Spec Drift: API_SPEC.md referenced Firebase Auth — updated to JWT auth + rate limiting docs. DONE.
+- [resolved: Sprint 35] Metro bundler error: dynamic require() for expo-secure-store rejected — fixed to static import with Platform.OS guard.
+- [pending] backend/node_modules was accidentally committed in Sprint 35 first commit — cleaned in follow-up commit. Add .gitignore before first npm install in future backend scaffolds.
+- [pending] Sprint 34 Arch issue: `statUnit` dead code in RoutesScreen — still open, candidate cleanup.
+- [pending] Sprint 34 Arch issue: GPS pill store divergence (useTrackingStore vs useAppStore) — still open.
+
+
 - [archived: CLAUDE.md §Integration] Sprint 34: clean Sprint, no retrospective actions. Zero QA bugs (6/6 stories PASS, all HIGH/MEDIUM confidence), no integration restart loops, no Spec Drift, no VU NOT ACCEPTED.
 - [resolved: Sprint 34] Low UX: "-- km" in HomeScreen stats bar — resolved as STORY-00113 null-state guard now shows "0 km" safely. Closed.
 - [pending] Sprint 34 Arch issue: `statUnit` style in RoutesScreen StyleSheet is dead code (no JSX reference). Medium severity. Candidate for cleanup Story in Sprint 35.

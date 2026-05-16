@@ -1,7 +1,7 @@
 # PROJECT_STATE.md — Cairn
 
 **Status**: IN_PROGRESS
-**Current Sprint**: 35 (IN_PROGRESS)
+**Current Sprint**: 36 (PLANNING)
 **Last Updated**: 2026-05-16
 
 ## Key Decisions
@@ -36,7 +36,7 @@
 - Sprint 31: COMPLETE — MapScreen premium uplift: topo placeholder, CreateMarkerSheet 4-card grid + LinearGradient, MarkerDetailSheet gradient badge, tracking bar left-border, rgba chip overlay standard
 - Sprint 32: COMPLETE — AuthScreen password visibility toggle, haptic polish, char counter 30-char limit, FriendsScreen banner polish, SettingsScreen logout button
 - Sprint 33: COMPLETE — GPS pulse animation (HikingScreen + MapScreen), expo-haptics integration, "Max 30 characters" label + 22/30 amber threshold, MapHistoryScreen "Preview" label + stagger expand, FriendsScreen entrance animation, HomeScreen nudge card
-- Sprint 34: COMPLETE — RoutesScreen stat chips (beginner mode), RunningScreen gradient Start button, HomeScreen subtitle no-wrap + null guard, GPS pill 3-state system, MapHistoryScreen colored left-border stats, SettingsScreen profile initials + mode badge
+- Sprint 35: COMPLETE — Real auth foundation: Node.js/Express backend + JWT auth + MySQL schema; frontend AuthScreen UI polish; authService.ts + tokenStore.ts wired; Google OAuth deferred to Sprint 36
 
 All core GPS tracking functionality wired. Real expo-location GPS, haversineM distance calc, Zustand stores persisted.
 
