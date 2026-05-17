@@ -22,7 +22,7 @@ router.use(authenticate);
 router.post('/request', async (req, res) => {
   try {
     const { email } = req.body;
-    const fromUserId = req.user.id;
+    const fromUserId = req.user.userId;
 
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
@@ -69,7 +69,7 @@ router.get('/requests', async (req, res) => {
        JOIN users u ON u.id = fr.from_user_id
        WHERE fr.to_user_id = ? AND fr.status = "pending"
        ORDER BY fr.created_at DESC`,
-      [req.user.id]
+      [req.user.userId]
     );
     res.json(requests);
   } catch (err) {
@@ -87,7 +87,7 @@ router.post('/accept', async (req, res) => {
     // Verify request belongs to this user
     const [requests] = await pool.execute(
       'SELECT * FROM friend_requests WHERE id = ? AND to_user_id = ? AND status = "pending"',
-      [requestId, req.user.id]
+      [requestId, req.user.userId]
     );
     if (requests.length === 0) return res.status(404).json({ error: 'Request not found' });
 
@@ -96,7 +96,7 @@ router.post('/accept', async (req, res) => {
     // Create friendship (bidirectional)
     await pool.execute(
       'INSERT INTO friends (user_id, friend_id, created_at) VALUES (?, ?, NOW()), (?, ?, NOW())',
-      [req.user.id, request.from_user_id, request.from_user_id, req.user.id]
+      [req.user.userId, request.from_user_id, request.from_user_id, req.user.userId]
     );
 
     // Update request status
@@ -115,7 +115,7 @@ router.post('/reject', async (req, res) => {
     const { requestId } = req.body;
     await pool.execute(
       'UPDATE friend_requests SET status = "rejected" WHERE id = ? AND to_user_id = ?',
-      [requestId, req.user.id]
+      [requestId, req.user.userId]
     );
     res.json({ message: 'Request rejected' });
   } catch (err) {
@@ -132,7 +132,7 @@ router.get('/', async (req, res) => {
        JOIN users u ON u.id = f.friend_id
        WHERE f.user_id = ?
        ORDER BY f.created_at DESC`,
-      [req.user.id]
+      [req.user.userId]
     );
     res.json(friends);
   } catch (err) {
@@ -147,7 +147,7 @@ router.delete('/:id', async (req, res) => {
     const friendId = req.params.id;
     await pool.execute(
       'DELETE FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)',
-      [req.user.id, friendId, friendId, req.user.id]
+      [req.user.userId, friendId, friendId, req.user.userId]
     );
     res.json({ message: 'Friend removed' });
   } catch (err) {
@@ -163,7 +163,7 @@ router.get('/:id/markers', async (req, res) => {
     // Verify friendship
     const [friendship] = await pool.execute(
       'SELECT id FROM friends WHERE user_id = ? AND friend_id = ?',
-      [req.user.id, friendId]
+      [req.user.userId, friendId]
     );
     if (friendship.length === 0) return res.status(403).json({ error: 'Not friends' });
 

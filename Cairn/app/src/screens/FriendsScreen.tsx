@@ -18,6 +18,7 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
+import { useFriendStore } from '../store/useFriendStore';
 import { MOCK_FRIENDS } from '../data/mockData';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -239,8 +240,13 @@ function EmptyState({ onAddFriend }: { onAddFriend: () => void }) {
 export function FriendsScreen() {
   const nav = useNavigation<Nav>();
   const [showAdd, setShowAdd] = useState(false);
+
+  // Use real store friends if available, fallback to mock
+  const storeFriends = useFriendStore(s => s.friends);
   const [friends, setFriends] = useState<Friend[]>(
-    MOCK_FRIENDS.map(f => ({ ...f, sharing: true }))
+    storeFriends.length > 0
+      ? storeFriends.map(f => ({ id: f.id, name: f.name, email: f.email, online: false, lastSeen: 'N/A', sharing: f.shareMarkers }))
+      : MOCK_FRIENDS.map(f => ({ ...f, sharing: true }))
   );
 
   // STORY-00109: staggered entrance animations

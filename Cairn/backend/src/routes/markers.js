@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
     const [markers] = await pool.execute(
       `SELECT id, type, text, lat, lng, alt, permission, created_at, updated_at
        FROM markers WHERE user_id = ? ORDER BY created_at DESC`,
-      [req.user.id]
+      [req.user.userId]
     );
     res.json(markers);
   } catch (err) {
@@ -47,7 +47,7 @@ router.post('/', async (req, res) => {
     const [result] = await pool.execute(
       `INSERT INTO markers (user_id, type, text, lat, lng, alt, permission, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-      [req.user.id, type, text || '', lat, lng, alt || null, perm]
+      [req.user.userId, type, text || '', lat, lng, alt || null, perm]
     );
 
     res.status(201).json({
@@ -70,7 +70,7 @@ router.put('/:id', async (req, res) => {
     // Verify ownership
     const [existing] = await pool.execute(
       'SELECT id FROM markers WHERE id = ? AND user_id = ?',
-      [markerId, req.user.id]
+      [markerId, req.user.userId]
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Marker not found' });
 
@@ -94,7 +94,7 @@ router.put('/:id', async (req, res) => {
     if (updates.length === 0) return res.status(400).json({ error: 'No updates provided' });
 
     updates.push('updated_at = NOW()');
-    values.push(markerId, req.user.id);
+    values.push(markerId, req.user.userId);
 
     await pool.execute(
       `UPDATE markers SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`,
@@ -113,7 +113,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const [result] = await pool.execute(
       'DELETE FROM markers WHERE id = ? AND user_id = ?',
-      [req.params.id, req.user.id]
+      [req.params.id, req.user.userId]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Marker not found' });
     res.json({ message: 'Marker deleted' });

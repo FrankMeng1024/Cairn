@@ -17,7 +17,7 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useSessionStore } from '../store/useSessionStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { getCurrentRegion } from '../config/regions';
-import { formatDistance, formatDuration, formatDate } from '../utils/geo';
+import { formatDistance, formatDuration, formatDate, getRelativeTime } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
@@ -554,14 +554,7 @@ export function MapHistoryScreen() {
             ) : (
               markers.map(m => {
                 const meta = MARKER_META[m.type as keyof typeof MARKER_META] || MARKER_META.free;
-                const timeAgo = (() => {
-                  const diffMs = Date.now() - m.createdAt;
-                  const mins = Math.floor(diffMs / 60000);
-                  if (mins < 1) return 'Just now';
-                  if (mins < 60) return `${mins}m ago`;
-                  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
-                  return `${Math.floor(mins / 1440)}d ago`;
-                })();
+                const timeAgo = getRelativeTime(m.createdAt);
                 return (
                   <PressRow key={m.id} onPress={() => setSelectedMarkerId(m.id)} style={{ marginBottom: 0 }}>
                     <View style={flagStyles.row}>

@@ -431,6 +431,104 @@ export function SettingsScreen() {
           />
         </View>
 
+        {/* Emergency Section */}
+        <Text style={styles.sectionLabel}>EMERGENCY</Text>
+        <View style={styles.card}>
+          <ActionRow
+            iconName="Phone"
+            iconColor={Colors.danger}
+            iconBg={Colors.dangerBg}
+            label="Emergency Contacts"
+            onPress={() => Alert.alert('Emergency Contacts', 'Configure in next update')}
+          />
+          <View style={styles.divider} />
+          <ToggleRow
+            iconName="Navigation2"
+            iconColor={Colors.warning}
+            iconBg={Colors.warningBg}
+            label="Trip Sharing"
+            hint="Notify contacts if you don't check in"
+            value={true}
+            onToggle={() => {}}
+          />
+        </View>
+
+        {/* Broadcast Section */}
+        <Text style={styles.sectionLabel}>BROADCASTS</Text>
+        <View style={styles.card}>
+          <ToggleRow
+            iconName="Volume2"
+            iconColor={Colors.primary}
+            iconBg={Colors.primaryBg}
+            label="Voice Broadcasts"
+            hint="TTS announcements during activity"
+            value={true}
+            onToggle={() => {}}
+          />
+          <View style={styles.divider} />
+          <ToggleRow
+            iconName="TriangleAlert"
+            iconColor={Colors.danger}
+            iconBg={Colors.dangerBg}
+            label="Danger Alerts"
+            hint="Immediate voice warning near hazards"
+            value={true}
+            onToggle={() => {}}
+          />
+          <View style={styles.divider} />
+          <ToggleRow
+            iconName="Navigation2"
+            iconColor={Colors.warning}
+            iconBg={Colors.warningBg}
+            label="Route Deviation"
+            hint="Alert when off planned route"
+            value={true}
+            onToggle={() => {}}
+          />
+          <View style={styles.divider} />
+          <ActionRow
+            iconName="Timer"
+            iconColor={Colors.info}
+            iconBg={Colors.infoBg}
+            label="Broadcast Interval: 15s"
+            onPress={() => Alert.alert('Broadcast Interval', 'Adjustable 10-30s in next update')}
+          />
+        </View>
+
+        {/* Feedback Section */}
+        <Text style={styles.sectionLabel}>FEEDBACK</Text>
+        <View style={styles.card}>
+          <ToggleRow
+            iconName="Zap"
+            iconColor={Colors.primary}
+            iconBg={Colors.primaryBg}
+            label="Haptic Feedback"
+            hint="Vibration on actions"
+            value={true}
+            onToggle={() => {}}
+          />
+          <View style={styles.divider} />
+          <ToggleRow
+            iconName="Volume2"
+            iconColor={Colors.info}
+            iconBg={Colors.infoBg}
+            label="Sound Effects"
+            hint="Audio cues on flag plant, waypoint"
+            value={true}
+            onToggle={() => {}}
+          />
+          <View style={styles.divider} />
+          <ToggleRow
+            iconName="Star"
+            iconColor={Colors.danger}
+            iconBg={Colors.dangerBg}
+            label="Edge Warning Glow"
+            hint="Screen edge flash near danger"
+            value={true}
+            onToggle={() => {}}
+          />
+        </View>
+
         {/* Save button (bottom) with shimmer when active */}
         <TouchableOpacity
           style={[styles.saveBtnBottom, hasChanges && styles.saveBtnBottomActive]}
