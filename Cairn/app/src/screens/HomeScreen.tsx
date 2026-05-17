@@ -260,6 +260,7 @@ export function HomeScreen() {
           <ToolBtn iconName="Map" label="Map" onPress={() => nav.navigate('Map')} />
           <ToolBtn iconName="Route" label="Routes" onPress={() => nav.navigate('Routes')} />
           <ToolBtn iconName="Users" label="Friends" onPress={() => nav.navigate('Friends')} />
+          <ToolBtn iconName="Compass" label="AR" onPress={() => nav.navigate('AR')} />
           <ToolBtn iconName="Settings2" label="Settings" onPress={() => nav.navigate('Settings')} />
         </View>
 

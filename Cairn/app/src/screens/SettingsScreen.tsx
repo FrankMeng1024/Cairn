@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore, UIMode } from '../store/useAppStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import { logout } from '../services/authService';
 import { getToken } from '../services/tokenStore';
 import { API_BASE_URL } from '../config/api';
@@ -155,10 +156,17 @@ function SectionHeader({ title }: { title: string }) {
 export function SettingsScreen() {
   const nav = useNavigation<Nav>();
   const { uiMode, setUIMode, user, isLoggedIn, logout: appLogout } = useAppStore();
+  const settings = useSettingsStore();
 
   const [pendingMode, setPendingMode] = useState<UIMode>(uiMode);
-  const [shareAfterAdd, setShareAfterAdd] = useState(true);
-  const [nightMode, setNightMode] = useState(false);
+
+  // Destructure for ergonomic access
+  const {
+    shareAfterAdd, nightMode, broadcastEnabled, locationShare,
+    tripSharing, voiceBroadcasts, dangerAlerts, routeDeviation,
+    hapticFeedback, soundEffects, edgeWarningGlow,
+    updateSetting,
+  } = settings;
 
   // ── Change Password ─────────────────────────────────────────────────────
   const [showChangePw, setShowChangePw] = useState(false);
@@ -192,19 +200,9 @@ export function SettingsScreen() {
       setPwLoading(false);
     }
   };
-  const [broadcastEnabled, setBroadcastEnabled] = useState(true);
-  const [locationShare, setLocationShare] = useState(false);
-  const [tripSharing, setTripSharing] = useState(true);
-  const [voiceBroadcasts, setVoiceBroadcasts] = useState(true);
-  const [dangerAlerts, setDangerAlerts] = useState(true);
-  const [routeDeviation, setRouteDeviation] = useState(true);
-  const [hapticFeedback, setHapticFeedback] = useState(true);
-  const [soundEffects, setSoundEffects] = useState(true);
-  const [edgeWarningGlow, setEdgeWarningGlow] = useState(true);
+  // (settings toggles auto-persist via useSettingsStore.updateSetting)
 
-  const hasChanges = pendingMode !== uiMode
-    || shareAfterAdd !== true
-    || nightMode !== false;
+  const hasChanges = pendingMode !== uiMode;
 
   // Hint fade animation — fades in (200ms) when hasChanges, out when not
   const hintOpacity = useRef(new Animated.Value(0)).current;
@@ -274,7 +272,7 @@ export function SettingsScreen() {
             label="Share flags with new friends by default"
             hint="New friends automatically see your public flags"
             value={shareAfterAdd}
-            onToggle={() => setShareAfterAdd(!shareAfterAdd)}
+            onToggle={() => updateSetting('shareAfterAdd', !shareAfterAdd)}
             pending={shareAfterAdd !== true}
           />
           <View style={styles.divider} />
@@ -285,7 +283,7 @@ export function SettingsScreen() {
             label="Live location sharing"
             hint="Let friends see your current location in real time"
             value={locationShare}
-            onToggle={() => setLocationShare(!locationShare)}
+            onToggle={() => updateSetting('locationShare', !locationShare)}
             pending={locationShare !== false}
           />
         </View>
@@ -300,7 +298,7 @@ export function SettingsScreen() {
             label="Night mode"
             hint="Dark theme, easier on the eyes at night"
             value={nightMode}
-            onToggle={() => setNightMode(!nightMode)}
+            onToggle={() => updateSetting('nightMode', !nightMode)}
             pending={nightMode !== false}
           />
         </View>
@@ -315,7 +313,7 @@ export function SettingsScreen() {
             label="Route announcements"
             hint="Announce distance and off-route warnings while active"
             value={broadcastEnabled}
-            onToggle={() => setBroadcastEnabled(!broadcastEnabled)}
+            onToggle={() => updateSetting('broadcastEnabled', !broadcastEnabled)}
             pending={broadcastEnabled !== true}
           />
         </View>
@@ -456,7 +454,7 @@ export function SettingsScreen() {
             label="Trip Sharing"
             hint="Notify contacts if you don't check in"
             value={tripSharing}
-            onToggle={() => setTripSharing(!tripSharing)}
+            onToggle={() => updateSetting('tripSharing', !tripSharing)}
           />
         </View>
 
@@ -470,7 +468,7 @@ export function SettingsScreen() {
             label="Voice Broadcasts"
             hint="TTS announcements during activity"
             value={voiceBroadcasts}
-            onToggle={() => setVoiceBroadcasts(!voiceBroadcasts)}
+            onToggle={() => updateSetting('voiceBroadcasts', !voiceBroadcasts)}
           />
           <View style={styles.divider} />
           <ToggleRow
@@ -480,7 +478,7 @@ export function SettingsScreen() {
             label="Danger Alerts"
             hint="Immediate voice warning near hazards"
             value={dangerAlerts}
-            onToggle={() => setDangerAlerts(!dangerAlerts)}
+            onToggle={() => updateSetting('dangerAlerts', !dangerAlerts)}
           />
           <View style={styles.divider} />
           <ToggleRow
@@ -490,7 +488,7 @@ export function SettingsScreen() {
             label="Route Deviation"
             hint="Alert when off planned route"
             value={routeDeviation}
-            onToggle={() => setRouteDeviation(!routeDeviation)}
+            onToggle={() => updateSetting('routeDeviation', !routeDeviation)}
           />
           <View style={styles.divider} />
           <ActionRow
@@ -512,7 +510,7 @@ export function SettingsScreen() {
             label="Haptic Feedback"
             hint="Vibration on actions"
             value={hapticFeedback}
-            onToggle={() => setHapticFeedback(!hapticFeedback)}
+            onToggle={() => updateSetting('hapticFeedback', !hapticFeedback)}
           />
           <View style={styles.divider} />
           <ToggleRow
@@ -522,7 +520,7 @@ export function SettingsScreen() {
             label="Sound Effects"
             hint="Audio cues on flag plant, waypoint"
             value={soundEffects}
-            onToggle={() => setSoundEffects(!soundEffects)}
+            onToggle={() => updateSetting('soundEffects', !soundEffects)}
           />
           <View style={styles.divider} />
           <ToggleRow
@@ -532,7 +530,7 @@ export function SettingsScreen() {
             label="Edge Warning Glow"
             hint="Screen edge flash near danger"
             value={edgeWarningGlow}
-            onToggle={() => setEdgeWarningGlow(!edgeWarningGlow)}
+            onToggle={() => updateSetting('edgeWarningGlow', !edgeWarningGlow)}
           />
         </View>
 

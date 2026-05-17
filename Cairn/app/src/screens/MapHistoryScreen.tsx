@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { useSessionStore } from '../store/useSessionStore';
+import { useSessionStore, loadTrackPoints } from '../store/useSessionStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { getCurrentRegion } from '../config/regions';
 import { formatDistance, formatDuration, formatDate, getRelativeTime } from '../utils/geo';
@@ -378,6 +378,18 @@ export function MapHistoryScreen() {
   const selectedSession = sessions.find(s => s.id === selectedSessionId) ?? null;
   const selectedMarker = markers.find(m => m.id === selectedMarkerId) ?? null;
 
+  // Load track points on demand when session is selected
+  const [loadedTrackPoints, setLoadedTrackPoints] = useState<import('../store/useSessionStore').TrackPoint[]>([]);
+  useEffect(() => {
+    if (!selectedSessionId) { setLoadedTrackPoints([]); return; }
+    loadTrackPoints(selectedSessionId).then(setLoadedTrackPoints).catch(() => {});
+  }, [selectedSessionId]);
+
+  // Merge loaded track points into the selected session for display
+  const sessionForDisplay = selectedSession
+    ? { ...selectedSession, trackPoints: loadedTrackPoints }
+    : null;
+
   // Show real markers on map; up to 8
   const mapMarkers: Marker[] = markers.slice(0, 8);
 
@@ -386,8 +398,8 @@ export function MapHistoryScreen() {
       {/* Map area */}
       <View style={styles.mapArea}>
         {/* Track polyline when session selected */}
-        {selectedSession ? (
-          <TrackPolyline session={selectedSession} />
+        {sessionForDisplay ? (
+          <TrackPolyline session={sessionForDisplay} />
         ) : (
           // Decorative lines when no session selected
           <>

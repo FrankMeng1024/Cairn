@@ -13,6 +13,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, FontSize, Radius } from '../components/tokens';
 import { Icon } from '../components/Icon';
@@ -140,7 +141,7 @@ export function getPermissionVisual(permission: string): ARMarkerVisual {
 // ── AR Screen Component (Fallback — no ViroReact available) ─────────────────
 
 interface ARScreenProps {
-  onClose: () => void;
+  onClose?: () => void;
   onPlaceMarker?: (lat: number, lng: number) => void;
 }
 
@@ -154,6 +155,7 @@ interface ARScreenProps {
  * - Place marker button
  */
 export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
+  const nav = useNavigation();
   const markers = useMarkerStore(s => s.markers);
   const lastCoord = useTrackingStore(s => s.lastCoordinate);
 
@@ -222,7 +224,7 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
 
       {/* Top controls */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+        <TouchableOpacity style={styles.closeBtn} onPress={() => onClose ? onClose() : nav.goBack()}>
           <Icon name="X" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
