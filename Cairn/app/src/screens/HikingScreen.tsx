@@ -32,6 +32,7 @@ import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../componen
 import { Icon, type IconName } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
 import { GPSStatusBar } from '../components/GPSStatusBar';
+import { SOSButton } from '../components/SOSButton';
 import { MARKER_META, type MarkerType } from '../data/mockData';
 import type { Marker } from '../store/useMarkerStore';
 
@@ -539,6 +540,16 @@ export function HikingScreen() {
 
       {/* Bottom FABs */}
       <SafeAreaView style={styles.bottomOverlay} edges={['bottom']} pointerEvents="box-none">
+        {/* SOS Button — visible during tracking */}
+        {isTracking && lastCoordinate && (
+          <View style={{ alignItems: 'center', marginBottom: Spacing.sm }}>
+            <SOSButton
+              lat={lastCoordinate.lat}
+              lng={lastCoordinate.lng}
+              accuracy={10}
+            />
+          </View>
+        )}
         <View style={styles.bottomRow}>
           {!isTracking ? (
             <Animated.View style={[{ flex: 1 }, { transform: [{ scale: trackBtnScale }] }]}>

@@ -296,10 +296,11 @@ function CreateMarkerSheet({
 
 // ── MarkerDetailSheet (STORY-00097) ───────────────────────────────────────────
 function MarkerDetailSheet({
-  marker, onClose,
+  marker, onClose, onDelete,
 }: {
   marker: typeof MOCK_MARKERS[0] | null;
   onClose: () => void;
+  onDelete?: (id: string) => void;
 }) {
   if (!marker) return null;
   const meta = MARKER_META[marker.type];
@@ -333,6 +334,28 @@ function MarkerDetailSheet({
           <Icon name="ThumbsUp" size={15} color={Colors.textSecondary} strokeWidth={1.8} />
           <Text style={styles.helpfulPillText}>Helpful</Text>
         </TouchableOpacity>
+        {/* Edit / Delete actions */}
+        <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }}>
+          <TouchableOpacity
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: Spacing.sm, borderRadius: Radius.button, borderWidth: 1.5, borderColor: Colors.primary, backgroundColor: Colors.primaryBg }}
+            onPress={() => { /* TODO: open edit modal */ }}
+          >
+            <Icon name="Pencil" size={14} color={Colors.primary} strokeWidth={2} />
+            <Text style={{ fontSize: FontSize.small, fontWeight: '600', color: Colors.primary }}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: Spacing.sm, borderRadius: Radius.button, borderWidth: 1.5, borderColor: Colors.danger, backgroundColor: Colors.dangerBg }}
+            onPress={() => {
+              if (marker && onDelete) {
+                onDelete(marker.id);
+                onClose();
+              }
+            }}
+          >
+            <Icon name="Trash2" size={14} color={Colors.danger} strokeWidth={2} />
+            <Text style={{ fontSize: FontSize.small, fontWeight: '600', color: Colors.danger }}>Delete</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -508,6 +531,7 @@ export function MapScreen() {
       <MarkerDetailSheet
         marker={selectedMarker}
         onClose={() => setSelectedMarker(null)}
+        onDelete={(id) => setMarkers(prev => prev.filter(m => m.id !== id))}
       />
 
       {/* Bottom Panel — nearby markers + offline access */}
