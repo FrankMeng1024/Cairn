@@ -243,6 +243,7 @@ export function FriendsScreen() {
 
   // Use real store friends if available, fallback to mock
   const storeFriends = useFriendStore(s => s.friends);
+  const loadFriendsFromBackend = useFriendStore(s => s.loadFriendsFromBackend);
   const [friends, setFriends] = useState<Friend[]>(
     storeFriends.length > 0
       ? storeFriends.map(f => ({
@@ -257,6 +258,26 @@ export function FriendsScreen() {
         }))
       : MOCK_FRIENDS.map(f => ({ ...f, sharing: true }))
   );
+
+  // Refresh from backend on mount; update local list when store changes
+  useEffect(() => {
+    loadFriendsFromBackend();
+  }, []);
+
+  useEffect(() => {
+    if (storeFriends.length > 0) {
+      setFriends(storeFriends.map(f => ({
+        id: f.id,
+        name: f.name,
+        email: f.email,
+        initials: f.name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
+        online: false,
+        lastSeen: 'N/A',
+        sharedMarkers: 0,
+        sharing: f.shareMarkers,
+      })));
+    }
+  }, [storeFriends]);
 
   // STORY-00109: staggered entrance animations
   const screenOpacity = useRef(new Animated.Value(0)).current;

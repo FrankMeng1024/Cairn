@@ -32,7 +32,7 @@ import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../componen
 import { Icon } from '../components/Icon';
 import { login, register, loginWithGoogle, verifyCode, resendCode } from '../services/authService';
 import * as Google from 'expo-auth-session/providers/google';
-import { makeRedirectUri } from 'expo-auth-session';
+import { makeRedirectUri, Prompt } from 'expo-auth-session';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { height: SCREEN_H } = Dimensions.get('window');
@@ -343,7 +343,7 @@ export function AuthScreen() {
   const [googleRequest, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
     redirectUri: makeRedirectUri(),
-    prompt: 'select_account',  // always show account picker, never use cached credentials
+    prompt: Prompt.SelectAccount,  // always show account picker, never use cached credentials
   });
 
   // Handle Google OAuth response
@@ -545,7 +545,7 @@ export function AuthScreen() {
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         {expiredBanner && (
           <View style={styles.expiredBanner}>
-            <Icon name="AlertCircle" size={14} color="#fff" strokeWidth={2} />
+            <Icon name="TriangleAlert" size={14} color="#fff" strokeWidth={2} />
             <Text style={styles.expiredBannerText}>Session expired. Please sign in again.</Text>
           </View>
         )}
@@ -633,7 +633,7 @@ export function AuthScreen() {
 
             {!!verifyError && (
               <View style={formStyles.apiBanner}>
-                <Icon name="AlertCircle" size={14} color={Colors.danger} strokeWidth={2} />
+                <Icon name="TriangleAlert" size={14} color={Colors.danger} strokeWidth={2} />
                 <Text style={formStyles.apiError}>{verifyError}</Text>
               </View>
             )}
@@ -641,7 +641,7 @@ export function AuthScreen() {
             <Text style={formStyles.label}>Verification Code</Text>
             <View style={[formStyles.inputWrap, verifyError ? formStyles.inputError : null]}>
               <View style={formStyles.inputIcon}>
-                <Icon name="Shield" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={1.8} />
+                <Icon name="Lock" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={1.8} />
               </View>
               <TextInput
                 style={formStyles.inputInner}
@@ -664,7 +664,7 @@ export function AuthScreen() {
               <View style={styles.btnContent}>
                 {verifyLoading
                   ? <ActivityIndicator size="small" color="#fff" />
-                  : <Icon name="CheckCircle" size={IconSize.sm} color="#fff" strokeWidth={2} />
+                  : <Icon name="CircleCheck" size={IconSize.sm} color="#fff" strokeWidth={2} />
                 }
                 <Text style={styles.primaryBtnText}>Verify Email</Text>
               </View>
@@ -692,7 +692,7 @@ export function AuthScreen() {
   if (view === 'welcome') {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]} edges={['top', 'bottom']}>
-        <Icon name="CheckCircle" size={56} color={Colors.primary} strokeWidth={1.5} />
+        <Icon name="CircleCheck" size={56} color={Colors.primary} strokeWidth={1.5} />
         <Text style={[styles.appName, { marginTop: 16, marginBottom: 8 }]}>Welcome, {welcomeName}!</Text>
         <Text style={[styles.tagline, { textAlign: 'center', color: Colors.textSecondary }]}>Your trail starts now.</Text>
       </SafeAreaView>
@@ -724,7 +724,7 @@ export function AuthScreen() {
           {/* API error banner */}
           {!!apiError && (
             <View style={formStyles.apiBanner}>
-              <Icon name="AlertCircle" size={14} color={Colors.danger} strokeWidth={2} />
+              <Icon name="TriangleAlert" size={14} color={Colors.danger} strokeWidth={2} />
               <Text style={formStyles.apiError}>{apiError}</Text>
             </View>
           )}

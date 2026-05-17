@@ -18,7 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore } from '../store/useAppStore';
-import { useMarkerStore, type Marker } from '../store/useMarkerStore';
+import { useMarkerStore, type Marker, type MarkerPermission } from '../store/useMarkerStore';
 import { useTrackingStore } from '../store/useTrackingStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
@@ -297,13 +297,165 @@ function CreateMarkerSheet({
   );
 }
 
+// ── EditMarkerSheet ──────────────────────────────────────────────────────────
+function EditMarkerSheet({
+  marker, onClose, onSave,
+}: {
+  marker: Marker | null;
+  onClose: () => void;
+  onSave: (id: string, type: MarkerType, note: string, permission: MarkerPermission) => void;
+}) {
+  const [selectedType, setSelectedType] = useState<MarkerType | null>(null);
+  const [text, setText] = useState('');
+  const [permission, setPermission] = useState<MarkerPermission>('personal');
+  const [textFocused, setTextFocused] = useState(false);
+  const slideAnim = useRef(new Animated.Value(400)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  const visible = marker !== null;
+
+  // Populate fields when marker changes
+  useEffect(() => {
+    if (marker) {
+      setSelectedType(marker.type as MarkerType);
+      setText(marker.note ?? '');
+      setPermission(marker.permission as MarkerPermission);
+    }
+  }, [marker?.id]);
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 200, friction: 18 }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: 400, duration: 180, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  const permIconNames: Record<MarkerPermission, IconName> = {
+    personal: 'Lock', group: 'Users', public: 'Globe',
+  };
+  const permLabels: Record<MarkerPermission, string> = { personal: 'Only me', group: 'Friends', public: 'Public' };
+
+  if (!visible || !marker) return null;
+
+  return (
+    <Animated.View style={[styles.sheetOverlay, { opacity: opacityAnim }]}>
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} activeOpacity={1} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeaderRow}>
+            <Text style={styles.sheetTitle}>Edit Flag</Text>
+            <TouchableOpacity style={styles.sheetCloseBtn} onPress={onClose}>
+              <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Type selector */}
+          <View style={styles.typeGrid}>
+            {FLAG_TYPES.map((flag) => {
+              const isSelected = selectedType === flag.id;
+              return (
+                <TouchableOpacity
+                  key={flag.id}
+                  style={[styles.typeCard, isSelected && styles.typeCardSelected]}
+                  onPress={() => { setSelectedType(flag.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={[flag.bg, flag.bg.replace(')', ', 0.9)').replace('rgb', 'rgba')]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                    style={[styles.typeIconBadge, { borderColor: flag.color + '40' }]}
+                  >
+                    <Icon name={flag.icon} size={IconSize.md} color={flag.color} strokeWidth={2} />
+                  </LinearGradient>
+                  <Text style={[styles.typeCardLabel, { color: isSelected ? Colors.primary : Colors.textSecondary }]}>
+                    {flag.label}
+                  </Text>
+                  {isSelected && (
+                    <View style={styles.typeCardCheck}>
+                      <Icon name="CircleCheck" size={14} color={Colors.primary} strokeWidth={2.5} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Note input */}
+          <View style={styles.noteWrap}>
+            <TextInput
+              style={[styles.noteInput, textFocused && styles.noteInputFocused, text.length >= 30 && styles.noteInputError]}
+              placeholder="Describe this spot… (optional)"
+              placeholderTextColor={Colors.textMuted}
+              value={text}
+              onChangeText={(t) => setText(t.slice(0, 30))}
+              multiline
+              numberOfLines={2}
+              onFocus={() => setTextFocused(true)}
+              onBlur={() => setTextFocused(false)}
+            />
+            <View style={styles.noteFooterRow}>
+              <Text style={styles.noteMaxLabel}>Max 30 characters</Text>
+              {(textFocused || text.length > 0) && (
+                <Text style={[
+                  styles.charCount,
+                  text.length >= 30 ? { color: Colors.danger } : text.length >= 22 ? { color: Colors.warning } : null,
+                ]}>{text.length}/30</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Permission selector */}
+          <View style={styles.permRow}>
+            {(['personal', 'group', 'public'] as const).map((p) => {
+              const active = permission === p;
+              return (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.permPill, active && styles.permPillActive]}
+                  onPress={() => setPermission(p)}
+                >
+                  <Icon name={permIconNames[p]} size={14} color={active ? Colors.primary : Colors.textSecondary} strokeWidth={1.8} />
+                  <Text style={[styles.permPillLabel, active && styles.permPillLabelActive]}>{permLabels[p]}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Save button */}
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={() => {
+              if (!selectedType) return;
+              onSave(marker.id, selectedType, text, permission);
+              onClose();
+            }}
+            activeOpacity={0.8}
+          >
+            <Icon name="Check" size={IconSize.sm} color="#fff" strokeWidth={2} />
+            <Text style={styles.saveBtnText}>Save Changes</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </KeyboardAvoidingView>
+    </Animated.View>
+  );
+}
+
 // ── MarkerDetailSheet (STORY-00097) ───────────────────────────────────────────
 function MarkerDetailSheet({
-  marker, onClose, onDelete,
+  marker, onClose, onDelete, onEdit,
 }: {
   marker: Marker | null;
   onClose: () => void;
   onDelete?: (id: string) => void;
+  onEdit?: (marker: Marker) => void;
 }) {
   if (!marker) return null;
   const meta = MARKER_META[marker.type as keyof typeof MARKER_META] ?? MARKER_META.free;
@@ -337,8 +489,7 @@ function MarkerDetailSheet({
         <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }}>
           <TouchableOpacity
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: Spacing.sm, borderRadius: Radius.button, borderWidth: 1.5, borderColor: Colors.primary, backgroundColor: Colors.primaryBg }}
-            onPress={() => { /* TODO: open edit modal */ }}
-          >
+            onPress={() => { if (onEdit && marker) { onEdit(marker); onClose(); } }}          >
             <Icon name="Pencil" size={14} color={Colors.primary} strokeWidth={2} />
             <Text style={{ fontSize: FontSize.small, fontWeight: '600', color: Colors.primary }}>Edit</Text>
           </TouchableOpacity>
@@ -370,10 +521,12 @@ export function MapScreen() {
   const storeMarkers = useMarkerStore(s => s.markers);
   const addMarker = useMarkerStore(s => s.addMarker);
   const deleteMarker = useMarkerStore(s => s.deleteMarker);
+  const updateMarker = useMarkerStore(s => s.updateMarker);
   const lastCoord = useTrackingStore(s => s.lastCoordinate);
   const region = getCurrentRegion();
 
   const [selectedMarker, setSelectedMarker] = useState<Marker | null>(null);
+  const [editMarker, setEditMarker] = useState<Marker | null>(null);
   const [createVisible, setCreateVisible] = useState(false);
   const [showModeModal, setShowModeModal] = useState(false);
   const [offlineVisible, setOfflineVisible] = useState(false);
@@ -542,6 +695,12 @@ export function MapScreen() {
         marker={selectedMarker}
         onClose={() => setSelectedMarker(null)}
         onDelete={(id) => deleteMarker(id)}
+        onEdit={(m) => setEditMarker(m)}
+      />
+      <EditMarkerSheet
+        marker={editMarker}
+        onClose={() => setEditMarker(null)}
+        onSave={(id, type, note, permission) => updateMarker(id, { type, note, permission })}
       />
 
       {/* Bottom Panel — nearby markers + offline access */}

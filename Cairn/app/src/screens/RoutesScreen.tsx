@@ -11,6 +11,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore } from '../store/useAppStore';
 import { useRouteStore, type Route } from '../store/useRouteStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
@@ -41,6 +43,7 @@ function formatRouteDate(isoStr: string): string {
 }
 
 export function RoutesScreen() {
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { uiMode } = useAppStore();
   const isBeginner = uiMode === 'beginner';
   const routes = useRouteStore(s => s.routes);
@@ -51,8 +54,7 @@ export function RoutesScreen() {
   const handleRoutePress = (route: Route) => {
     setActiveRoute(route.id);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Navigate back to map with active route highlighted
-    // nav.navigate('Map'); // TODO: wire navigation
+    nav.navigate('Map');
   };
 
   const handleDeleteRoute = (route: Route) => {

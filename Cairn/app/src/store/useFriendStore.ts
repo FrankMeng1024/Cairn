@@ -68,6 +68,7 @@ interface FriendState {
 
   // Persistence
   hydrate: () => Promise<void>;
+  loadFriendsFromBackend: () => Promise<void>;
 }
 
 const STORAGE_KEY = 'cairn_friends';
@@ -184,6 +185,29 @@ export const useFriendStore = create<FriendState>((set, get) => ({
       set({ friends, friendMarkers });
     } catch {
       // Start fresh on parse error
+    }
+    // Sync from backend after loading local cache
+    get().loadFriendsFromBackend().catch(() => {});
+  },
+
+  loadFriendsFromBackend: async () => {
+    try {
+      const res = await authenticatedFetch('/api/friends');
+      if (!res.ok) return;
+      const rows: Array<{ id: number; name: string; email: string; added_at: string }> = await res.json();
+      const friends: Friend[] = rows.map(r => ({
+        id: String(r.id),
+        userId: String(r.id),
+        name: r.name,
+        email: r.email,
+        addedAt: new Date(r.added_at).getTime(),
+        shareMarkers: true,
+        isMuted: false,
+      }));
+      set({ friends });
+      persistFriends(friends);
+    } catch {
+      // Network failure — keep local cache
     }
   },
 }));
