@@ -442,11 +442,11 @@ export function HikingScreen() {
 
   const selectedMarker = markers.find(m => m.id === selectedMarkerId) ?? null;
 
-  function handlePlantSave(type: MarkerType, note: string) {
+  async function handlePlantSave(type: MarkerType, note: string) {
     // Use last GPS coordinate if available, else region center
     const lat = lastCoordinate?.lat ?? region.centerLat;
     const lng = lastCoordinate?.lng ?? region.centerLng;
-    const marker = addMarker({
+    const marker = await addMarker({
       type,
       regionCode: region.code,
       lat,

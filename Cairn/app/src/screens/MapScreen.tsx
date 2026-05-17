@@ -18,13 +18,15 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore } from '../store/useAppStore';
+import { useMarkerStore, type Marker } from '../store/useMarkerStore';
+import { useTrackingStore } from '../store/useTrackingStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
 import { GlassPanel, Elevation } from '../components/GlassPanel';
 import { MapBottomPanel, type PanelMarkerItem } from '../components/MapBottomPanel';
 import { OfflineMapSheet } from '../components/OfflineMapSheet';
-import { MOCK_MARKERS, MARKER_META, MarkerType } from '../data/mockData';
+import { MARKER_META, MarkerType } from '../data/mockData';
 import { getCurrentRegion } from '../config/regions';
 
 // Mapbox — conditional import (won't work in Expo Go, only dev client)
@@ -64,8 +66,8 @@ const FLAG_TYPES: {
 function RealMap({
   markers, onMarkerPress,
 }: {
-  markers: typeof MOCK_MARKERS;
-  onMarkerPress: (m: typeof MOCK_MARKERS[0]) => void;
+  markers: Marker[];
+  onMarkerPress: (m: Marker) => void;
 }) {
   const region = getCurrentRegion();
 
@@ -80,16 +82,21 @@ function RealMap({
             Build with EAS to enable Mapbox{'\n'}outdoor maps with offline support
           </Text>
         </View>
-        {/* Still show markers in approximate positions for dev/testing */}
-        {markers.map((m) => {
-          const meta = MARKER_META[m.type];
+        {/* Show markers in approximate positions for dev/testing */}
+        {markers.map((m, idx) => {
+          const meta = MARKER_META[m.type as keyof typeof MARKER_META] ?? MARKER_META.free;
           const flagType = FLAG_TYPES.find(f => f.id === m.type);
+          // Spread markers across the screen in a grid-ish pattern
+          const col = idx % 3;
+          const row = Math.floor(idx / 3);
+          const xFrac = 0.2 + col * 0.3;
+          const yFrac = 0.3 + row * 0.2;
           return (
             <TouchableOpacity
               key={m.id}
               style={[styles.mapMarker, {
-                left: m.x * W - 16,
-                top: m.y * (H * 0.65) - 16,
+                left: xFrac * W - 16,
+                top: yFrac * (H * 0.65) - 16,
                 borderColor: meta.color,
                 backgroundColor: meta.bg,
               }]}
@@ -124,17 +131,13 @@ function RealMap({
         />
         <UserLocation visible={true} renderMode="native" />
         {markers.map((m) => {
-          // For real Mapbox, markers need real lat/lng
-          // Phase 1: use mock positions mapped to region bounds for demo
-          const lat = region.boundingBox.minLat + m.y * (region.boundingBox.maxLat - region.boundingBox.minLat);
-          const lng = region.boundingBox.minLng + m.x * (region.boundingBox.maxLng - region.boundingBox.minLng);
-          const meta = MARKER_META[m.type];
+          const meta = MARKER_META[m.type as keyof typeof MARKER_META] ?? MARKER_META.free;
           const flagType = FLAG_TYPES.find(f => f.id === m.type);
           return (
             <PointAnnotation
               key={m.id}
               id={m.id}
-              coordinate={[lng, lat]}
+              coordinate={[m.lng, m.lat]}
               onSelected={() => onMarkerPress(m)}
             >
               <View style={[styles.markerPin, { borderColor: meta.color, backgroundColor: meta.bg }]}>
@@ -298,12 +301,12 @@ function CreateMarkerSheet({
 function MarkerDetailSheet({
   marker, onClose, onDelete,
 }: {
-  marker: typeof MOCK_MARKERS[0] | null;
+  marker: Marker | null;
   onClose: () => void;
   onDelete?: (id: string) => void;
 }) {
   if (!marker) return null;
-  const meta = MARKER_META[marker.type];
+  const meta = MARKER_META[marker.type as keyof typeof MARKER_META] ?? MARKER_META.free;
   const flagType = FLAG_TYPES.find(f => f.id === marker.type);
 
   return (
@@ -321,14 +324,10 @@ function MarkerDetailSheet({
             <Icon name={(flagType?.icon ?? meta.iconName) as IconName} size={14} color={meta.color} strokeWidth={2.5} />
             <Text style={[styles.detailTypeLabel, { color: meta.color }]}>{meta.label}</Text>
           </LinearGradient>
-          <Text style={styles.detailMeta}>{marker.author} · {marker.minutesAgo}m ago</Text>
+          <Text style={styles.detailMeta}>{new Date(marker.createdAt).toLocaleDateString()}</Text>
         </View>
-        {/* Marker title h3/600 */}
-        {marker.title ? (
-          <Text style={styles.detailTitle}>{marker.title}</Text>
-        ) : null}
         {/* Note text */}
-        <Text style={styles.detailNote}>{marker.text}</Text>
+        <Text style={styles.detailNote}>{marker.note || meta.label}</Text>
         {/* Helpful outlined pill */}
         <TouchableOpacity style={styles.helpfulPill}>
           <Icon name="ThumbsUp" size={15} color={Colors.textSecondary} strokeWidth={1.8} />
@@ -367,9 +366,15 @@ export function MapScreen() {
   const { uiMode, activityMode, setActivityMode, trackingState, setTrackingState,
     trackingDistance, trackingDuration, incrementTracking } = useAppStore();
 
-  const [markers, setMarkers] = useState(MOCK_MARKERS);
+  // Real marker store
+  const storeMarkers = useMarkerStore(s => s.markers);
+  const addMarker = useMarkerStore(s => s.addMarker);
+  const deleteMarker = useMarkerStore(s => s.deleteMarker);
+  const lastCoord = useTrackingStore(s => s.lastCoordinate);
+  const region = getCurrentRegion();
+
+  const [selectedMarker, setSelectedMarker] = useState<Marker | null>(null);
   const [createVisible, setCreateVisible] = useState(false);
-  const [selectedMarker, setSelectedMarker] = useState<typeof MOCK_MARKERS[0] | null>(null);
   const [showModeModal, setShowModeModal] = useState(false);
   const [offlineVisible, setOfflineVisible] = useState(false);
 
@@ -393,13 +398,18 @@ export function MapScreen() {
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const handleAddMarker = (type: MarkerType, text: string) => {
-    setMarkers((prev) => [...prev, {
-      id: String(Date.now()), type, text, author: 'Me', minutesAgo: 0,
-      x: 0.5 + (Math.random() - 0.5) * 0.3,
-      y: 0.5 + (Math.random() - 0.5) * 0.3,
-      title: text, note: '', distanceM: 0, timeAgo: 'just now',
-    }]);
+  const handleAddMarker = async (type: MarkerType, note: string) => {
+    const lat = lastCoord?.lat ?? region.centerLat;
+    const lng = lastCoord?.lng ?? region.centerLng;
+    await addMarker({
+      type,
+      regionCode: region.code,
+      lat,
+      lng,
+      note,
+      authorId: 'local',
+      permission: 'personal',
+    });
   };
 
   const isTracking = trackingState === 'tracking';
@@ -407,7 +417,7 @@ export function MapScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* Map — full bleed topo placeholder */}
-      <RealMap markers={markers} onMarkerPress={(m) => setSelectedMarker(m)} />
+      <RealMap markers={storeMarkers} onMarkerPress={(m) => setSelectedMarker(m)} />
 
       {/* Top bar — STORY-00099: rgba(255,255,255,0.95) overlay chips */}
       <SafeAreaView style={styles.topBar} edges={['top']} pointerEvents="box-none">
@@ -512,9 +522,9 @@ export function MapScreen() {
               onPressOut={() => springOut(fabScale)}
             >
               <Icon name="MapPin" size={22} color="#fff" strokeWidth={2} />
-              {markers.length > 0 && (
+              {storeMarkers.length > 0 && (
                 <View style={styles.fabBadge}>
-                  <Text style={styles.fabBadgeText}>{markers.length}</Text>
+                  <Text style={styles.fabBadgeText}>{storeMarkers.length}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -531,21 +541,21 @@ export function MapScreen() {
       <MarkerDetailSheet
         marker={selectedMarker}
         onClose={() => setSelectedMarker(null)}
-        onDelete={(id) => setMarkers(prev => prev.filter(m => m.id !== id))}
+        onDelete={(id) => deleteMarker(id)}
       />
 
       {/* Bottom Panel — nearby markers + offline access */}
       {!isTracking && (
         <MapBottomPanel
-          markers={markers.map(m => ({
+          markers={storeMarkers.map(m => ({
             id: m.id,
             type: m.type,
-            title: m.text || m.title || MARKER_META[m.type]?.label || 'Marker',
-            distance: m.distanceM ? `${m.distanceM}m` : '--',
-            timeAgo: m.timeAgo || 'unknown',
+            title: m.note || MARKER_META[m.type as keyof typeof MARKER_META]?.label || 'Marker',
+            distance: '--',
+            timeAgo: new Date(m.createdAt).toLocaleDateString(),
           }))}
           onMarkerPress={(id) => {
-            const m = markers.find(mk => mk.id === id);
+            const m = storeMarkers.find(mk => mk.id === id);
             if (m) setSelectedMarker(m);
           }}
           onOfflinePress={() => setOfflineVisible(true)}

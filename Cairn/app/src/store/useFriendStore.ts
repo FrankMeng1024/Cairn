@@ -196,24 +196,19 @@ async function persistFriends(friends: Friend[]): Promise<void> {
   } catch {}
 }
 
-// ── API Integration (backend calls) ─────────────────────────────────────────
+// ── API Integration (backend calls — use authenticatedFetch, no token param needed) ──
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
+import { authenticatedFetch } from '../services/apiService';
 
 /**
  * Send a friend request to another user by email.
  */
 export async function sendFriendRequest(
   email: string,
-  token: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE}/api/friends/request`, {
+    const res = await authenticatedFetch('/api/friends/request', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
       body: JSON.stringify({ email }),
     });
     if (!res.ok) {
@@ -229,11 +224,9 @@ export async function sendFriendRequest(
 /**
  * Fetch pending friend requests.
  */
-export async function fetchFriendRequests(token: string): Promise<FriendRequest[]> {
+export async function fetchFriendRequests(): Promise<FriendRequest[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/friends/requests`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const res = await authenticatedFetch('/api/friends/requests');
     if (!res.ok) return [];
     return await res.json();
   } catch {
@@ -244,17 +237,10 @@ export async function fetchFriendRequests(token: string): Promise<FriendRequest[
 /**
  * Accept a friend request.
  */
-export async function acceptFriendRequestAPI(
-  requestId: string,
-  token: string,
-): Promise<boolean> {
+export async function acceptFriendRequestAPI(requestId: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/api/friends/accept`, {
+    const res = await authenticatedFetch('/api/friends/accept', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
       body: JSON.stringify({ requestId }),
     });
     return res.ok;
@@ -266,14 +252,9 @@ export async function acceptFriendRequestAPI(
 /**
  * Fetch friend's markers (for display on map).
  */
-export async function fetchFriendMarkers(
-  friendId: string,
-  token: string,
-): Promise<FriendMarker[]> {
+export async function fetchFriendMarkers(friendId: string): Promise<FriendMarker[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/friends/${friendId}/markers`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const res = await authenticatedFetch(`/api/friends/${friendId}/markers`);
     if (!res.ok) return [];
     return await res.json();
   } catch {

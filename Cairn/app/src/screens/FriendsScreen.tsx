@@ -18,7 +18,7 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
-import { useFriendStore } from '../store/useFriendStore';
+import { useFriendStore, sendFriendRequest } from '../store/useFriendStore';
 import { MOCK_FRIENDS } from '../data/mockData';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -126,28 +126,28 @@ function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
   const [addState, setAddState] = useState<AddState>('idle');
   const successEmail = useRef('');
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const trimmed = email.trim();
     if (!isValidEmail(trimmed)) {
       setValidationError('Enter a valid email');
       return;
     }
-    if (trimmed.toLowerCase() === OWN_EMAIL.toLowerCase()) {
-      setValidationError("Can't invite yourself");
-      return;
-    }
     setValidationError('');
     setAddState('loading');
     successEmail.current = trimmed;
-    // Simulate async send
-    setTimeout(() => {
+
+    const result = await sendFriendRequest(trimmed);
+    if (result.success) {
       setAddState('success');
       setTimeout(() => {
         setEmail('');
         setAddState('idle');
         onDismiss();
       }, 2000);
-    }, 900);
+    } else {
+      setValidationError(result.error || 'Failed to send request');
+      setAddState('idle');
+    }
   };
 
   return (
