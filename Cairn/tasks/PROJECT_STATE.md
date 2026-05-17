@@ -32,6 +32,8 @@
 - Sprint 50: RoutesScreen real data from useRouteStore, icon fixes
 - Sprint 51: ARScreen + useCommunityStore + contentFilter + marker spacing
 - Sprint 52: Unit tests expansion (51 total tests all passing)
+- Sprint 53: Backend routes (friends + markers API), MapScreen edit/delete, HikingScreen SOS, glass styling all screens
+- Sprint 54: Full front/backend wiring — useMarkerStore async+sync, useFriendStore authenticatedFetch, MapScreen real markers, FriendsScreen real API
 
 ## Test Status
 - 51 unit tests: ALL PASSING
@@ -55,8 +57,8 @@
 | Content | contentFilter (keyword blacklist, extensible for AI) |
 
 ## Next Steps
-1. Continue美工迭代: improve visual quality across all screens
+1. Per-page functional + visual review (一个个页面看功能和美工)
 2. EAS build testing when Mapbox token available
 3. Complete AR native integration (requires @viro-community/react-viro + EAS build)
-4. Backend friend endpoints (POST /api/friends/request, accept, markers)
+4. Sessions sync to backend (/api/sessions)
 5. VU (Virtual User) acceptance when product is testable on device
