@@ -10,6 +10,7 @@
 import { create } from 'zustand';
 import { storage } from './storage';
 import type { Coordinate } from '../utils/geo';
+import { authenticatedFetch } from '../services/apiService';
 
 export type ActivityMode = 'hiking' | 'running';
 
@@ -63,6 +64,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         );
       }
       return { sessions: next };
+    });
+
+    // Sync to backend (fire-and-forget)
+    authenticatedFetch('/api/sessions', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: session.activityMode,
+        start_time: new Date(session.startedAt).toISOString(),
+        end_time: new Date(session.endedAt).toISOString(),
+        distance_m: session.distanceM,
+        duration_s: session.durationS,
+        route_points: session.trackPoints.length > 0 ? session.trackPoints : null,
+        flags: session.markerIds.length > 0 ? session.markerIds : null,
+      }),
+    }).catch(() => {
+      // Network failure — session remains in local store
     });
   },
 
