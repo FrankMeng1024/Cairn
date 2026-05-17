@@ -194,6 +194,13 @@ export function SettingsScreen() {
   };
   const [broadcastEnabled, setBroadcastEnabled] = useState(true);
   const [locationShare, setLocationShare] = useState(false);
+  const [tripSharing, setTripSharing] = useState(true);
+  const [voiceBroadcasts, setVoiceBroadcasts] = useState(true);
+  const [dangerAlerts, setDangerAlerts] = useState(true);
+  const [routeDeviation, setRouteDeviation] = useState(true);
+  const [hapticFeedback, setHapticFeedback] = useState(true);
+  const [soundEffects, setSoundEffects] = useState(true);
+  const [edgeWarningGlow, setEdgeWarningGlow] = useState(true);
 
   const hasChanges = pendingMode !== uiMode
     || shareAfterAdd !== true
@@ -448,8 +455,8 @@ export function SettingsScreen() {
             iconBg={Colors.warningBg}
             label="Trip Sharing"
             hint="Notify contacts if you don't check in"
-            value={true}
-            onToggle={() => {}}
+            value={tripSharing}
+            onToggle={() => setTripSharing(!tripSharing)}
           />
         </View>
 
@@ -462,8 +469,8 @@ export function SettingsScreen() {
             iconBg={Colors.primaryBg}
             label="Voice Broadcasts"
             hint="TTS announcements during activity"
-            value={true}
-            onToggle={() => {}}
+            value={voiceBroadcasts}
+            onToggle={() => setVoiceBroadcasts(!voiceBroadcasts)}
           />
           <View style={styles.divider} />
           <ToggleRow
@@ -472,8 +479,8 @@ export function SettingsScreen() {
             iconBg={Colors.dangerBg}
             label="Danger Alerts"
             hint="Immediate voice warning near hazards"
-            value={true}
-            onToggle={() => {}}
+            value={dangerAlerts}
+            onToggle={() => setDangerAlerts(!dangerAlerts)}
           />
           <View style={styles.divider} />
           <ToggleRow
@@ -482,8 +489,8 @@ export function SettingsScreen() {
             iconBg={Colors.warningBg}
             label="Route Deviation"
             hint="Alert when off planned route"
-            value={true}
-            onToggle={() => {}}
+            value={routeDeviation}
+            onToggle={() => setRouteDeviation(!routeDeviation)}
           />
           <View style={styles.divider} />
           <ActionRow
@@ -504,8 +511,8 @@ export function SettingsScreen() {
             iconBg={Colors.primaryBg}
             label="Haptic Feedback"
             hint="Vibration on actions"
-            value={true}
-            onToggle={() => {}}
+            value={hapticFeedback}
+            onToggle={() => setHapticFeedback(!hapticFeedback)}
           />
           <View style={styles.divider} />
           <ToggleRow
@@ -514,8 +521,8 @@ export function SettingsScreen() {
             iconBg={Colors.infoBg}
             label="Sound Effects"
             hint="Audio cues on flag plant, waypoint"
-            value={true}
-            onToggle={() => {}}
+            value={soundEffects}
+            onToggle={() => setSoundEffects(!soundEffects)}
           />
           <View style={styles.divider} />
           <ToggleRow
@@ -524,8 +531,8 @@ export function SettingsScreen() {
             iconBg={Colors.dangerBg}
             label="Edge Warning Glow"
             hint="Screen edge flash near danger"
-            value={true}
-            onToggle={() => {}}
+            value={edgeWarningGlow}
+            onToggle={() => setEdgeWarningGlow(!edgeWarningGlow)}
           />
         </View>
 
