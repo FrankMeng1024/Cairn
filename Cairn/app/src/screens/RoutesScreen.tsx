@@ -208,13 +208,19 @@ const styles = StyleSheet.create({
   },
 
   routeCard: {
-    backgroundColor: Colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.88)',
     borderRadius: Radius.card,
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.base,
     gap: Spacing.base,
-    ...Shadow.card,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.40)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 20,
+    elevation: 3,
   },
   activityBadge: {
     width: 40,

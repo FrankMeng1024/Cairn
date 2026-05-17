@@ -593,6 +593,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 1,
     marginHorizontal: Spacing.base, marginTop: Spacing.xl, marginBottom: 4,
   },
+  sectionLabel: {
+    fontSize: FontSize.small, fontWeight: '700', color: Colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 1,
+    marginHorizontal: Spacing.base, marginTop: Spacing.xl, marginBottom: 4,
+  },
   sectionNote: {
     fontSize: FontSize.small, color: Colors.textMuted,
     marginHorizontal: Spacing.base, marginBottom: Spacing.sm,
@@ -703,13 +708,13 @@ const pwStyles = StyleSheet.create({
     color: Colors.textSecondary, marginBottom: 4, marginTop: Spacing.sm,
   },
   input: {
-    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.sm,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.card,
     paddingHorizontal: Spacing.sm, paddingVertical: 10,
     fontSize: FontSize.body, color: Colors.textPrimary,
     backgroundColor: Colors.surface,
   },
   btn: {
-    backgroundColor: Colors.primary, borderRadius: Radius.sm,
+    backgroundColor: Colors.primary, borderRadius: Radius.card,
     paddingVertical: 12, alignItems: 'center', marginTop: Spacing.md,
   },
   btnText: { fontSize: FontSize.body, fontWeight: '600', color: '#fff' },

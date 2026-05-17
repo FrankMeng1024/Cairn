@@ -245,7 +245,16 @@ export function FriendsScreen() {
   const storeFriends = useFriendStore(s => s.friends);
   const [friends, setFriends] = useState<Friend[]>(
     storeFriends.length > 0
-      ? storeFriends.map(f => ({ id: f.id, name: f.name, email: f.email, online: false, lastSeen: 'N/A', sharing: f.shareMarkers }))
+      ? storeFriends.map(f => ({
+          id: f.id,
+          name: f.name,
+          email: f.email,
+          initials: f.name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
+          online: false,
+          lastSeen: 'N/A',
+          sharedMarkers: 0,
+          sharing: f.shareMarkers,
+        }))
       : MOCK_FRIENDS.map(f => ({ ...f, sharing: true }))
   );
 
