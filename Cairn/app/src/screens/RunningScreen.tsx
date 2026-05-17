@@ -21,11 +21,11 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTrackingStore } from '../store/useTrackingStore';
+import { useRouteStore } from '../store/useRouteStore';
 import { formatDistance, formatDuration } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
-import { MOCK_ROUTES } from '../data/mockData';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -66,6 +66,7 @@ function StatItem({ value, label }: { value: string; label: string }) {
 // ── Main ────────────────────────────────────────────────────────────────────
 export function RunningScreen() {
   const nav = useNavigation<Nav>();
+  const routes = useRouteStore(s => s.routes);
   const [runState, setRunState] = useState<RunState>('pre');
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState(true);
@@ -131,7 +132,7 @@ export function RunningScreen() {
     setRunState('stopped');
   }
 
-  const selectedRouteName = MOCK_ROUTES.find(r => r.id === selectedRoute)?.name;
+  const selectedRouteName = routes.find(r => r.id === selectedRoute)?.name;
 
   // Format display values
   const distDisplay = locationAvailable ? formatDistance(distanceM, 'km', 2) : '--';
@@ -245,7 +246,7 @@ export function RunningScreen() {
             )}
           </TouchableOpacity>
 
-          {MOCK_ROUTES.map(r => (
+          {routes.map(r => (
             <TouchableOpacity
               key={r.id}
               style={[preStyles.routeCard, selectedRoute === r.id && preStyles.routeCardSelected]}
@@ -261,7 +262,7 @@ export function RunningScreen() {
               </LinearGradient>
               <View style={{ flex: 1 }}>
                 <Text style={preStyles.routeName}>{r.name}</Text>
-                <Text style={preStyles.routeMeta}>{r.distanceKm} km</Text>
+                <Text style={preStyles.routeMeta}>{(r.distanceM / 1000).toFixed(1)} km</Text>
               </View>
               {selectedRoute === r.id && (
                 <View style={[preStyles.checkBadge, { backgroundColor: Colors.running }]}>
