@@ -263,19 +263,14 @@ function ActivitySheet({
           </View>
         </View>
 
-        {/* Actions: delete left, then view + save as route */}
+        {/* Actions: delete left, view right.
+            "Save as Route" was removed — the same action is reachable from
+            inside View (MapHistory has its own "Save as Route" CTA), and
+            keeping all three made the row feel cramped. */}
         <View style={sheetStyles.actions}>
           <PressBtn style={sheetStyles.deleteBtn} onPress={confirmDelete} scaleTo={0.96}>
             <Icon name="Trash2" size={14} color={Colors.danger} strokeWidth={2} />
             <Text style={sheetStyles.deleteBtnText}>Delete</Text>
-          </PressBtn>
-          <PressBtn
-            style={[sheetStyles.saveBtn, { backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.primary }]}
-            onPress={() => dismiss(() => nav.navigate('RouteEditor', { fromSessionId: data.id }))}
-            scaleTo={0.96}
-          >
-            <Icon name="Route" size={14} color={Colors.primary} strokeWidth={2} />
-            <Text style={[sheetStyles.saveBtnText, { color: Colors.primary }]}>Save as Route</Text>
           </PressBtn>
           <PressBtn
             style={sheetStyles.saveBtn}
