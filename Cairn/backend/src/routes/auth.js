@@ -281,7 +281,8 @@ router.get('/me', authenticate, async (req, res) => {
     return res.json({ user: { ...User.toPublic(user), providers } });
   } catch (err) {
     console.error('[me]', err);
-    return res.status(500).json({ error: 'Server error.' });
+    // DB unavailable — return minimal user from JWT payload so frontend stays logged in
+    return res.json({ user: { id: req.user.userId, email: req.user.email, name: req.user.email?.split('@')[0] ?? 'User', providers: [] } });
   }
 });
 

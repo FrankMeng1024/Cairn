@@ -18,6 +18,7 @@ import { RoutesScreen } from '../screens/RoutesScreen';
 import { FriendsScreen } from '../screens/FriendsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { ARScreen } from '../screens/ARScreen';
+import { RouteEditorScreen } from '../screens/RouteEditorScreen';
 import { useAppStore } from '../store/useAppStore';
 
 export type RootStackParamList = {
@@ -25,9 +26,10 @@ export type RootStackParamList = {
   Home: undefined;
   Hiking: undefined;
   Running: undefined;
-  MapHistory: undefined;
-  Map: undefined;
+  MapHistory: { sessionId?: string } | undefined;
+  Map: { focusLat?: number; focusLng?: number; focusMarkerId?: string } | undefined;
   Routes: undefined;
+  RouteEditor: { routeId?: string; fromSessionId?: string } | undefined;
   Friends: undefined;
   Settings: undefined;
   AR: undefined;
@@ -41,19 +43,29 @@ export function RootNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator
-        screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
+        screenOptions={{
+          headerShown: false,
+          animation: 'ios_from_right',
+          animationDuration: 320,
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+          customAnimationOnGesture: true,
+        }}
       >
         {isLoggedIn ? (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="Hiking" component={HikingScreen} />
-            <Stack.Screen name="Running" component={RunningScreen} />
-            <Stack.Screen name="MapHistory" component={MapHistoryScreen} />
-            <Stack.Screen name="Map" component={MapScreen} />
-            <Stack.Screen name="Routes" component={RoutesScreen} />
-            <Stack.Screen name="Friends" component={FriendsScreen} />
-            <Stack.Screen name="Settings" component={SettingsScreen} />
-            <Stack.Screen name="AR" component={ARScreen} />
+            {/* Card-style screens presented from Home — no transition on web (fade causes scale artifact) */}
+            <Stack.Screen name="Hiking"   component={HikingScreen}   options={{ animation: 'none' }} />
+            <Stack.Screen name="Running"  component={RunningScreen}  options={{ animation: 'none' }} />
+            <Stack.Screen name="Routes"   component={RoutesScreen}   options={{ animation: 'none' }} />
+            <Stack.Screen name="Friends"  component={FriendsScreen}  options={{ animation: 'none' }} />
+            <Stack.Screen name="Settings" component={SettingsScreen} options={{ animation: 'none' }} />
+            <Stack.Screen name="AR"       component={ARScreen}       options={{ animation: 'none' }} />
+            {/* Detail / sub-screens — slide from right */}
+            <Stack.Screen name="MapHistory"  component={MapHistoryScreen} />
+            <Stack.Screen name="Map"         component={MapScreen} />
+            <Stack.Screen name="RouteEditor" component={RouteEditorScreen} />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthScreen} />

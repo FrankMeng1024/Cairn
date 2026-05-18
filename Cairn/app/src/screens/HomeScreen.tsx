@@ -5,7 +5,7 @@
  * Hierarchy: Header → Stats? → Recent? → Activity Cards (dominant) → Tools row
  * Design: Golden ratio φ=1.618 applied to card proportions and spacing.
  */
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, LayoutChangeEvent,
 } from 'react-native';
@@ -65,7 +65,7 @@ function CairnLogo({ size = 22 }: { size?: number }) {
 }
 
 // ── Compact recent activity row — placed ABOVE cards ─────────────────────────
-function RecentRow({ onPress }: { onPress: () => void }) {
+function RecentRow({ onPress }: { onPress: (id: string) => void }) {
   const sessions = useSessionStore(s => s.sessions);
   if (sessions.length === 0) return null;
 
@@ -80,7 +80,7 @@ function RecentRow({ onPress }: { onPress: () => void }) {
   const when = getRelativeTime(last.startedAt);
 
   return (
-    <TouchableOpacity style={recentStyles.row} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={recentStyles.row} onPress={() => onPress(last.id)} activeOpacity={0.7}>
       <View style={[recentStyles.dot, { backgroundColor: bg }]}>
         <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={14} color={accent} strokeWidth={2} />
       </View>
@@ -94,9 +94,9 @@ function RecentRow({ onPress }: { onPress: () => void }) {
   );
 }
 
-// ── Big activity card — golden-ratio proportioned ────────────────────────────
+// ── Big activity card — flex-based, no parent height dependency ──────────────
 function ActivityCard({
-  iconName, title, subtitle, accentColor, lightBg, cardBg, onPress, anim, cardHeight,
+  iconName, title, subtitle, accentColor, lightBg, cardBg, onPress, anim,
 }: {
   iconName: IconName;
   title: string;
@@ -106,29 +106,36 @@ function ActivityCard({
   cardBg: string;
   onPress: () => void;
   anim: Animated.Value;
-  cardHeight: number;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
-  const h = cardHeight > 0 ? cardHeight : 150;
-  const panelW = Math.min(Math.round(h * 0.38), 130);
+  // Measure self height for icon/panel sizing — first-frame fallback is safe
+  // because it only affects internal icon size, not card position or toolbar location.
+  const [h, setH] = useState(0);
+  const panelW = h > 0 ? Math.min(Math.round(h * 0.38), 130) : 90;
   const iconSize = Math.round(panelW * 0.55);
 
   return (
-    <Animated.View style={{ height: h, opacity: anim, transform: [{ scale }] }}>
+    <Animated.View
+      style={{ flex: 1, opacity: anim, transform: [{ scale }] }}
+      onLayout={(e: LayoutChangeEvent) => {
+        const newH = e.nativeEvent.layout.height;
+        if (newH !== h) setH(newH);
+      }}
+    >
       <TouchableOpacity
         activeOpacity={1}
         onPress={onPress}
         onPressIn={() => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, tension: 200, friction: 10 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 200, friction: 8 }).start()}
-        style={[cardStyles.card, { backgroundColor: cardBg, height: h, flex: 1 }]}
+        style={[cardStyles.card, { backgroundColor: cardBg, flex: 1 }]}
       >
         {/* Left panel — absolute position ensures it fills card height regardless of RN Web flex quirks */}
-        <View style={[cardStyles.leftPanel, { width: panelW, height: h, backgroundColor: lightBg }]}>
+        <View style={[cardStyles.leftPanel, { width: panelW, backgroundColor: lightBg }]}>
           <Icon name={iconName} size={iconSize} color={accentColor} strokeWidth={1.4} />
         </View>
 
-        {/* Text area — explicit height ensures vertical centering on RN Web */}
-        <View style={[cardStyles.innerRow, { marginLeft: panelW, height: h }]}>
+        {/* Text area */}
+        <View style={[cardStyles.innerRow, { marginLeft: panelW }]}>
           <View style={cardStyles.textCol}>
             <Text style={[cardStyles.title, { color: Colors.textPrimary }]}>{title}</Text>
             <Text style={cardStyles.subtitle}>{subtitle}</Text>
@@ -175,33 +182,14 @@ export function HomeScreen() {
   const hasData = sessions.length > 0 || markerCount > 0;
   const hasRecent = sessions.length > 0;
 
-  const [screenH, setScreenH] = useState(0);
-  const opacity = useRef(new Animated.Value(0)).current;
-  const card1 = useRef(new Animated.Value(0)).current;
-  const card2 = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(opacity, { toValue: 1, duration: 260, useNativeDriver: true }).start();
-    Animated.stagger(70, [
-      Animated.spring(card1, { toValue: 1, tension: 120, friction: 10, useNativeDriver: true }),
-      Animated.spring(card2, { toValue: 1, tension: 120, friction: 10, useNativeDriver: true }),
-    ]).start();
-  }, []);
-
-  // Compute explicit card heights for RN Web flex compatibility.
-  // Count direct children of screen: header + cardsArea + toolsRow (always) + optional rows
-  const siblingCount = 3 + (hasData ? 1 : 0) + (hasRecent ? 1 : 0);
-  const FIXED_H = 44 + (hasData ? 36 : 0) + (hasRecent ? 46 : 0) + 72 + 20 + Spacing.sm * (siblingCount - 1);
-  const cardsH = screenH > 0 ? Math.max(screenH - FIXED_H, 280) : 280;
-  const cardH = Math.floor((cardsH - Spacing.sm) / 2);
+  const opacity = useRef(new Animated.Value(1)).current;
+  const card1 = useRef(new Animated.Value(1)).current;
+  const card2 = useRef(new Animated.Value(1)).current;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
-      <Animated.View
-        style={[styles.screen, { opacity }]}
-        onLayout={(e: LayoutChangeEvent) => setScreenH(e.nativeEvent.layout.height)}
-      >
+      <Animated.View style={[styles.screen, { opacity }]}>
 
         {/* Header */}
         <View style={styles.header}>
@@ -227,10 +215,10 @@ export function HomeScreen() {
         )}
 
         {/* Recent activity — above the cards so user sees it before cards */}
-        {hasRecent && <RecentRow onPress={() => nav.navigate('MapHistory')} />}
+        {hasRecent && <RecentRow onPress={(id) => nav.navigate('MapHistory', { sessionId: id })} />}
 
-        {/* Activity Cards — dominant, fill remaining space */}
-        <View style={[styles.cardsArea, { height: cardsH }]}>
+        {/* Activity Cards — fill remaining vertical space, two equal halves */}
+        <View style={styles.cardsArea}>
           <ActivityCard
             iconName="Mountain"
             title="Hiking"
@@ -240,7 +228,6 @@ export function HomeScreen() {
             cardBg="#eef4e8"
             onPress={() => nav.navigate('Hiking')}
             anim={card1}
-            cardHeight={cardH}
           />
           <ActivityCard
             iconName="PersonStanding"
@@ -251,13 +238,11 @@ export function HomeScreen() {
             cardBg="#e8f1f8"
             onPress={() => nav.navigate('Running')}
             anim={card2}
-            cardHeight={cardH}
           />
         </View>
 
         {/* Tools */}
         <View style={styles.toolsRow}>
-          <ToolBtn iconName="Map" label="Map" onPress={() => nav.navigate('Map')} />
           <ToolBtn iconName="Route" label="Routes" onPress={() => nav.navigate('Routes')} />
           <ToolBtn iconName="Users" label="Friends" onPress={() => nav.navigate('Friends')} />
           <ToolBtn iconName="Compass" label="AR" onPress={() => nav.navigate('AR')} />
@@ -295,7 +280,7 @@ const styles = StyleSheet.create({
   },
   statText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
 
-  cardsArea: { gap: Spacing.sm },
+  cardsArea: { flex: 1, gap: Spacing.sm },
 
   toolsRow: { flexDirection: 'row', gap: Spacing.sm },
 });
@@ -318,6 +303,7 @@ const cardStyles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
