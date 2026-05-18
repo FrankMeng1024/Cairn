@@ -20,6 +20,20 @@
 import React, { useRef } from 'react';
 import { Animated, TouchableOpacity, StyleProp, ViewStyle, GestureResponderEvent } from 'react-native';
 
+// One animated Touchable — style + transform live on the SAME node so:
+//   • flex / width / margin / padding / border propagate to the parent
+//     correctly (a parent <View flexDirection:'row' gap:8> with two
+//     Touchables that have flex:1 each will split the row width).
+//   • The entire visual area (including padding) is a press target.
+//   • The scale animation transforms the styled box, so border/shadow/bg
+//     all scale together — feels like one unit being pressed.
+//
+// Earlier we wrapped TouchableOpacity in a separate Animated.View that only
+// carried `transform`. That broke flex layout (the outer wrapper had no
+// flex, so the inner Touchable's flex:1 was ignored by row parents and
+// buttons collapsed to content width). This single-node design avoids it.
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+
 interface PressBtnProps {
   onPress?: (event: GestureResponderEvent) => void;
   onLongPress?: (event: GestureResponderEvent) => void;
@@ -44,19 +58,17 @@ export function PressBtn({
   };
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={onPress}
-        onLongPress={onLongPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={style}
-        disabled={disabled}
-        hitSlop={hitSlop}
-      >
-        {children}
-      </TouchableOpacity>
-    </Animated.View>
+    <AnimatedTouchableOpacity
+      activeOpacity={1}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      disabled={disabled}
+      hitSlop={hitSlop}
+      style={[style, { transform: [{ scale }] }]}
+    >
+      {children}
+    </AnimatedTouchableOpacity>
   );
 }
