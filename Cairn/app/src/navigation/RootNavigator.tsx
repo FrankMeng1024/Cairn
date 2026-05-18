@@ -55,20 +55,25 @@ export function RootNavigator() {
         {isLoggedIn ? (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
-            {/* Card-style screens presented from Home — no transition on web (fade causes scale artifact) */}
-            <Stack.Screen name="Hiking"   component={HikingScreen}   options={{ animation: 'none' }} />
-            <Stack.Screen name="Running"  component={RunningScreen}  options={{ animation: 'none' }} />
-            <Stack.Screen name="Routes"   component={RoutesScreen}   options={{ animation: 'none' }} />
-            <Stack.Screen name="Friends"  component={FriendsScreen}  options={{ animation: 'none' }} />
-            <Stack.Screen name="Settings" component={SettingsScreen} options={{ animation: 'none' }} />
-            <Stack.Screen name="AR"       component={ARScreen}       options={{ animation: 'none' }} />
-            {/* Detail / sub-screens — slide from right */}
+            {/* All non-Home screens use the global ios_from_right transition.
+                Symmetric in both directions — entering slides in from the right,
+                back gesture/button slides it back out the same way. */}
+            <Stack.Screen name="Hiking"      component={HikingScreen} />
+            <Stack.Screen name="Running"     component={RunningScreen} />
+            <Stack.Screen name="Routes"      component={RoutesScreen} />
+            <Stack.Screen name="Friends"     component={FriendsScreen} />
+            <Stack.Screen name="Settings"    component={SettingsScreen} />
+            <Stack.Screen name="AR"          component={ARScreen} />
             <Stack.Screen name="MapHistory"  component={MapHistoryScreen} />
             <Stack.Screen name="Map"         component={MapScreen} />
             <Stack.Screen name="RouteEditor" component={RouteEditorScreen} />
           </>
         ) : (
-          <Stack.Screen name="Auth" component={AuthScreen} />
+          <Stack.Screen
+            name="Auth"
+            component={AuthScreen}
+            options={{ animation: 'fade', animationDuration: 280 }}
+          />
         )}
       </Stack.Navigator>
     </NavigationContainer>

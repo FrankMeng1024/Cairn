@@ -1,382 +1,842 @@
 /**
- * RoutesScreen — Sprint 27 premium uplift (STORY-00077)
- * - Gradient LinearGradient icon badges (Mountain icon)
- * - Consistent h3/700 title treatment, shadow cards
- * - Stat chips with colored left-border capsule style
- * - Empty state matches HomeScreen / MapHistory pattern
+ * RoutesScreen — Three-tab layout: Routes | Activities | Flags
  */
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity, Alert, TextInput,
+  KeyboardAvoidingView, Platform, Animated, Easing,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { useAppStore } from '../store/useAppStore';
-import { useRouteStore, type Route } from '../store/useRouteStore';
+import { useRouteStore } from '../store/useRouteStore';
+import { useSessionStore } from '../store/useSessionStore';
+import { useMarkerStore, type Marker, type MarkerPermission } from '../store/useMarkerStore';
+import { useTrackingStore } from '../store/useTrackingStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
-import { Icon } from '../components/Icon';
+import { Icon, type IconName } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
-import { formatDate } from '../utils/geo';
+import { PressBtn } from '../components/PressBtn';
+import { formatDistance, formatDuration, haversineM } from '../utils/geo';
+import { MARKER_META, type MarkerType } from '../data/mockData';
+import { shareGPX, sharePDF } from '../services/exportService'; // kept for future Export action
 
-function formatDuration(min: number) {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Tab = 'routes' | 'activities' | 'flags';
+
+const FLAG_FILTERS: { id: MarkerType | 'all'; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'danger', label: 'Danger' },
+  { id: 'scenic', label: 'Scenic' },
+  { id: 'supply', label: 'Water' },
+  { id: 'junction', label: 'Junction' },
+];
+
+// Identical to MapScreen FLAG_TYPES
+const FLAG_TYPES: { id: MarkerType; icon: IconName; label: string; color: string; bg: string }[] = [
+  { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: Colors.danger,   bg: Colors.dangerBg  },
+  { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: Colors.info,     bg: Colors.infoBg    },
+  { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: Colors.success,  bg: Colors.successBg },
+  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg },
+];
+
+// ── Segment Control ──────────────────────────────────────────────────────────
+function SegmentControl({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'routes', label: 'Routes' },
+    { id: 'activities', label: 'Activities' },
+    { id: 'flags', label: 'Flags' },
+  ];
+  return (
+    <View style={segStyles.container}>
+      {tabs.map(t => (
+        <TouchableOpacity key={t.id} style={[segStyles.tab, active === t.id && segStyles.tabActive]} onPress={() => onChange(t.id)} activeOpacity={0.8}>
+          <Text style={[segStyles.tabText, active === t.id && segStyles.tabTextActive]}>{t.label}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
 }
 
-function formatRouteDate(isoStr: string): string {
-  const today = new Date();
-  const date = new Date(isoStr);
-  const todayStr = today.toDateString();
-  const dateStr = date.toDateString();
-  if (dateStr === todayStr) return 'Today';
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (dateStr === yesterday.toDateString()) return 'Yesterday';
-  const day = date.getDate();
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const month = months[date.getMonth()];
-  if (date.getFullYear() === today.getFullYear()) return `${day} ${month}`;
-  return `${day} ${month} ${date.getFullYear()}`;
+// ── Empty State ──────────────────────────────────────────────────────────────
+function EmptyState({ icon, title, hint }: { icon: IconName; title: string; hint: string }) {
+  return (
+    <View style={styles.empty}>
+      <View style={styles.emptyIconWrap}>
+        <Icon name={icon} size={36} color={Colors.textMuted} strokeWidth={1.5} />
+      </View>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyHint}>{hint}</Text>
+    </View>
+  );
 }
 
-export function RoutesScreen() {
-  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { uiMode } = useAppStore();
-  const isBeginner = uiMode === 'beginner';
-  const routes = useRouteStore(s => s.routes);
-  const setActiveRoute = useRouteStore(s => s.setActiveRoute);
-  const deleteRoute = useRouteStore(s => s.deleteRoute);
-  const [downloadSheet, setDownloadSheet] = useState<{ name: string } | null>(null);
+// ── RouteSheet ────────────────────────────────────────────────────────────────
+function RouteSheet({
+  route, onClose, onEdit, onDelete,
+}: {
+  route: import('../store/useRouteStore').Route | null;
+  onClose: () => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const slideAnim = useRef(new Animated.Value(400)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  // Keep snapshot so content doesn't vanish during close animation
+  const snapshot = useRef(route);
+  if (route !== null) snapshot.current = route;
+  const data = snapshot.current;
 
-  const handleRoutePress = (route: Route) => {
-    setActiveRoute(route.id);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    nav.navigate('Map');
+  const dismiss = (then?: () => void) => {
+    Animated.parallel([
+      Animated.timing(slideAnim, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => { onClose(); then?.(); });
   };
 
-  const handleDeleteRoute = (route: Route) => {
+  useEffect(() => {
+    if (route !== null) {
+      slideAnim.setValue(400);
+      opacityAnim.setValue(0);
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      ]).start();
+    }
+  }, [route?.id]);
+
+  if (route === null && opacityAnim.__getValue() === 0) return null;
+  if (!data) return null;
+
+  const confirmDelete = () => {
+    Alert.alert('Delete Route', `Delete "${data.name}"? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => dismiss(() => onDelete(data.id)) },
+    ]);
+  };
+
+  const lastRun = data.lastRunAt ? new Date(data.lastRunAt).toLocaleDateString() : null;
+
+  return (
+    <Animated.View style={[sheetStyles.container, { opacity: opacityAnim }]}>
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => dismiss()} />
+      <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: slideAnim }], paddingBottom: Math.max(insets.bottom, Spacing.xl) }]}>
+        <View style={sheetStyles.handle} />
+
+        {/* Header */}
+        <View style={sheetStyles.headerRow}>
+          <Text style={sheetStyles.title} numberOfLines={1}>{data.name}</Text>
+          <PressBtn style={sheetStyles.closeBtn} onPress={() => dismiss()} scaleTo={0.9}>
+            <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.5} />
+          </PressBtn>
+        </View>
+
+        {/* Stats row */}
+        <View style={routeSheetStyles.statsRow}>
+          <View style={routeSheetStyles.statItem}>
+            <Icon name="Milestone" size={14} color={Colors.primary} strokeWidth={2} />
+            <Text style={routeSheetStyles.statValue}>{(data.distanceM / 1000).toFixed(1)} km</Text>
+          </View>
+          <View style={routeSheetStyles.statDivider} />
+          <View style={routeSheetStyles.statItem}>
+            <Icon name="TrendingUp" size={14} color={Colors.primary} strokeWidth={2} />
+            <Text style={routeSheetStyles.statValue}>{Math.round(data.elevationGainM)} m</Text>
+          </View>
+          <View style={routeSheetStyles.statDivider} />
+          <View style={routeSheetStyles.statItem}>
+            <Icon name="Flag" size={14} color={Colors.primary} strokeWidth={2} />
+            <Text style={routeSheetStyles.statValue}>{data.waypoints.length} waypoints</Text>
+          </View>
+          <View style={routeSheetStyles.statDivider} />
+          <View style={routeSheetStyles.statItem}>
+            <Icon name="RotateCcw" size={14} color={Colors.primary} strokeWidth={2} />
+            <Text style={routeSheetStyles.statValue}>{data.runCount}× used</Text>
+          </View>
+        </View>
+
+        {lastRun && (
+          <Text style={routeSheetStyles.lastRun}>Last used {lastRun}</Text>
+        )}
+
+        {/* Actions */}
+        <View style={sheetStyles.actions}>
+          <PressBtn style={sheetStyles.deleteBtn} onPress={confirmDelete} scaleTo={0.96}>
+            <Icon name="Trash2" size={14} color={Colors.danger} strokeWidth={2} />
+            <Text style={sheetStyles.deleteBtnText}>Delete</Text>
+          </PressBtn>
+          <PressBtn
+            style={sheetStyles.saveBtn}
+            onPress={() => dismiss(() => onEdit(data.id))}
+            scaleTo={0.96}
+          >
+            <Icon name="Pencil" size={14} color="#fff" strokeWidth={2} />
+            <Text style={sheetStyles.saveBtnText}>Edit Route</Text>
+          </PressBtn>
+        </View>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+// ── ActivitySheet ─────────────────────────────────────────────────────────────
+function ActivitySheet({
+  session, onClose,
+}: {
+  session: import('../store/useSessionStore').TrackingSession | null;
+  onClose: () => void;
+}) {
+  const nav = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
+  const deleteSession = useSessionStore(s => s.deleteSession);
+  const slideAnim = useRef(new Animated.Value(400)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const snapshot = useRef(session);
+  if (session !== null) snapshot.current = session;
+  const data = snapshot.current;
+
+  const dismiss = (then?: () => void) => {
+    Animated.parallel([
+      Animated.timing(slideAnim, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => { onClose(); then?.(); });
+  };
+
+  useEffect(() => {
+    if (session !== null) {
+      slideAnim.setValue(400);
+      opacityAnim.setValue(0);
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      ]).start();
+    }
+  }, [session?.id]);
+
+  if (session === null && opacityAnim.__getValue() === 0) return null;
+  if (!data) return null;
+
+  const isRun = data.activityMode === 'running';
+  const accent = isRun ? Colors.running : Colors.primary;
+  const date = new Date(data.startedAt);
+  const dateStr = `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+
+  const confirmDelete = () => {
+    Alert.alert('Delete Activity', 'Delete this activity? This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => dismiss(() => deleteSession(data.id)) },
+    ]);
+  };
+
+  return (
+    <Animated.View style={[sheetStyles.container, { opacity: opacityAnim }]}>
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => dismiss()} />
+      <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: slideAnim }], paddingBottom: Math.max(insets.bottom, Spacing.xl) }]}>
+        <View style={sheetStyles.handle} />
+
+        {/* Header */}
+        <View style={sheetStyles.headerRow}>
+          <Text style={sheetStyles.title}>{isRun ? 'Run' : 'Hike'}</Text>
+          <PressBtn style={sheetStyles.closeBtn} onPress={() => dismiss()} scaleTo={0.9}>
+            <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.5} />
+          </PressBtn>
+        </View>
+
+        {/* Stats row */}
+        <View style={routeSheetStyles.statsRow}>
+          <View style={routeSheetStyles.statItem}>
+            <Icon name="Calendar" size={14} color={accent} strokeWidth={2} />
+            <Text style={[routeSheetStyles.statValue, { color: accent }]}>{dateStr}</Text>
+          </View>
+          <View style={routeSheetStyles.statDivider} />
+          <View style={routeSheetStyles.statItem}>
+            <Icon name="Milestone" size={14} color={accent} strokeWidth={2} />
+            <Text style={[routeSheetStyles.statValue, { color: accent }]}>{formatDistance(data.distanceM, 'km', 1)} km</Text>
+          </View>
+          <View style={routeSheetStyles.statDivider} />
+          <View style={routeSheetStyles.statItem}>
+            <Icon name="Timer" size={14} color={accent} strokeWidth={2} />
+            <Text style={[routeSheetStyles.statValue, { color: accent }]}>{formatDuration(data.durationS)}</Text>
+          </View>
+        </View>
+
+        {/* Actions: delete left, then view + save as route */}
+        <View style={sheetStyles.actions}>
+          <PressBtn style={sheetStyles.deleteBtn} onPress={confirmDelete} scaleTo={0.96}>
+            <Icon name="Trash2" size={14} color={Colors.danger} strokeWidth={2} />
+            <Text style={sheetStyles.deleteBtnText}>Delete</Text>
+          </PressBtn>
+          <PressBtn
+            style={[sheetStyles.saveBtn, { backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.primary }]}
+            onPress={() => dismiss(() => nav.navigate('RouteEditor', { fromSessionId: data.id }))}
+            scaleTo={0.96}
+          >
+            <Icon name="Route" size={14} color={Colors.primary} strokeWidth={2} />
+            <Text style={[sheetStyles.saveBtnText, { color: Colors.primary }]}>Save as Route</Text>
+          </PressBtn>
+          <PressBtn
+            style={sheetStyles.saveBtn}
+            onPress={() => dismiss(() => nav.navigate('MapHistory', { sessionId: data.id }))}
+            scaleTo={0.96}
+          >
+            <Icon name="Map" size={14} color="#fff" strokeWidth={2} />
+            <Text style={sheetStyles.saveBtnText}>View</Text>
+          </PressBtn>
+        </View>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+// ── Routes Tab ───────────────────────────────────────────────────────────────
+function RoutesTab() {
+  const nav = useNavigation<Nav>();
+  const routes = useRouteStore(s => s.routes);
+  const deleteRoute = useRouteStore(s => s.deleteRoute);
+  const [selectedRoute, setSelectedRoute] = useState<import('../store/useRouteStore').Route | null>(null);
+
+  return (
+    <View style={{ flex: 1 }}>
+      <FlatList
+        data={routes}
+        keyExtractor={r => r.id}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          <PressBtn style={styles.newRouteBtn} onPress={() => nav.navigate('RouteEditor')} scaleTo={0.96}>
+            <Icon name="Plus" size={18} color={Colors.primary} strokeWidth={2.5} />
+            <Text style={styles.newRouteBtnText}>New Route</Text>
+          </PressBtn>
+        }
+        ListEmptyComponent={
+          <View style={{ alignItems: 'center', paddingTop: 40 }}>
+            <Text style={styles.emptyHint}>No saved routes yet. Create one or import from Activities.</Text>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <PressBtn style={styles.card} onPress={() => setSelectedRoute(item)} scaleTo={0.97}>
+            <LinearGradient colors={[Colors.primaryLight, Colors.primaryDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.cardBadge}>
+              <Icon name="Route" size={18} color={Colors.primary} strokeWidth={1.8} />
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>{item.name}</Text>
+              <Text style={styles.cardMeta}>{(item.distanceM / 1000).toFixed(1)} km · {item.waypoints.length} waypoints</Text>
+            </View>
+            <Icon name="ChevronRight" size={16} color={Colors.textMuted} strokeWidth={2} />
+          </PressBtn>
+        )}
+      />
+      <RouteSheet
+        route={selectedRoute}
+        onClose={() => setSelectedRoute(null)}
+        onEdit={(id) => nav.navigate('RouteEditor', { routeId: id })}
+        onDelete={(id) => deleteRoute(id)}
+      />
+    </View>
+  );
+}
+
+// ── Activities Tab ───────────────────────────────────────────────────────────
+function ActivitiesTab() {
+  const sessions = useSessionStore(s => s.sessions);
+  const [selectedSession, setSelectedSession] = useState<import('../store/useSessionStore').TrackingSession | null>(null);
+
+  if (sessions.length === 0) {
+    return <EmptyState icon="Map" title="No activities yet" hint="Start hiking or running to see your history here." />;
+  }
+
+  const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
+
+  return (
+    <View style={{ flex: 1 }}>
+      <FlatList
+        data={sorted}
+        keyExtractor={s => s.id}
+        contentContainerStyle={styles.listContent}
+        renderItem={({ item }) => {
+          const isRun = item.activityMode === 'running';
+          const accent = isRun ? Colors.running : Colors.primary;
+          const bg = isRun ? Colors.runningLight : Colors.primaryLight;
+          const date = new Date(item.startedAt);
+          const dateStr = `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+          return (
+            <PressBtn
+              style={[styles.card, { borderLeftColor: accent }]}
+              onPress={() => setSelectedSession(item)}
+              scaleTo={0.97}
+            >
+              <View style={[styles.cardBadge, { backgroundColor: bg }]}>
+                <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={18} color={accent} strokeWidth={1.8} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{isRun ? 'Run' : 'Hike'}</Text>
+                <Text style={styles.cardMeta}>{dateStr} · {formatDistance(item.distanceM, 'km', 1)} km · {formatDuration(item.durationS)}</Text>
+              </View>
+              <Icon name="ChevronRight" size={16} color={Colors.textMuted} strokeWidth={2} />
+            </PressBtn>
+          );
+        }}
+      />
+      <ActivitySheet
+        session={selectedSession}
+        onClose={() => setSelectedSession(null)}
+      />
+    </View>
+  );
+}
+
+// ── FlagEditSheet — mirrors MapScreen's EditMarkerSheet exactly ───────────────
+function FlagEditSheet({
+  marker, onClose, onSave, onDelete,
+}: {
+  marker: Marker | null;
+  onClose: () => void;
+  onSave: (id: string, type: MarkerType, note: string, permission: MarkerPermission) => void;
+  onDelete: (id: string) => void;
+}) {
+  const nav = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
+  const [selectedType, setSelectedType] = useState<MarkerType | null>(null);
+  const [text, setText] = useState('');
+  const [permission, setPermission] = useState<MarkerPermission>('personal');
+  const [textFocused, setTextFocused] = useState(false);
+  const slideAnim = useRef(new Animated.Value(400)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const snapshot = useRef(marker);
+  if (marker !== null) snapshot.current = marker;
+  const data = snapshot.current;
+
+  const dismiss = (then?: () => void) => {
+    Animated.parallel([
+      Animated.timing(slideAnim, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => { onClose(); then?.(); });
+  };
+
+  useEffect(() => {
+    if (marker) {
+      setSelectedType(marker.type as MarkerType);
+      setText(marker.note ?? '');
+      setPermission((marker.permission as MarkerPermission) ?? 'personal');
+    }
+  }, [marker?.id]);
+
+  useEffect(() => {
+    if (marker !== null) {
+      slideAnim.setValue(400);
+      opacityAnim.setValue(0);
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      ]).start();
+    }
+  }, [marker?.id]);
+
+  if (marker === null && opacityAnim.__getValue() === 0) return null;
+  if (!data) return null;
+
+  const permIconNames: Record<MarkerPermission, IconName> = { personal: 'Lock', group: 'Users', public: 'Globe' };
+  const permLabels: Record<MarkerPermission, string> = { personal: 'Only me', group: 'Friends', public: 'Public' };
+
+  const confirmDelete = () => {
     Alert.alert(
-      'Delete Route',
-      `Remove "${route.name}"? This cannot be undone.`,
+      'Delete Flag',
+      `Delete "${data.note || 'this flag'}"? This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteRoute(route.id) },
-      ],
+        { text: 'Delete', style: 'destructive', onPress: () => dismiss(() => onDelete(data.id)) },
+      ]
     );
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <BackButton variant="pill" />
-        <Text style={styles.title}>{isBeginner ? 'Route History' : 'Routes'}</Text>
-        {isBeginner && <Text style={styles.subtitle}>Every trail you've walked, saved here</Text>}
-      </View>
+    // No dark overlay — sheet slides up over transparent background
+    <Animated.View style={[sheetStyles.container, { opacity: opacityAnim }]}>
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => dismiss()} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: slideAnim }], paddingBottom: Math.max(insets.bottom, Spacing.xl) }]}>
+          <View style={sheetStyles.handle} />
 
-      <FlatList
-        data={routes}
-        keyExtractor={(i) => i.id}
-        contentContainerStyle={{ paddingHorizontal: Spacing.base, gap: Spacing.sm, paddingBottom: Spacing.xl }}
-        renderItem={({ item }) => {
-          const distKm = (item.distanceM / 1000).toFixed(1);
-          const badgeColors: [string, string] = [Colors.primaryLight, Colors.primaryDeep];
-          const iconColor = Colors.primary;
-          return (
-            <TouchableOpacity
-              style={styles.routeCard}
-              activeOpacity={0.85}
-              onPress={() => handleRoutePress(item)}
-              onLongPress={() => handleDeleteRoute(item)}
-            >
-              <LinearGradient
-                colors={badgeColors}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={styles.activityBadge}
+          {/* Header: title + map pin + close */}
+          <View style={sheetStyles.headerRow}>
+            <Text style={sheetStyles.title}>Edit Flag</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+              {/* View on map — icon button in header, away from Delete */}
+              <PressBtn
+                style={sheetStyles.mapBtn}
+                onPress={() => dismiss(() => nav.navigate('Map' as any, { focusLat: data.lat, focusLng: data.lng, focusMarkerId: data.id }))}
+                scaleTo={0.92}
               >
-                <Icon name="Mountain" size={20} color={iconColor} strokeWidth={1.8} />
-              </LinearGradient>
-
-              <View style={styles.routeContent}>
-                <Text style={styles.routeName}>{item.name}</Text>
-                <Text style={styles.routeDate}>
-                  {formatDate(item.lastRunAt || item.createdAt)}
-                  {item.runCount > 0 ? ` · ${item.runCount} run${item.runCount > 1 ? 's' : ''}` : ''}
-                </Text>
-                {isBeginner ? (
-                  <View style={styles.statsRow}>
-                    <View style={[styles.statChip, { backgroundColor: Colors.primaryLight }]}>
-                      <Icon name="MapPin" size={9} color={iconColor} strokeWidth={2.5} />
-                      <Text style={[styles.statValue, { color: iconColor }]}>{distKm} km</Text>
-                    </View>
-                    <View style={[styles.statChip, { backgroundColor: Colors.primaryLight }]}>
-                      <Icon name="Navigation2" size={9} color={iconColor} strokeWidth={2.5} />
-                      <Text style={[styles.statValue, { color: iconColor }]}>{item.waypoints.length} wpt</Text>
-                    </View>
-                    <View style={[styles.statChip, { backgroundColor: Colors.primaryLight }]}>
-                      <Icon name="TrendingUp" size={9} color={iconColor} strokeWidth={2.5} />
-                      <Text style={[styles.statValue, { color: iconColor }]}>{item.elevationGainM}m</Text>
-                    </View>
-                  </View>
-                ) : (
-                  <Text style={styles.routeCompact}>
-                    {distKm}km · {item.waypoints.length}wpt · +{item.elevationGainM}m
-                  </Text>
-                )}
-                {item.sharedBy && (
-                  <Text style={styles.sharedByText}>From {item.sharedBy}</Text>
-                )}
-                {item.isActive && (
-                  <View style={styles.activeBadge}>
-                    <Text style={styles.activeBadgeText}>Active</Text>
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.chevronWrap}>
-                <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
-              </View>
-            </TouchableOpacity>
-          );
-        }}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <View style={styles.emptyIconWrap}>
-              <Icon name="Map" size={36} color={Colors.textMuted} strokeWidth={1.5} />
+                <Icon name="MapPin" size={14} color={Colors.primary} strokeWidth={2} />
+              </PressBtn>
+              <PressBtn style={sheetStyles.closeBtn} onPress={() => dismiss()} scaleTo={0.9}>
+                <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.5} />
+              </PressBtn>
             </View>
-            <Text style={styles.emptyTitle}>No routes yet</Text>
-            {isBeginner && (
-              <Text style={styles.emptyHint}>Start tracking and your routes will be saved here</Text>
-            )}
           </View>
-        }
-      />
 
-      {/* Download premium overlay sheet (STORY-00101) */}
-      <Modal
-        visible={!!downloadSheet}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setDownloadSheet(null)}
-      >
-        <TouchableOpacity style={dlStyles.scrim} activeOpacity={1} onPress={() => setDownloadSheet(null)} />
-        <View style={dlStyles.sheet}>
-          <View style={dlStyles.handle} />
-          <TouchableOpacity style={dlStyles.closeBtn} onPress={() => setDownloadSheet(null)}>
-            <Icon name="X" size={18} color={Colors.textSecondary} strokeWidth={2.5} />
-          </TouchableOpacity>
-          <View style={dlStyles.iconWrap}>
-            <LinearGradient
-              colors={[Colors.primaryLight, Colors.primaryBg]}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={dlStyles.iconBadge}
-            >
-              <Icon name="Download" size={32} color={Colors.primary} strokeWidth={1.8} />
-            </LinearGradient>
+          {/* Type grid — identical to MapScreen: gradient badge + check mark */}
+          <View style={sheetStyles.typeGrid}>
+            {FLAG_TYPES.map((flag) => {
+              const isSelected = selectedType === flag.id;
+              return (
+                <TouchableOpacity
+                  key={flag.id}
+                  style={[sheetStyles.typeCard, isSelected && sheetStyles.typeCardSelected]}
+                  onPress={() => { setSelectedType(flag.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={[flag.bg, flag.bg]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                    style={[sheetStyles.typeIconBadge, { borderColor: flag.color + '40' }]}
+                  >
+                    <Icon name={flag.icon} size={IconSize.md} color={flag.color} strokeWidth={2} />
+                  </LinearGradient>
+                  <Text style={[sheetStyles.typeCardLabel, { color: isSelected ? Colors.primary : Colors.textSecondary }]}>
+                    {flag.label}
+                  </Text>
+                  {isSelected && (
+                    <View style={sheetStyles.typeCardCheck}>
+                      <Icon name="CircleCheck" size={14} color={Colors.primary} strokeWidth={2.5} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
-          <Text style={dlStyles.title}>Download for Offline Use</Text>
-          <Text style={dlStyles.desc}>
-            Save routes to your device and access them without internet — perfect for remote trails.
-          </Text>
-          <TouchableOpacity style={dlStyles.upgradeBtn} activeOpacity={0.85} onPress={() => setDownloadSheet(null)}>
-            <Icon name="Star" size={16} color="#fff" strokeWidth={2} />
-            <Text style={dlStyles.upgradeBtnText}>Upgrade to Premium</Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
-    </SafeAreaView>
+
+          {/* Note input — identical to MapScreen */}
+          <View style={sheetStyles.noteWrap}>
+            <TextInput
+              style={[sheetStyles.noteInput, textFocused && sheetStyles.noteInputFocused, text.length >= 50 && sheetStyles.noteInputError]}
+              placeholder="Describe this spot… (optional)"
+              placeholderTextColor={Colors.textMuted}
+              value={text}
+              onChangeText={(t) => setText(t.slice(0, 50))}
+              multiline
+              numberOfLines={2}
+              onFocus={() => setTextFocused(true)}
+              onBlur={() => setTextFocused(false)}
+            />
+            <View style={sheetStyles.noteFooterRow}>
+              <Text style={sheetStyles.noteMaxLabel}>Max 50 characters</Text>
+              {(textFocused || text.length > 0) && (
+                <Text style={[sheetStyles.charCount, text.length >= 50 ? { color: Colors.danger } : text.length >= 40 ? { color: Colors.warning } : null]}>
+                  {text.length}/50
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {/* Permission pills — identical to MapScreen */}
+          <View style={sheetStyles.permRow}>
+            {(['personal', 'group', 'public'] as const).map((p) => {
+              const active = permission === p;
+              return (
+                <TouchableOpacity key={p} style={[sheetStyles.permPill, active && sheetStyles.permPillActive]} onPress={() => setPermission(p)}>
+                  <Icon name={permIconNames[p]} size={14} color={active ? Colors.primary : Colors.textSecondary} strokeWidth={1.8} />
+                  <Text style={[sheetStyles.permPillLabel, active && sheetStyles.permPillLabelActive]}>{permLabels[p]}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Actions: Delete (ghost left) + Save Changes (solid right) */}
+          <View style={sheetStyles.actions}>
+            <PressBtn style={sheetStyles.deleteBtn} onPress={confirmDelete} scaleTo={0.96}>
+              <Icon name="Trash2" size={14} color={Colors.danger} strokeWidth={2} />
+              <Text style={sheetStyles.deleteBtnText}>Delete</Text>
+            </PressBtn>
+            <PressBtn
+              style={sheetStyles.saveBtn}
+              onPress={() => {
+                if (!selectedType) return;
+                onSave(data.id, selectedType, text, permission);
+                dismiss();
+              }}
+              scaleTo={0.96}
+            >
+              <Icon name="Check" size={IconSize.sm} color="#fff" strokeWidth={2} />
+              <Text style={sheetStyles.saveBtnText}>Save Changes</Text>
+            </PressBtn>
+          </View>
+        </Animated.View>
+      </KeyboardAvoidingView>
+    </Animated.View>
   );
 }
 
+// ── Flags Tab ────────────────────────────────────────────────────────────────
+const PERM_FILTERS: { id: MarkerPermission | 'all'; icon: IconName }[] = [
+  { id: 'personal', icon: 'Lock' },
+  { id: 'group',    icon: 'Users' },
+  { id: 'public',   icon: 'Globe' },
+];
+
+function FlagsTab() {
+  const markers = useMarkerStore(s => s.markers);
+  const deleteMarker = useMarkerStore(s => s.deleteMarker);
+  const updateMarker = useMarkerStore(s => s.updateMarker);
+  const lastCoord = useTrackingStore(s => s.lastCoordinate);
+  const [typeFilter, setTypeFilter] = useState<MarkerType | 'all'>('all');
+  const [permFilter, setPermFilter] = useState<MarkerPermission | 'all'>('all');
+  const [editingMarker, setEditingMarker] = useState<Marker | null>(null);
+
+  const filtered = markers.filter(m => {
+    if (typeFilter !== 'all' && m.type !== typeFilter) return false;
+    if (permFilter !== 'all' && (m.permission ?? 'personal') !== permFilter) return false;
+    return true;
+  });
+  const sorted = [...filtered].sort((a, b) => b.createdAt - a.createdAt);
+
+  const handleSaveEdit = async (id: string, type: MarkerType, note: string, permission: MarkerPermission) => {
+    await updateMarker(id, { type, note, permission });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  if (markers.length === 0) {
+    return <EmptyState icon="Flag" title="No flags planted yet" hint="Use AR to plant your first flag!" />;
+  }
+
+  return (
+    <View style={{ flex: 1 }}>
+      {/* Single filter bar: type pills left, permission toggles right */}
+      <View style={styles.filterRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: Spacing.xs }} style={{ flex: 1 }}>
+          {FLAG_FILTERS.map(f => (
+            <TouchableOpacity key={f.id} style={[styles.filterChip, typeFilter === f.id && styles.filterChipActive]} onPress={() => setTypeFilter(f.id)}>
+              <Text style={[styles.filterChipText, typeFilter === f.id && styles.filterChipTextActive]}>{f.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <View style={styles.permToggleGroup}>
+          {PERM_FILTERS.map(p => {
+            const active = permFilter === p.id;
+            return (
+              <TouchableOpacity
+                key={p.id}
+                style={[styles.permToggle, active && styles.permToggleActive]}
+                onPress={() => setPermFilter(active ? 'all' : p.id)}
+              >
+                <Icon name={p.icon} size={13} color={active ? Colors.primary : Colors.textMuted} strokeWidth={active ? 2.5 : 1.8} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      <FlatList
+        data={sorted}
+        keyExtractor={m => m.id}
+        contentContainerStyle={styles.listContent}
+        renderItem={({ item }) => {
+          const meta = MARKER_META[item.type] || MARKER_META.free;
+          const perm = (item.permission ?? 'personal') as MarkerPermission;
+          const permIcon: IconName = perm === 'public' ? 'Globe' : perm === 'group' ? 'Users' : 'Lock';
+          const permColor = perm === 'personal' ? Colors.textMuted : perm === 'group' ? Colors.info : Colors.success;
+          let distanceStr = '';
+          if (lastCoord) {
+            const distM = haversineM({ lat: lastCoord.lat, lng: lastCoord.lng }, { lat: item.lat, lng: item.lng });
+            distanceStr = distM < 1000 ? `${Math.round(distM)}m` : `${(distM / 1000).toFixed(1)}km`;
+          }
+          return (
+            <PressBtn style={[styles.card, { borderLeftColor: meta.color }]} onPress={() => setEditingMarker(item)} scaleTo={0.97}>
+              <View style={[styles.cardBadge, { backgroundColor: meta.bg }]}>
+                <Icon name={(FLAG_TYPES.find(f => f.id === item.type)?.icon ?? 'Flag') as IconName} size={16} color={meta.color} strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.flagName} numberOfLines={1} ellipsizeMode="tail">{item.note || '(No note)'}</Text>
+                  {item.approximate && <View style={styles.approxChip}><Text style={styles.approxChipText}>~</Text></View>}
+                </View>
+                <Text style={[styles.cardMeta, { color: meta.color }]}>{meta.label}</Text>
+              </View>
+              {distanceStr ? <Text style={styles.distanceText}>{distanceStr}</Text> : null}
+              <Icon name={permIcon} size={12} color={permColor} strokeWidth={1.8} />
+              <Icon name="ChevronRight" size={14} color={Colors.textMuted} strokeWidth={2} />
+            </PressBtn>
+          );
+        }}
+        ListEmptyComponent={<View style={{ padding: Spacing.xl, alignItems: 'center' }}><Text style={styles.emptyHint}>No flags matching filter</Text></View>}
+      />
+
+      <FlagEditSheet
+        marker={editingMarker}
+        onClose={() => setEditingMarker(null)}
+        onSave={handleSaveEdit}
+        onDelete={(id) => deleteMarker(id)}
+      />
+    </View>
+  );
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+export function RoutesScreen() {
+  const [tab, setTab] = useState<Tab>('routes');
+  const loadRoutes = useRouteStore(s => s.loadRoutes);
+  const nav = useNavigation<Nav>();
+
+  useEffect(() => {
+    loadRoutes();
+  }, []);
+
+  return (
+    <View style={{ flex: 1 }}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <BackButton variant="pill" onPress={() => nav.goBack()} />
+        <Text style={styles.title}>Routes</Text>
+        <View style={{ minWidth: 60 }} />
+      </View>
+      <SegmentControl active={tab} onChange={setTab} />
+      <View style={{ flex: 1 }}>
+        {tab === 'routes' && <RoutesTab />}
+        {tab === 'activities' && <ActivitiesTab />}
+        {tab === 'flags' && <FlagsTab />}
+      </View>
+    </SafeAreaView>
+    </View>
+  );
+}
+
+// ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   header: {
-    paddingHorizontal: Spacing.base,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.md,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.lg, paddingBottom: Spacing.sm,
+    backgroundColor: Colors.bg,
   },
-  title: {
-    fontSize: FontSize.h1,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    letterSpacing: -0.5,
+  title: { flex: 1, textAlign: 'center', fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary },
+  listContent: { padding: Spacing.base, gap: Spacing.sm },
+  card: {
+    backgroundColor: 'rgba(255,255,255,0.90)', borderRadius: Radius.card,
+    flexDirection: 'row', alignItems: 'center', padding: Spacing.base, gap: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    borderLeftWidth: 3, borderLeftColor: 'transparent',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
-  subtitle: {
-    fontSize: FontSize.caption,
-    color: Colors.textSecondary,
-    marginTop: 4,
-  },
-
-  routeCard: {
-    backgroundColor: 'rgba(255,255,255,0.88)',
-    borderRadius: Radius.card,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: Spacing.base,
-    gap: Spacing.base,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.40)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.10,
-    shadowRadius: 20,
-    elevation: 3,
-  },
-  activityBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  routeContent: { flex: 1 },
-  routeName: {
-    fontSize: FontSize.h3,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 2,
-  },
-  routeDate: {
-    fontSize: FontSize.small,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
-  },
-
-  statsRow: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
-  statChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    borderRadius: Radius.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  statValue: {
-    fontSize: FontSize.tiny,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  statUnit: {
-    fontSize: FontSize.tiny,
-    color: Colors.textSecondary,
-  },
-
-  routeCompact: {
-    fontSize: FontSize.caption,
-    color: Colors.textSecondary,
-  },
-
-  downloadBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 4,
-    marginTop: Spacing.xs,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radius.pill,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  downloadBtnText: {
-    fontSize: FontSize.tiny,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-
-  chevronWrap: { paddingLeft: Spacing.xs },
-
+  cardBadge: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  cardTitle: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  cardMeta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+  flagName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  distanceText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary, marginRight: 2 },
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.pill, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
+  filterChipActive: { backgroundColor: Colors.primaryBg, borderColor: Colors.primary },
+  filterChipText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
+  filterChipTextActive: { color: Colors.primary },
+  permToggleGroup: { flexDirection: 'row', gap: 2, backgroundColor: Colors.surface, borderRadius: Radius.pill, borderWidth: 1, borderColor: Colors.border, padding: 2 },
+  permToggle: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  permToggleActive: { backgroundColor: Colors.primaryBg },
+  approxChip: { width: 16, height: 16, borderRadius: 8, backgroundColor: Colors.warning, alignItems: 'center', justifyContent: 'center' },
+  approxChipText: { fontSize: 10, fontWeight: '800', color: '#fff' },
   empty: { flex: 1, alignItems: 'center', paddingTop: 80 },
-  emptyIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.md,
-    ...Shadow.card,
-  },
-  emptyTitle: {
-    fontSize: FontSize.h3,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  emptyHint: {
-    fontSize: FontSize.caption,
-    color: Colors.textMuted,
-    marginTop: 8,
-    textAlign: 'center',
-    paddingHorizontal: Spacing.xl,
-  },
-  sharedByText: {
-    fontSize: FontSize.tiny,
-    color: Colors.info,
-    fontWeight: '500',
-    marginTop: 4,
-  },
-  activeBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.primaryBg,
-    borderRadius: Radius.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginTop: 4,
-  },
-  activeBadgeText: {
-    fontSize: FontSize.tiny,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
+  emptyIconWrap: { width: 72, height: 72, borderRadius: 36, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.md, ...Shadow.card },
+  emptyTitle: { fontSize: FontSize.h3, fontWeight: '600', color: Colors.textSecondary },
+  emptyHint: { fontSize: FontSize.caption, color: Colors.textMuted, marginTop: 8, textAlign: 'center', paddingHorizontal: Spacing.xl },
+  newRouteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.card, borderWidth: 2, borderColor: Colors.primary, borderStyle: 'dashed', marginBottom: Spacing.sm },
+  newRouteBtnText: { fontSize: FontSize.body, fontWeight: '600', color: Colors.primary },
 });
 
-// ── Download premium overlay sheet styles (STORY-00101) ──────────────────────
-const dlStyles = StyleSheet.create({
-  scrim: {
+// ── Sheet Styles (mirrors MapScreen sheet styles exactly) ────────────────────
+const sheetStyles = StyleSheet.create({
+  // Transparent container — no dark overlay
+  container: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: Colors.overlayDark,
+    justifyContent: 'flex-end',
+    zIndex: 100,
   },
   sheet: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
     backgroundColor: Colors.surface,
-    borderTopLeftRadius: Radius.cardLg, borderTopRightRadius: Radius.cardLg,
-    padding: Spacing.xl, paddingBottom: Spacing.xxl,
-    alignItems: 'center',
-    ...Shadow.overlay,
+    borderTopLeftRadius: Radius.sheet, borderTopRightRadius: Radius.sheet,
+    padding: Spacing.xl, paddingBottom: 48, gap: Spacing.md, ...Shadow.overlay,
+    borderTopWidth: 1, borderColor: Colors.border,
   },
-  handle: {
-    width: 44, height: 5, borderRadius: 3,
-    backgroundColor: Colors.border, marginBottom: Spacing.lg,
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: Spacing.xs },
+
+  // Header
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  title: { fontSize: FontSize.h3, fontWeight: '700', color: Colors.textPrimary },
+  mapBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: Colors.primaryBg, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: Colors.primary + '40',
   },
-  closeBtn: {
-    position: 'absolute', top: Spacing.xl, right: Spacing.xl,
-    padding: 4,
+  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' },
+
+  // Type grid — identical to MapScreen
+  typeGrid: { flexDirection: 'row', gap: Spacing.sm },
+  typeCard: {
+    flex: 1, alignItems: 'center', gap: Spacing.xs, paddingVertical: Spacing.sm,
+    borderRadius: Radius.card, borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.surface, ...Shadow.card,
   },
-  iconWrap: { marginBottom: Spacing.base },
-  iconBadge: {
-    width: 72, height: 72, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
+  typeCardSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+  typeIconBadge: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  typeCardLabel: { fontSize: FontSize.small, fontWeight: '700' },
+  typeCardCheck: { position: 'absolute', top: 6, right: 6 },
+
+  // Note input — identical to MapScreen
+  noteWrap: { position: 'relative' },
+  noteInput: {
+    backgroundColor: Colors.bg, borderRadius: Radius.button,
+    padding: Spacing.md, fontSize: FontSize.body, color: Colors.textPrimary,
+    borderWidth: 1.5, borderColor: Colors.border, minHeight: 70, textAlignVertical: 'top',
   },
-  title: {
-    fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary,
-    textAlign: 'center', marginBottom: Spacing.sm,
+  noteInputFocused: { borderColor: Colors.primary },
+  noteInputError: { borderColor: Colors.danger },
+  noteFooterRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingHorizontal: 2 },
+  noteMaxLabel: { fontSize: FontSize.tiny, color: Colors.textMuted },
+  charCount: { fontSize: FontSize.tiny, color: Colors.textMuted },
+
+  // Permission pills — identical to MapScreen
+  permRow: { flexDirection: 'row', gap: Spacing.sm },
+  permPill: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.pill,
+    paddingVertical: Spacing.xs, paddingHorizontal: Spacing.sm, backgroundColor: Colors.surface,
   },
-  desc: {
-    fontSize: FontSize.caption, color: Colors.textSecondary,
-    textAlign: 'center', lineHeight: 20,
-    paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl,
+  permPillActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+  permPillLabel: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
+  permPillLabelActive: { color: Colors.primary },
+
+  // Actions
+  actions: { flexDirection: 'row', gap: Spacing.sm },
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg,
+    borderRadius: Radius.button, borderWidth: 1.5,
+    borderColor: Colors.danger + '50', backgroundColor: Colors.dangerBg,
   },
-  upgradeBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: Colors.primary, borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
-    minHeight: 48, ...Shadow.fab,
+  deleteBtnText: { fontSize: FontSize.body, fontWeight: '600', color: Colors.danger },
+  saveBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: Spacing.md, borderRadius: Radius.button, backgroundColor: Colors.primary,
   },
-  upgradeBtnText: {
-    fontSize: FontSize.body, fontWeight: '700', color: '#fff',
+  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
+});
+
+const routeSheetStyles = StyleSheet.create({
+  statsRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.bg, borderRadius: Radius.card,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.border,
   },
+  statItem: { flex: 1, alignItems: 'center', gap: 4 },
+  statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
+  statValue: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary },
+  lastRun: { fontSize: FontSize.caption, color: Colors.textMuted, textAlign: 'center', marginTop: -Spacing.xs },
+});
+
+const segStyles = StyleSheet.create({
+  container: { flexDirection: 'row', marginHorizontal: Spacing.base, backgroundColor: Colors.surface, borderRadius: Radius.card, padding: 4, borderWidth: 1, borderColor: Colors.border },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: Radius.card - 2 },
+  tabActive: { backgroundColor: Colors.primaryBg, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  tabText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textMuted },
+  tabTextActive: { color: Colors.primary, fontWeight: '700' },
 });

@@ -9,18 +9,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, Modal,
-  TextInput, Animated, KeyboardAvoidingView, Platform,
+  TextInput, Animated, Easing, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore } from '../store/useAppStore';
 import { useMarkerStore, type Marker, type MarkerPermission } from '../store/useMarkerStore';
 import { useTrackingStore } from '../store/useTrackingStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
+import { PressBtn } from '../components/PressBtn';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
 import { GlassPanel, Elevation } from '../components/GlassPanel';
@@ -29,21 +30,23 @@ import { OfflineMapSheet } from '../components/OfflineMapSheet';
 import { MARKER_META, MarkerType } from '../data/mockData';
 import { getCurrentRegion } from '../config/regions';
 
-// Mapbox — conditional import (won't work in Expo Go, only dev client)
+// Mapbox — conditional import (native only; web uses fallback)
 let MapboxGL: any = null;
 let MapView: any = null;
 let Camera: any = null;
 let PointAnnotation: any = null;
 let UserLocation: any = null;
-try {
-  const Mapbox = require('@rnmapbox/maps');
-  MapboxGL = Mapbox.default || Mapbox;
-  MapView = Mapbox.MapView;
-  Camera = Mapbox.Camera;
-  PointAnnotation = Mapbox.PointAnnotation;
-  UserLocation = Mapbox.UserLocation;
-} catch {
-  // Mapbox not available (Expo Go) — will render fallback
+if (Platform.OS !== 'web') {
+  try {
+    const Mapbox = require('@rnmapbox/maps');
+    MapboxGL = Mapbox.default || Mapbox;
+    MapView = Mapbox.MapView;
+    Camera = Mapbox.Camera;
+    PointAnnotation = Mapbox.PointAnnotation;
+    UserLocation = Mapbox.UserLocation;
+  } catch {
+    // Mapbox native not available
+  }
 }
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -61,6 +64,27 @@ const FLAG_TYPES: {
   { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: Colors.success,  bg: Colors.successBg },
   { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg },
 ];
+
+// ── Pressable map marker with scale feedback ─────────────────────────────────
+function PressableMarker({ x, y, borderColor, bg, iconColor, iconName, onPress }: {
+  x: number; y: number; borderColor: string; bg: string;
+  iconColor: string; iconName: IconName; onPress: () => void;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+  return (
+    <Animated.View style={[styles.mapMarker, { left: x, top: y, borderColor, backgroundColor: bg, transform: [{ scale }] }]}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={onPress}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.88, useNativeDriver: true, tension: 300, friction: 10 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 300, friction: 8 }).start()}
+        style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Icon name={iconName} size={14} color={iconColor} strokeWidth={2.5} />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 // ── Map Component (Real Mapbox or Fallback) ─────────────────────────────────
 function RealMap({
@@ -92,18 +116,16 @@ function RealMap({
           const xFrac = 0.2 + col * 0.3;
           const yFrac = 0.3 + row * 0.2;
           return (
-            <TouchableOpacity
+            <PressableMarker
               key={m.id}
-              style={[styles.mapMarker, {
-                left: xFrac * W - 16,
-                top: yFrac * (H * 0.65) - 16,
-                borderColor: meta.color,
-                backgroundColor: meta.bg,
-              }]}
+              x={xFrac * W - 16}
+              y={yFrac * (H * 0.65) - 16}
+              borderColor={meta.color}
+              bg={meta.bg}
+              iconColor={meta.color}
+              iconName={(flagType?.icon ?? meta.iconName) as IconName}
               onPress={() => onMarkerPress(m)}
-            >
-              <Icon name={(flagType?.icon ?? meta.iconName) as IconName} size={14} color={meta.color} strokeWidth={2.5} />
-            </TouchableOpacity>
+            />
           );
         })}
       </View>
@@ -168,13 +190,13 @@ function CreateMarkerSheet({
   useEffect(() => {
     if (visible) {
       Animated.parallel([
-        Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 200, friction: 18 }),
-        Animated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
       ]).start();
     } else {
       Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 400, duration: 180, useNativeDriver: true }),
-        Animated.timing(opacityAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
       ]).start();
     }
   }, [visible]);
@@ -238,23 +260,23 @@ function CreateMarkerSheet({
           {/* Note input with 3-tier char counter */}
           <View style={styles.noteWrap}>
             <TextInput
-              style={[styles.noteInput, textFocused && styles.noteInputFocused, charCount >= 30 && styles.noteInputError]}
+              style={[styles.noteInput, textFocused && styles.noteInputFocused, charCount >= 50 && styles.noteInputError]}
               placeholder="Describe this spot… (optional)"
               placeholderTextColor={Colors.textMuted}
               value={text}
-              onChangeText={(t) => setText(t.slice(0, 30))}
+              onChangeText={(t) => setText(t.slice(0, 50))}
               multiline
               numberOfLines={2}
               onFocus={() => setTextFocused(true)}
               onBlur={() => setTextFocused(false)}
             />
             <View style={styles.noteFooterRow}>
-              <Text style={styles.noteMaxLabel}>Max 30 characters</Text>
+              <Text style={styles.noteMaxLabel}>Max 50 characters</Text>
               {(textFocused || charCount > 0) && (
                 <Text style={[
                   styles.charCount,
-                  charCount >= 30 ? { color: Colors.danger } : charCount >= 22 ? { color: Colors.warning } : null,
-                ]}>{charCount}/30</Text>
+                  charCount >= 50 ? { color: Colors.danger } : charCount >= 40 ? { color: Colors.warning } : null,
+                ]}>{charCount}/50</Text>
               )}
             </View>
           </View>
@@ -277,7 +299,7 @@ function CreateMarkerSheet({
           </View>
 
           {/* Save button — disabled until type selected */}
-          <TouchableOpacity
+          <PressBtn
             style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
             onPress={() => {
               if (!canSave) return;
@@ -286,11 +308,12 @@ function CreateMarkerSheet({
               setText('');
               setSelectedType(null);
             }}
-            activeOpacity={canSave ? 0.8 : 1}
+            scaleTo={0.96}
+            disabled={!canSave}
           >
             <Icon name="Flag" size={IconSize.sm} color={canSave ? '#fff' : Colors.textMuted} strokeWidth={2} />
             <Text style={[styles.saveBtnText, !canSave && { color: Colors.textMuted }]}>Plant Flag</Text>
-          </TouchableOpacity>
+          </PressBtn>
         </Animated.View>
       </KeyboardAvoidingView>
     </Animated.View>
@@ -299,11 +322,13 @@ function CreateMarkerSheet({
 
 // ── EditMarkerSheet ──────────────────────────────────────────────────────────
 function EditMarkerSheet({
-  marker, onClose, onSave,
+  marker, onClose, onSave, onDelete, showMapBtn,
 }: {
   marker: Marker | null;
   onClose: () => void;
   onSave: (id: string, type: MarkerType, note: string, permission: MarkerPermission) => void;
+  onDelete?: (id: string) => void;
+  showMapBtn?: boolean;
 }) {
   const [selectedType, setSelectedType] = useState<MarkerType | null>(null);
   const [text, setText] = useState('');
@@ -326,13 +351,13 @@ function EditMarkerSheet({
   useEffect(() => {
     if (visible) {
       Animated.parallel([
-        Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 200, friction: 18 }),
-        Animated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
       ]).start();
     } else {
       Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 400, duration: 180, useNativeDriver: true }),
-        Animated.timing(opacityAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
       ]).start();
     }
   }, [visible]);
@@ -391,23 +416,23 @@ function EditMarkerSheet({
           {/* Note input */}
           <View style={styles.noteWrap}>
             <TextInput
-              style={[styles.noteInput, textFocused && styles.noteInputFocused, text.length >= 30 && styles.noteInputError]}
+              style={[styles.noteInput, textFocused && styles.noteInputFocused, text.length >= 50 && styles.noteInputError]}
               placeholder="Describe this spot… (optional)"
               placeholderTextColor={Colors.textMuted}
               value={text}
-              onChangeText={(t) => setText(t.slice(0, 30))}
+              onChangeText={(t) => setText(t.slice(0, 50))}
               multiline
               numberOfLines={2}
               onFocus={() => setTextFocused(true)}
               onBlur={() => setTextFocused(false)}
             />
             <View style={styles.noteFooterRow}>
-              <Text style={styles.noteMaxLabel}>Max 30 characters</Text>
+              <Text style={styles.noteMaxLabel}>Max 50 characters</Text>
               {(textFocused || text.length > 0) && (
                 <Text style={[
                   styles.charCount,
-                  text.length >= 30 ? { color: Colors.danger } : text.length >= 22 ? { color: Colors.warning } : null,
-                ]}>{text.length}/30</Text>
+                  text.length >= 50 ? { color: Colors.danger } : text.length >= 40 ? { color: Colors.warning } : null,
+                ]}>{text.length}/50</Text>
               )}
             </View>
           </View>
@@ -430,18 +455,54 @@ function EditMarkerSheet({
           </View>
 
           {/* Save button */}
-          <TouchableOpacity
-            style={styles.saveBtn}
-            onPress={() => {
-              if (!selectedType) return;
-              onSave(marker.id, selectedType, text, permission);
-              onClose();
-            }}
-            activeOpacity={0.8}
-          >
-            <Icon name="Check" size={IconSize.sm} color="#fff" strokeWidth={2} />
-            <Text style={styles.saveBtnText}>Save Changes</Text>
-          </TouchableOpacity>
+          {onDelete ? (
+            <View style={styles.editSheetActions}>
+              <PressBtn
+                style={styles.editSheetDeleteBtn}
+                onPress={() => {
+                  Alert.alert(
+                    'Delete Flag',
+                    `Delete "${marker.note || 'this flag'}"? This cannot be undone.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Delete', style: 'destructive', onPress: () => { onDelete(marker.id); onClose(); } },
+                    ]
+                  );
+                }}
+                scaleTo={0.96}
+              >
+                <Icon name="Trash2" size={14} color={Colors.danger} strokeWidth={2} />
+                <Text style={styles.editSheetDeleteText}>Delete</Text>
+              </PressBtn>
+              <View style={styles.editSheetSaveFlex}>
+                <PressBtn
+                  style={styles.saveBtn}
+                  onPress={() => {
+                    if (!selectedType) return;
+                    onSave(marker.id, selectedType, text, permission);
+                    onClose();
+                  }}
+                  scaleTo={0.96}
+                >
+                  <Icon name="Check" size={IconSize.sm} color="#fff" strokeWidth={2} />
+                  <Text style={styles.saveBtnText}>Save Changes</Text>
+                </PressBtn>
+              </View>
+            </View>
+          ) : (
+            <PressBtn
+              style={styles.saveBtn}
+              onPress={() => {
+                if (!selectedType) return;
+                onSave(marker.id, selectedType, text, permission);
+                onClose();
+              }}
+              scaleTo={0.96}
+            >
+              <Icon name="Check" size={IconSize.sm} color="#fff" strokeWidth={2} />
+              <Text style={styles.saveBtnText}>Save Changes</Text>
+            </PressBtn>
+          )}
         </Animated.View>
       </KeyboardAvoidingView>
     </Animated.View>
@@ -450,70 +511,113 @@ function EditMarkerSheet({
 
 // ── MarkerDetailSheet (STORY-00097) ───────────────────────────────────────────
 function MarkerDetailSheet({
-  marker, onClose, onDelete, onEdit,
+  marker, onClose, onDelete, onEdit, viewOnly,
 }: {
   marker: Marker | null;
   onClose: () => void;
   onDelete?: (id: string) => void;
   onEdit?: (marker: Marker) => void;
+  viewOnly?: boolean;
 }) {
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
+
+  // Slide-in animation — same easing/duration as other sheets for consistency
+  const slideY = useRef(new Animated.Value(400)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!marker) return;
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    ]).start();
+  }, [marker?.id]);
+
   if (!marker) return null;
   const meta = MARKER_META[marker.type as keyof typeof MARKER_META] ?? MARKER_META.free;
   const flagType = FLAG_TYPES.find(f => f.id === marker.type);
 
+  const handleClose = () => {
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => onClose());
+  };
+
   return (
-    <View style={styles.sheetOverlay}>
-      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} activeOpacity={1} />
-      <View style={[styles.sheet, { paddingBottom: 40 }]}>
+    <Animated.View style={[styles.detailOverlay, { opacity }]}>
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={handleClose} activeOpacity={1} />
+      <Animated.View style={[styles.detailSheet, { paddingBottom: Math.max(insets.bottom, Spacing.xl), transform: [{ translateY: slideY }] }]}>
         <View style={styles.sheetHandle} />
-        {/* Header: LinearGradient type badge + time/author */}
+
+        {/* Header row: type badge + date */}
         <View style={styles.detailHeaderRow}>
           <LinearGradient
             colors={[meta.bg, meta.bg.replace(')', ', 0.9)').replace('rgb', 'rgba')]}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={[styles.detailTypeBadge, { borderColor: meta.color + '50' }]}
           >
-            <Icon name={(flagType?.icon ?? meta.iconName) as IconName} size={14} color={meta.color} strokeWidth={2.5} />
+            <Icon name={(flagType?.icon ?? meta.iconName) as IconName} size={13} color={meta.color} strokeWidth={2.5} />
             <Text style={[styles.detailTypeLabel, { color: meta.color }]}>{meta.label}</Text>
           </LinearGradient>
           <Text style={styles.detailMeta}>{new Date(marker.createdAt).toLocaleDateString()}</Text>
         </View>
-        {/* Note text */}
-        <Text style={styles.detailNote}>{marker.note || meta.label}</Text>
-        {/* Helpful outlined pill */}
-        <TouchableOpacity style={styles.helpfulPill}>
-          <Icon name="ThumbsUp" size={15} color={Colors.textSecondary} strokeWidth={1.8} />
-          <Text style={styles.helpfulPillText}>Helpful</Text>
-        </TouchableOpacity>
-        {/* Edit / Delete actions */}
-        <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }}>
+
+        {/* Note */}
+        <Text style={styles.detailNote}>{marker.note || '(No note)'}</Text>
+
+        {/* Location pill — only when NOT already in view-location mode */}
+        {!viewOnly && (
           <TouchableOpacity
-            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: Spacing.sm, borderRadius: Radius.button, borderWidth: 1.5, borderColor: Colors.primary, backgroundColor: Colors.primaryBg }}
-            onPress={() => { if (onEdit && marker) { onEdit(marker); onClose(); } }}          >
+            style={styles.locationPill}
+            onPress={() => {
+              handleClose();
+              nav.navigate('Map' as any, { focusLat: marker.lat, focusLng: marker.lng, focusMarkerId: marker.id });
+            }}
+            activeOpacity={0.75}
+          >
+            <Icon name="MapPin" size={14} color={Colors.primary} strokeWidth={2} />
+            <Text style={styles.locationPillText}>View on map</Text>
+            <Text style={styles.locationCoords}>{marker.lat.toFixed(4)}, {marker.lng.toFixed(4)}</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Edit / Delete */}
+        <View style={styles.detailActions}>
+          <TouchableOpacity
+            style={styles.detailEditBtn}
+            onPress={() => { if (onEdit && marker) { onEdit(marker); handleClose(); } }}
+          >
             <Icon name="Pencil" size={14} color={Colors.primary} strokeWidth={2} />
-            <Text style={{ fontSize: FontSize.small, fontWeight: '600', color: Colors.primary }}>Edit</Text>
+            <Text style={styles.detailEditText}>Edit</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: Spacing.sm, borderRadius: Radius.button, borderWidth: 1.5, borderColor: Colors.danger, backgroundColor: Colors.dangerBg }}
+            style={styles.detailDeleteBtn}
             onPress={() => {
               if (marker && onDelete) {
-                onDelete(marker.id);
-                onClose();
+                Alert.alert('Delete Flag', `Delete "${marker.label}"? This cannot be undone.`, [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Delete', style: 'destructive', onPress: () => { onDelete(marker.id); handleClose(); } },
+                ]);
               }
             }}
           >
             <Icon name="Trash2" size={14} color={Colors.danger} strokeWidth={2} />
-            <Text style={{ fontSize: FontSize.small, fontWeight: '600', color: Colors.danger }}>Delete</Text>
+            <Text style={styles.detailDeleteText}>Delete</Text>
           </TouchableOpacity>
         </View>
-      </View>
-    </View>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
 // ── Main Map Screen ───────────────────────────────────────────────────────────
 export function MapScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<any>();
+  const focusMarkerId: string | undefined = route.params?.focusMarkerId;
+  const viewOnly = !!focusMarkerId; // "view flag location" mode — hides activity controls
+
   const { uiMode, activityMode, setActivityMode, trackingState, setTrackingState,
     trackingDistance, trackingDuration, incrementTracking } = useAppStore();
 
@@ -530,6 +634,17 @@ export function MapScreen() {
   const [createVisible, setCreateVisible] = useState(false);
   const [showModeModal, setShowModeModal] = useState(false);
   const [offlineVisible, setOfflineVisible] = useState(false);
+
+  // Auto-select the focused marker on mount
+  useEffect(() => {
+    if (focusMarkerId) {
+      const m = storeMarkers.find(m => m.id === focusMarkerId);
+      if (m) {
+        // In viewOnly mode, go straight to edit sheet (no intermediate detail sheet)
+        setEditMarker(m);
+      }
+    }
+  }, [focusMarkerId]);
 
   // Spring scales for buttons
   const fabScale = useRef(new Animated.Value(1)).current;
@@ -570,7 +685,7 @@ export function MapScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {/* Map — full bleed topo placeholder */}
-      <RealMap markers={storeMarkers} onMarkerPress={(m) => setSelectedMarker(m)} />
+      <RealMap markers={storeMarkers} onMarkerPress={(m) => setEditMarker(m)} />
 
       {/* Top bar — STORY-00099: rgba(255,255,255,0.95) overlay chips */}
       <SafeAreaView style={styles.topBar} edges={['top']} pointerEvents="box-none">
@@ -588,18 +703,20 @@ export function MapScreen() {
           </View>
         </View>
 
-        {/* Activity mode chip */}
-        <TouchableOpacity style={styles.modeChip} onPress={() => setShowModeModal(true)}>
-          <Icon
-            name={activityMode === 'hiking' ? 'Mountain' : 'PersonStanding'}
-            size={16} color={Colors.primary} strokeWidth={1.8}
-          />
-          <Text style={styles.chipText}>{activityMode === 'hiking' ? 'Hiking' : 'Running'}</Text>
-        </TouchableOpacity>
+        {/* Activity mode chip — hidden in viewOnly mode */}
+        {!viewOnly && (
+          <TouchableOpacity style={styles.modeChip} onPress={() => setShowModeModal(true)}>
+            <Icon
+              name={activityMode === 'hiking' ? 'Mountain' : 'PersonStanding'}
+              size={16} color={Colors.primary} strokeWidth={1.8}
+            />
+            <Text style={styles.chipText}>{activityMode === 'hiking' ? 'Hiking' : 'Running'}</Text>
+          </TouchableOpacity>
+        )}
       </SafeAreaView>
 
-      {/* Tracking bar — STORY-00098: white card + Shadow.elevated + 3px green left-border */}
-      {isTracking && (
+      {/* Tracking bar — hidden in viewOnly mode */}
+      {isTracking && !viewOnly && (
         <View style={styles.trackingBar}>
           {activityMode === 'running' ? (
             <>
@@ -647,7 +764,8 @@ export function MapScreen() {
         </View>
       )}
 
-      {/* Bottom controls */}
+      {/* Bottom controls — hidden in viewOnly mode */}
+      {!viewOnly && (
       <SafeAreaView style={styles.bottomOverlay} edges={['bottom']} pointerEvents="box-none">
         <View style={styles.bottomRow}>
           {/* Start/Stop tracking button */}
@@ -684,6 +802,7 @@ export function MapScreen() {
           </Animated.View>
         </View>
       </SafeAreaView>
+      )}
 
       {/* Sheets */}
       <CreateMarkerSheet
@@ -696,15 +815,17 @@ export function MapScreen() {
         onClose={() => setSelectedMarker(null)}
         onDelete={(id) => deleteMarker(id)}
         onEdit={(m) => setEditMarker(m)}
+        viewOnly={viewOnly}
       />
       <EditMarkerSheet
         marker={editMarker}
         onClose={() => setEditMarker(null)}
         onSave={(id, type, note, permission) => updateMarker(id, { type, note, permission })}
+        onDelete={(id) => deleteMarker(id)}
       />
 
-      {/* Bottom Panel — nearby markers + offline access */}
-      {!isTracking && (
+      {/* Bottom Panel — hidden when viewing a specific marker or tracking */}
+      {!isTracking && !viewOnly && (
         <MapBottomPanel
           markers={storeMarkers.map(m => ({
             id: m.id,
@@ -715,7 +836,7 @@ export function MapScreen() {
           }))}
           onMarkerPress={(id) => {
             const m = storeMarkers.find(mk => mk.id === id);
-            if (m) setSelectedMarker(m);
+            if (m) setEditMarker(m);
           }}
           onOfflinePress={() => setOfflineVisible(true)}
         />
@@ -849,7 +970,7 @@ const styles = StyleSheet.create({
   topBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.sm,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.lg,
   },
   topLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   backChip: {
@@ -1010,7 +1131,29 @@ const styles = StyleSheet.create({
   saveBtnDisabled: { backgroundColor: Colors.border },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
 
+  editSheetActions: {
+    flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm,
+  },
+  editSheetDeleteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.xs, borderRadius: Radius.button, paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderWidth: 1.5, borderColor: Colors.danger + '50',
+    backgroundColor: Colors.dangerBg,
+  },
+  editSheetDeleteText: { color: Colors.danger, fontWeight: '600', fontSize: FontSize.body },
+  editSheetSaveFlex: { flex: 1 },
+
   // MarkerDetailSheet (STORY-00097)
+  detailOverlay: {
+    ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end',
+    zIndex: 200, backgroundColor: Colors.overlayDark,
+  },
+  detailSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.sheet, borderTopRightRadius: Radius.sheet,
+    padding: Spacing.xl, gap: Spacing.md, ...Shadow.overlay,
+  },
   detailHeaderRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
@@ -1022,16 +1165,31 @@ const styles = StyleSheet.create({
   },
   detailTypeLabel: { fontSize: FontSize.caption, fontWeight: '700' },
   detailMeta: { fontSize: FontSize.caption, color: Colors.textSecondary },
-  detailTitle: { fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary },
-  detailNote: { fontSize: FontSize.body, color: Colors.textSecondary, lineHeight: 22 },
-  helpfulPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'flex-start',
-    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
-    backgroundColor: Colors.surface,
+  detailNote: {
+    fontSize: FontSize.body, color: Colors.textPrimary, lineHeight: 22,
+    minHeight: 22,
   },
-  helpfulPillText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
+  locationPill: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
+    borderWidth: 1.5, borderColor: Colors.primary + '40', borderRadius: Radius.card,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    backgroundColor: Colors.primaryBg,
+  },
+  locationPillText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.primary, flex: 1 },
+  locationCoords: { fontSize: FontSize.tiny, color: Colors.textMuted, fontVariant: ['tabular-nums'] as any },
+  detailActions: { flexDirection: 'row', gap: Spacing.sm },
+  detailEditBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: Spacing.md, borderRadius: Radius.button,
+    borderWidth: 1.5, borderColor: Colors.primary, backgroundColor: Colors.primaryBg,
+  },
+  detailEditText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.primary },
+  detailDeleteBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: Spacing.md, borderRadius: Radius.button,
+    borderWidth: 1.5, borderColor: Colors.danger + '50', backgroundColor: Colors.dangerBg,
+  },
+  detailDeleteText: { fontSize: FontSize.body, fontWeight: '600', color: Colors.danger },
 
   // Activity mode modal (STORY-00099)
   modalOverlay: { flex: 1, backgroundColor: Colors.overlayDark, justifyContent: 'center', padding: Spacing.xl },

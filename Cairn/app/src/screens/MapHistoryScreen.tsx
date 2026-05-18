@@ -7,14 +7,15 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert,
-  Dimensions, Animated,
+  Dimensions, Animated, Easing,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useSessionStore, loadTrackPoints } from '../store/useSessionStore';
+import { useRouteStore } from '../store/useRouteStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { getCurrentRegion } from '../config/regions';
 import { formatDistance, formatDuration, formatDate, getRelativeTime } from '../utils/geo';
@@ -22,6 +23,7 @@ import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../componen
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
+import { PressBtn } from '../components/PressBtn';
 import { MARKER_META } from '../data/mockData';
 import type { TrackingSession } from '../store/useSessionStore';
 import type { Marker } from '../store/useMarkerStore';
@@ -172,7 +174,12 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
 
   useEffect(() => {
     Animated.timing(expandAnim, {
-      toValue: isExpanded ? 1 : 0, duration: 200, useNativeDriver: false,
+      toValue: isExpanded ? 1 : 0,
+      duration: isExpanded ? 280 : 220,
+      easing: isExpanded ? Easing.out(Easing.cubic) : Easing.in(Easing.quad),
+      // height interpolation can't use native driver on RN; JS-driven is acceptable
+      // because the layout box is small (<= 210px) and runs <300ms.
+      useNativeDriver: false,
     }).start();
 
     if (isExpanded) {
@@ -297,11 +304,17 @@ function FlagDetailSheet({ marker, onClose, onDelete }: {
   onDelete: () => void;
 }) {
   const slideY = useRef(new Animated.Value(H)).current;
+  const scrimOpacity = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    Animated.spring(slideY, {
-      toValue: 0, tension: 200, friction: 20, useNativeDriver: true,
-    }).start();
+    Animated.parallel([
+      Animated.timing(slideY, {
+        toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      }),
+      Animated.timing(scrimOpacity, {
+        toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true,
+      }),
+    ]).start();
   }, []);
 
   const meta = MARKER_META[marker.type as keyof typeof MARKER_META] || MARKER_META.free;
@@ -309,13 +322,30 @@ function FlagDetailSheet({ marker, onClose, onDelete }: {
   const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
   const close = () => {
-    Animated.timing(slideY, { toValue: H, duration: 200, useNativeDriver: true }).start(onClose);
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: H, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(scrimOpacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => onClose());
+  };
+
+  const handleDelete = () => {
+    Alert.alert('Delete Flag', 'This flag will be permanently removed.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => {
+        Animated.parallel([
+          Animated.timing(slideY, { toValue: H, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+          Animated.timing(scrimOpacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+        ]).start(() => onDelete());
+      }},
+    ]);
   };
 
   return (
     <>
-      {/* Scrim */}
-      <TouchableOpacity style={sheetStyles.scrim} activeOpacity={1} onPress={close} />
+      {/* Scrim — fades in/out in sync with sheet */}
+      <Animated.View style={[sheetStyles.scrim, { opacity: scrimOpacity }]}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={close} />
+      </Animated.View>
       <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: slideY }] }]}>
         {/* Drag handle */}
         <View style={sheetStyles.handle} />
@@ -332,14 +362,7 @@ function FlagDetailSheet({ marker, onClose, onDelete }: {
         {/* Delete */}
         <TouchableOpacity
           style={sheetStyles.deleteBtn}
-          onPress={() => Alert.alert(
-            'Delete Flag',
-            'This flag will be permanently removed.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete', style: 'destructive', onPress: onDelete },
-            ]
-          )}
+          onPress={handleDelete}
         >
           <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
           <Text style={sheetStyles.deleteBtnText}>Delete Flag</Text>
@@ -352,17 +375,26 @@ function FlagDetailSheet({ marker, onClose, onDelete }: {
 // ── Main ────────────────────────────────────────────────────────────────────
 export function MapHistoryScreen() {
   const nav = useNavigation<Nav>();
+  const route = useRoute<any>();
+  const targetSessionId = route.params?.sessionId as string | undefined;
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
   const [tab, setTab] = useState<'routes' | 'flags'>('routes');
 
   const region = getCurrentRegion();
-  const sessions = useSessionStore(s => s.sessions);
+  const allSessions = useSessionStore(s => s.sessions);
+  // If a specific sessionId was passed, only show that one
+  const sessions = targetSessionId
+    ? allSessions.filter(s => s.id === targetSessionId)
+    : allSessions;
 
-  // Auto-select first session on mount (STORY-00078)
+  // Auto-select the target session or first session on mount
   useEffect(() => {
-    if (sessions.length > 0) {
+    if (targetSessionId) {
+      setSelectedSessionId(targetSessionId);
+      setExpandedSessionId(targetSessionId);
+    } else if (sessions.length > 0) {
       setSelectedSessionId(sessions[0].id);
       setExpandedSessionId(sessions[0].id);
     } else {
@@ -471,40 +503,77 @@ export function MapHistoryScreen() {
       <SafeAreaView style={styles.topBar} edges={['top']}>
         <View style={styles.topRow}>
           <BackButton variant="pill" />
-          <Text style={styles.topTitle}>Route Map</Text>
-          <TouchableOpacity
-            style={styles.planBtn}
-            onPress={() => Alert.alert('Plan Route', 'Route planning coming soon')}
-          >
-            <Icon name="Route" size={14} color="#fff" strokeWidth={2} />
-            <Text style={styles.planBtnText}>Plan</Text>
-          </TouchableOpacity>
+          <Text style={styles.topTitle}>{targetSessionId ? 'Activity Detail' : 'Route Map'}</Text>
+          {!targetSessionId && (
+            <TouchableOpacity
+              style={styles.planBtn}
+              onPress={() => Alert.alert('Plan Route', 'Route planning coming soon')}
+            >
+              <Icon name="Route" size={14} color="#fff" strokeWidth={2} />
+              <Text style={styles.planBtnText}>Plan</Text>
+            </TouchableOpacity>
+          )}
+          {targetSessionId && <View style={{ width: 60 }} />}
         </View>
 
-        {/* Tab bar */}
-        <View style={styles.tabBar}>
-          <TouchableOpacity
-            style={[styles.tabItem, tab === 'routes' && styles.tabItemActive]}
-            onPress={() => setTab('routes')}
-          >
-            <Icon name="Route" size={14} color={tab === 'routes' ? Colors.primary : Colors.textSecondary} strokeWidth={2} />
-            <Text style={[styles.tabText, tab === 'routes' && styles.tabTextActive]}>
-              Routes{sessions.length > 0 ? ` (${sessions.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabItem, tab === 'flags' && styles.tabItemActive]}
-            onPress={() => setTab('flags')}
-          >
-            <Icon name="Flag" size={14} color={tab === 'flags' ? Colors.primary : Colors.textSecondary} strokeWidth={2} />
-            <Text style={[styles.tabText, tab === 'flags' && styles.tabTextActive]}>
-              Flags{markers.length > 0 ? ` (${markers.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {/* Tab bar — only show when viewing all sessions */}
+        {!targetSessionId && (
+          <View style={styles.tabBar}>
+            <TouchableOpacity
+              style={[styles.tabItem, tab === 'routes' && styles.tabItemActive]}
+              onPress={() => setTab('routes')}
+            >
+              <Icon name="Route" size={14} color={tab === 'routes' ? Colors.primary : Colors.textSecondary} strokeWidth={2} />
+              <Text style={[styles.tabText, tab === 'routes' && styles.tabTextActive]}>
+                Routes{sessions.length > 0 ? ` (${sessions.length})` : ''}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </SafeAreaView>
 
-      {/* Bottom list panel */}
+      {/* Bottom panel — simplified for single session, full list for all sessions */}
+      {targetSessionId && selectedSession ? (
+        <View style={styles.singleSessionPanel}>
+          <View style={styles.singleSessionStats}>
+            <View style={styles.singleStat}>
+              <Text style={styles.singleStatValue}>{formatDistance(selectedSession.distanceM, 'km', 1)}</Text>
+              <Text style={styles.singleStatLabel}>km</Text>
+            </View>
+            <View style={styles.singleStat}>
+              <Text style={styles.singleStatValue}>{formatDuration(selectedSession.durationS)}</Text>
+              <Text style={styles.singleStatLabel}>time</Text>
+            </View>
+            <View style={styles.singleStat}>
+              <Text style={styles.singleStatValue}>+{selectedSession.elevationGainM}m</Text>
+              <Text style={styles.singleStatLabel}>elev</Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+            <TouchableOpacity
+              style={[cardStyles.deleteBtn, { flex: 1, borderColor: Colors.primary, backgroundColor: Colors.primaryBg }]}
+              onPress={() => {
+                (nav as any).navigate('RouteEditor', { fromSessionId: selectedSession.id });
+              }}
+            >
+              <Icon name="Route" size={IconSize.sm} color={Colors.primary} strokeWidth={2} />
+              <Text style={[cardStyles.deleteBtnText, { color: Colors.primary }]}>Save as Route</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[cardStyles.deleteBtn, { flex: 1 }]}
+              onPress={() => {
+                Alert.alert('Delete Activity', 'Delete this activity? This cannot be undone.', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Delete', style: 'destructive', onPress: () => { deleteSession(selectedSession.id); nav.goBack(); } },
+                ]);
+              }}
+            >
+              <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
+              <Text style={cardStyles.deleteBtnText}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
       <View style={styles.listPanel}>
         <View style={styles.panelHandle} />
 
@@ -515,10 +584,14 @@ export function MapHistoryScreen() {
                 <Icon name="Route" size={40} color={Colors.textMuted} strokeWidth={1.2} />
                 <Text style={styles.emptyTitle}>No sessions yet</Text>
                 <Text style={styles.emptySubtitle}>Start hiking or running to see your routes here</Text>
-                <TouchableOpacity style={styles.emptyCta} onPress={() => nav.navigate('Hiking')}>
+                <PressBtn
+                  style={styles.emptyCta}
+                  onPress={() => nav.replace('Hiking')}
+                  scaleTo={0.96}
+                >
                   <Icon name="Play" size={14} color="#fff" strokeWidth={2.5} />
                   <Text style={styles.emptyCtaText}>Start a Hike</Text>
-                </TouchableOpacity>
+                </PressBtn>
               </View>
             ) : (
               sessions.map(s => (
@@ -593,6 +666,7 @@ export function MapHistoryScreen() {
           </ScrollView>
         )}
       </View>
+      )}
 
       {/* Flag detail bottom sheet */}
       {selectedMarker && (
@@ -659,7 +733,7 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: Spacing.base,
-    paddingTop: Spacing.sm, paddingBottom: Spacing.xs,
+    paddingTop: Spacing.lg, paddingBottom: Spacing.xs,
     gap: Spacing.sm,
   },
   backBtn: {
@@ -693,6 +767,21 @@ const styles = StyleSheet.create({
   tabItemActive: { backgroundColor: Colors.primaryBg },
   tabText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
   tabTextActive: { color: Colors.primary, fontWeight: '700' },
+
+  singleSessionPanel: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: Spacing.xl, paddingBottom: Spacing.xxl,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08, shadowRadius: 16, elevation: 6,
+  },
+  singleSessionStats: {
+    flexDirection: 'row', justifyContent: 'space-around', marginBottom: Spacing.lg,
+  },
+  singleStat: { alignItems: 'center', gap: 4 },
+  singleStatValue: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary },
+  singleStatLabel: { fontSize: FontSize.small, color: Colors.textSecondary },
 
   listPanel: {
     backgroundColor: 'rgba(255,255,255,0.90)',
@@ -760,12 +849,12 @@ const cardStyles = StyleSheet.create({
   routeChevron: {},
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    borderRadius: Radius.button, paddingVertical: Spacing.sm,
+    borderRadius: Radius.button, paddingVertical: Spacing.md,
     justifyContent: 'center', marginTop: Spacing.sm, marginBottom: Spacing.md,
-    borderWidth: 1.5, borderColor: Colors.danger + '60',
+    borderWidth: 1.5, borderColor: Colors.danger + '50',
     backgroundColor: Colors.dangerBg,
   },
-  deleteBtnText: { color: Colors.danger, fontWeight: '600', fontSize: FontSize.caption },
+  deleteBtnText: { color: Colors.danger, fontWeight: '600', fontSize: FontSize.body },
   expandedArea: {
     overflow: 'hidden',
     backgroundColor: Colors.surface,
@@ -942,5 +1031,5 @@ const sheetStyles = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.danger + '60',
     backgroundColor: Colors.dangerBg,
   },
-  deleteBtnText: { color: Colors.danger, fontWeight: '700', fontSize: FontSize.body },
+  deleteBtnText: { color: Colors.danger, fontWeight: '600', fontSize: FontSize.body },
 });

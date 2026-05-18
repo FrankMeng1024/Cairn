@@ -17,6 +17,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, FontSize, Radius } from '../components/tokens';
 import { Icon } from '../components/Icon';
+import { PressBtn } from '../components/PressBtn';
 import { GlassPanel, Elevation } from '../components/GlassPanel';
 import { useMarkerStore, type Marker } from '../store/useMarkerStore';
 import { useTrackingStore } from '../store/useTrackingStore';
@@ -145,19 +146,51 @@ interface ARScreenProps {
   onPlaceMarker?: (lat: number, lng: number) => void;
 }
 
+// Flag type config
+const FLAG_TYPES: { id: 'danger' | 'scenic' | 'supply' | 'junction'; icon: string; label: string; color: string; bg: string }[] = [
+  { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: '#c53d2e',  bg: '#fde8ea' },
+  { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: '#3b82f6',  bg: '#e8f1fb' },
+  { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: '#22c55e',  bg: '#e8f8ef' },
+  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: '#f59e0b',  bg: '#fef3e2' },
+];
+
 /**
- * AR Screen — currently renders a compass-based directional view.
- * Full 3D AR rendering requires @viro-community/react-viro + EAS native build.
+ * AR Screen — compass-based directional view + Place Flag flow.
  *
- * This fallback shows:
- * - Camera background (expo-camera if available)
- * - Directional indicators for nearby markers (bearing + distance)
- * - Place marker button
+ * GPS degradation logic:
+ * - Has fresh GPS (< 30s) → normal placement
+ * - Has stale GPS (> 30s) or lost signal → degraded placement with toast
+ * - Never had GPS → blocked
  */
 export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   const nav = useNavigation();
   const markers = useMarkerStore(s => s.markers);
+  const addMarker = useMarkerStore(s => s.addMarker);
   const lastCoord = useTrackingStore(s => s.lastCoordinate);
+  const lastCoordTime = useTrackingStore(s => s.lastCoordinateTime);
+  const trackPoints = useTrackingStore(s => s.trackPoints);
+  const sessionId = useTrackingStore(s => s.sessionId);
+  const linkMarker = useTrackingStore(s => s.linkMarker);
+
+  const [showFlagSheet, setShowFlagSheet] = useState(false);
+  const [placementCoord, setPlacementCoord] = useState<{ lat: number; lng: number } | null>(null);
+  const [isApproximate, setIsApproximate] = useState(false);
+  const [gpsAgeS, setGpsAgeS] = useState(0);
+  const [degradedToast, setDegradedToast] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [savedToast, setSavedToast] = useState(false);
+
+  // Refs for any pending timers — must be cleared on unmount to prevent
+  // calling setState/nav.goBack on an already-unmounted component.
+  const savedToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const degradedToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
+      if (degradedToastTimerRef.current) clearTimeout(degradedToastTimerRef.current);
+    };
+  }, []);
 
   // Filter markers within AR range
   const nearbyMarkers = markers.filter(m => {
@@ -167,17 +200,37 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   });
 
   const handlePlaceMarker = () => {
-    if (!lastCoord) {
-      Alert.alert('GPS Required', 'Waiting for GPS signal to place marker.');
+    // Branch 1: Never had GPS
+    if (!lastCoord && trackPoints.length === 0) {
+      Alert.alert(
+        'No GPS Available',
+        'GPS has not yet acquired a position. Move to an open area and wait for a GPS fix.',
+      );
       return;
+    }
+
+    // Determine coordinate and staleness
+    let coord = lastCoord;
+    let approximate = false;
+    let age = 0;
+
+    if (!lastCoord && trackPoints.length > 0) {
+      // Branch 2: Lost GPS — use last trackpoint
+      const lastTP = trackPoints[trackPoints.length - 1];
+      coord = { lat: lastTP.lat, lng: lastTP.lng, alt: lastTP.alt };
+      age = Math.round((Date.now() - lastTP.t) / 1000);
+      approximate = true;
+    } else if (lastCoord && lastCoordTime) {
+      // Branch 3: Have coord — check staleness
+      age = Math.round((Date.now() - lastCoordTime) / 1000);
+      if (age > 30) approximate = true;
     }
 
     // Check spacing
     const spacing = checkMarkerSpacing(
-      { lat: lastCoord.lat, lng: lastCoord.lng },
+      { lat: coord!.lat, lng: coord!.lng },
       markers.map(m => ({ id: m.id, lat: m.lat, lng: m.lng })),
     );
-
     if (!spacing.allowed) {
       Alert.alert(
         'Too Close',
@@ -186,13 +239,49 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
       return;
     }
 
+    // Show degraded toast
+    if (approximate) {
+      const ageText = age < 60 ? `${age}s` : age < 3600 ? `${Math.round(age / 60)}min` : `${Math.round(age / 3600)}h`;
+      setDegradedToast(`Using last known location (${ageText} ago)`);
+      if (degradedToastTimerRef.current) clearTimeout(degradedToastTimerRef.current);
+      degradedToastTimerRef.current = setTimeout(() => setDegradedToast(null), 4000);
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onPlaceMarker?.(lastCoord.lat, lastCoord.lng);
+    setPlacementCoord({ lat: coord!.lat, lng: coord!.lng });
+    setIsApproximate(approximate);
+    setGpsAgeS(age);
+    setSelectedType(null);
+    setNote('');
+    setShowFlagSheet(true);
+  };
+
+  const handleSaveFlag = async () => {
+    if (!selectedType || !placementCoord) return;
+    const marker = await addMarker({
+      type: selectedType as any,
+      regionCode: 'nz',
+      lat: placementCoord.lat,
+      lng: placementCoord.lng,
+      note,
+      authorId: 'local',
+      permission: 'personal',
+      sessionId: sessionId ?? undefined,
+      approximate: isApproximate || undefined,
+      gpsAgeS: isApproximate ? gpsAgeS : undefined,
+    });
+    if (sessionId) linkMarker(marker.id);
+    setShowFlagSheet(false);
+    setSavedToast(true);
+    // Shorter delay (was 1200ms) — user already sees the toast for ~700ms before
+    // navigation animates back. The pending timer is canceled on unmount.
+    if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
+    savedToastTimerRef.current = setTimeout(() => { setSavedToast(false); nav.goBack(); }, 800);
   };
 
   return (
     <View style={styles.container}>
-      {/* AR camera placeholder — full 3D requires native build */}
+      {/* AR camera placeholder */}
       <View style={styles.cameraPlaceholder}>
         <Icon name="Target" size={48} color="rgba(255,255,255,0.5)" />
         <Text style={styles.placeholderText}>AR Camera View</Text>
@@ -224,16 +313,72 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
 
       {/* Top controls */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.closeBtn} onPress={() => onClose ? onClose() : nav.goBack()}>
+        <PressBtn style={styles.closeBtn} onPress={() => onClose ? onClose() : nav.goBack()} scaleTo={0.92}>
           <Icon name="X" size={20} color="#fff" />
-        </TouchableOpacity>
+        </PressBtn>
       </View>
 
       {/* Place marker FAB */}
-      <TouchableOpacity style={styles.placeFab} onPress={handlePlaceMarker}>
-        <Icon name="MapPin" size={24} color="#fff" />
-        <Text style={styles.fabText}>Place Flag</Text>
-      </TouchableOpacity>
+      {!showFlagSheet && (
+        <TouchableOpacity style={styles.placeFab} onPress={handlePlaceMarker}>
+          <Icon name="MapPin" size={24} color="#fff" />
+          <Text style={styles.fabText}>Place Flag</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Degraded GPS toast */}
+      {degradedToast && (
+        <View style={styles.degradedBanner}>
+          <Icon name="Info" size={14} color="#f59e0b" />
+          <Text style={styles.degradedText}>{degradedToast}</Text>
+        </View>
+      )}
+
+      {/* Flag type selection sheet */}
+      {showFlagSheet && (
+        <View style={styles.flagSheet}>
+          <Text style={styles.flagSheetTitle}>Select Flag Type</Text>
+          <View style={styles.flagTypeRow}>
+            {FLAG_TYPES.map(f => (
+              <TouchableOpacity
+                key={f.id}
+                style={[styles.flagTypeCard, selectedType === f.id && { borderColor: Colors.primary, borderWidth: 2 }]}
+                onPress={() => setSelectedType(f.id)}
+              >
+                <Icon name={f.icon as any} size={22} color={f.color} />
+                <Text style={[styles.flagTypeLabel, { color: selectedType === f.id ? Colors.primary : '#ccc' }]}>{f.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {isApproximate && (
+            <View style={styles.approxWarning}>
+              <Icon name="Info" size={12} color="#f59e0b" />
+              <Text style={styles.approxWarningText}>Approximate position — GPS was {gpsAgeS < 60 ? `${gpsAgeS}s` : `${Math.round(gpsAgeS / 60)}min`} old</Text>
+            </View>
+          )}
+          <View style={styles.flagSheetActions}>
+            <TouchableOpacity style={styles.flagCancelBtn} onPress={() => setShowFlagSheet(false)}>
+              <Text style={styles.flagCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.flagSaveBtn, !selectedType && { opacity: 0.4 }]}
+              onPress={handleSaveFlag}
+              disabled={!selectedType}
+            >
+              <Icon name="Flag" size={16} color="#fff" />
+              <Text style={styles.flagSaveText}>Save</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Saved toast */}
+      {savedToast && (
+        <View style={styles.savedToast}>
+          <Icon name="CircleCheck" size={16} color="#22c55e" />
+          <Text style={styles.savedToastText}>Flag saved</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -270,7 +415,7 @@ const styles = StyleSheet.create({
   markerLabel: { flex: 1, fontSize: FontSize.body, color: '#fff' },
   markerDist: { fontSize: FontSize.caption, color: 'rgba(255,255,255,0.6)' },
   topBar: {
-    position: 'absolute', top: 60, left: Spacing.md, right: Spacing.md,
+    position: 'absolute', top: 50, left: Spacing.md, right: Spacing.md,
     flexDirection: 'row', justifyContent: 'flex-end',
   },
   closeBtn: {
@@ -285,4 +430,50 @@ const styles = StyleSheet.create({
     ...Elevation[4],
   },
   fabText: { fontSize: FontSize.body, fontWeight: '700', color: '#fff' },
+  degradedBanner: {
+    position: 'absolute', top: 110, left: Spacing.md, right: Spacing.md,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(245,158,11,0.15)', borderRadius: Radius.card,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
+  },
+  degradedText: { fontSize: FontSize.caption, color: '#f59e0b', flex: 1 },
+  flagSheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#1a1a2e', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: Spacing.xl, paddingBottom: 40,
+  },
+  flagSheetTitle: { fontSize: FontSize.h3, fontWeight: '700', color: '#fff', marginBottom: Spacing.md },
+  flagTypeRow: { flexDirection: 'row', gap: Spacing.sm },
+  flagTypeCard: {
+    flex: 1, alignItems: 'center', gap: 6, paddingVertical: Spacing.md,
+    borderRadius: Radius.card, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  flagTypeLabel: { fontSize: FontSize.small, fontWeight: '600' },
+  approxWarning: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: Spacing.md,
+    paddingHorizontal: Spacing.sm, paddingVertical: 6,
+    backgroundColor: 'rgba(245,158,11,0.1)', borderRadius: 8,
+  },
+  approxWarningText: { fontSize: FontSize.small, color: '#f59e0b' },
+  flagSheetActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
+  flagCancelBtn: {
+    flex: 1, alignItems: 'center', paddingVertical: Spacing.md,
+    borderRadius: Radius.button, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+  },
+  flagCancelText: { fontSize: FontSize.body, fontWeight: '600', color: 'rgba(255,255,255,0.7)' },
+  flagSaveBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: Spacing.md, borderRadius: Radius.button,
+    backgroundColor: Colors.primary,
+  },
+  flagSaveText: { fontSize: FontSize.body, fontWeight: '700', color: '#fff' },
+  savedToast: {
+    position: 'absolute', top: '45%' as any, alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+  },
+  savedToastText: { fontSize: FontSize.body, fontWeight: '600', color: '#fff' },
 });

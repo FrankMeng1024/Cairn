@@ -18,6 +18,7 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
+import { PressBtn } from '../components/PressBtn';
 import { useFriendStore, sendFriendRequest } from '../store/useFriendStore';
 import { MOCK_FRIENDS } from '../data/mockData';
 
@@ -194,10 +195,11 @@ function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
               <Text style={sheetStyles.errorText}>{validationError}</Text>
             )}
 
-            <TouchableOpacity
+            <PressBtn
               style={[sheetStyles.sendBtn, (!email.trim() || addState === 'loading') && sheetStyles.sendBtnDisabled]}
               onPress={handleSubmit}
-              activeOpacity={email.trim() ? 0.8 : 1}
+              scaleTo={0.96}
+              disabled={!email.trim() || addState === 'loading'}
             >
               {addState === 'loading' ? (
                 <ActivityIndicator size="small" color="#fff" />
@@ -207,11 +209,11 @@ function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
                   <Text style={sheetStyles.sendBtnText}>Send Invite</Text>
                 </>
               )}
-            </TouchableOpacity>
+            </PressBtn>
 
-            <TouchableOpacity style={sheetStyles.cancelBtn} onPress={onDismiss}>
+            <PressBtn style={sheetStyles.cancelBtn} onPress={onDismiss} scaleTo={0.97}>
               <Text style={sheetStyles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+            </PressBtn>
           </>
         )}
       </View>
@@ -228,10 +230,10 @@ function EmptyState({ onAddFriend }: { onAddFriend: () => void }) {
       </View>
       <Text style={emptyStyles.heading}>No friends yet</Text>
       <Text style={emptyStyles.body}>Add friends to share flags and stay connected</Text>
-      <TouchableOpacity style={emptyStyles.cta} onPress={onAddFriend}>
+      <PressBtn style={emptyStyles.cta} onPress={onAddFriend} scaleTo={0.96}>
         <Icon name="UserPlus" size={IconSize.sm} color="#fff" strokeWidth={2} />
         <Text style={emptyStyles.ctaText}>Add a Friend</Text>
-      </TouchableOpacity>
+      </PressBtn>
     </View>
   );
 }
@@ -323,12 +325,12 @@ export function FriendsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <BackButton variant="inline" />
+        <BackButton variant="pill" onPress={() => nav.goBack()} />
         <Text style={styles.topTitle}>Friends</Text>
-        <TouchableOpacity style={styles.addTopBtn} onPress={() => setShowAdd(true)}>
+        <PressBtn style={styles.addTopBtn} onPress={() => setShowAdd(true)} scaleTo={0.94}>
           <Icon name="UserPlus" size={14} color="#fff" strokeWidth={2} />
           <Text style={styles.addTopBtnText}>Add</Text>
-        </TouchableOpacity>
+        </PressBtn>
       </View>
 
       {hasFriends ? (
@@ -402,8 +404,7 @@ const styles = StyleSheet.create({
 
   topBar: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.lg, paddingBottom: Spacing.sm,
     backgroundColor: Colors.bg,
   },
   backBtn: {

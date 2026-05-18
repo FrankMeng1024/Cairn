@@ -13,8 +13,8 @@
  */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Dimensions,
-  TextInput, Alert, Animated, KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView,
+  TextInput, Alert, Animated, Easing, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -26,15 +26,18 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore } from '../store/useAppStore';
 import { useTrackingStore } from '../store/useTrackingStore';
 import { useMarkerStore } from '../store/useMarkerStore';
+import { useRouteStore } from '../store/useRouteStore';
 import { getCurrentRegion } from '../config/regions';
 import { formatDistance, formatDuration, haversineM, createTrackSmoother, smoothGPSPoint, getSamplingInterval, classifyMovement, type SmoothedTrackState, type GPSPoint } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon, type IconName } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
+import { PressBtn } from '../components/PressBtn';
 import { GPSStatusBar } from '../components/GPSStatusBar';
 import { SOSButton } from '../components/SOSButton';
 import { MARKER_META, type MarkerType } from '../data/mockData';
 import type { Marker } from '../store/useMarkerStore';
+
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { width: W } = Dimensions.get('window');
@@ -54,38 +57,53 @@ const FLAG_TYPES: {
 ];
 
 // ── Marker pin on map ─────────────────────────────────────────────────────
-function MarkerPin({ type, x, y, onPress }: {
-  type: MarkerType; x: number; y: number; onPress: () => void;
+function MarkerPin({ type, x, y, onPress, approximate }: {
+  type: MarkerType; x: number; y: number; onPress: () => void; approximate?: boolean;
 }) {
   const meta = MARKER_META[type] || MARKER_META.free;
   const iconName = FLAG_TYPES.find(f => f.id === type)?.icon || 'Flag';
+  const scale = useRef(new Animated.Value(1)).current;
   return (
-    <TouchableOpacity
-      style={[styles.markerPin, { left: x, top: y, borderColor: meta.color, backgroundColor: meta.bg }]}
-      onPress={onPress}
-    >
-      <Icon name={iconName as IconName} size={14} color={meta.color} strokeWidth={2.5} />
-    </TouchableOpacity>
+    <Animated.View style={[styles.markerPin, { left: x, top: y, borderColor: meta.color, backgroundColor: meta.bg, transform: [{ scale }] }]}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={onPress}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.88, useNativeDriver: true, tension: 300, friction: 10 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 300, friction: 8 }).start()}
+        style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Icon name={iconName as IconName} size={14} color={meta.color} strokeWidth={2.5} />
+        {approximate && (
+          <View style={styles.approxBadge}>
+            <Text style={styles.approxBadgeText}>~</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
 // ── Mapbox conditional import ────────────────────────────────────────────
+// @rnmapbox/maps components are native-only — on web they may be undefined.
+// Force fallback on web to avoid "Element type is invalid" crash.
 let MapView: any = null;
 let CameraComponent: any = null;
 let PointAnnotation: any = null;
 let UserLocationComponent: any = null;
 let LineLayer: any = null;
 let ShapeSource: any = null;
-try {
-  const Mapbox = require('@rnmapbox/maps');
-  MapView = Mapbox.MapView;
-  CameraComponent = Mapbox.Camera;
-  PointAnnotation = Mapbox.PointAnnotation;
-  UserLocationComponent = Mapbox.UserLocation;
-  LineLayer = Mapbox.LineLayer;
-  ShapeSource = Mapbox.ShapeSource;
-} catch {
-  // Mapbox not available
+if (Platform.OS !== 'web') {
+  try {
+    const Mapbox = require('@rnmapbox/maps');
+    MapView = Mapbox.MapView;
+    CameraComponent = Mapbox.Camera;
+    PointAnnotation = Mapbox.PointAnnotation;
+    UserLocationComponent = Mapbox.UserLocation;
+    LineLayer = Mapbox.LineLayer;
+    ShapeSource = Mapbox.ShapeSource;
+  } catch {
+    // Mapbox native not available
+  }
 }
 
 // ── Map component (real Mapbox or fallback) ─────────────────────────────
@@ -211,23 +229,23 @@ function FlagPlantSheet({ onClose, onSave }: {
   const opacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.parallel([
-      Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 200, friction: 18 }),
-      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.timing(slideY, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
     ]).start();
   }, []);
 
   const handleClose = () => {
     Animated.parallel([
-      Animated.timing(slideY, { toValue: 400, duration: 180, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(slideY, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
     ]).start(() => onClose());
   };
 
   const handleSave = () => {
     if (!selectedType) return;
     Animated.parallel([
-      Animated.timing(slideY, { toValue: 400, duration: 180, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(slideY, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
     ]).start(() => onSave(selectedType, note));
   };
 
@@ -270,20 +288,20 @@ function FlagPlantSheet({ onClose, onSave }: {
         {/* Note input */}
         <View style={sheetStyles.noteWrap}>
           <TextInput
-            style={[sheetStyles.noteInput, noteFocused && sheetStyles.noteInputFocused, charCount >= 30 && sheetStyles.noteInputError]}
+            style={[sheetStyles.noteInput, noteFocused && sheetStyles.noteInputFocused, charCount >= 50 && sheetStyles.noteInputError]}
             placeholder="Describe this spot… (optional)"
             placeholderTextColor={Colors.textMuted}
             value={note}
-            onChangeText={t => setNote(t.slice(0, 30))}
+            onChangeText={t => setNote(t.slice(0, 50))}
             multiline
             numberOfLines={2}
             onFocus={() => setNoteFocused(true)}
             onBlur={() => setNoteFocused(false)}
           />
           <View style={sheetStyles.noteFooterRow}>
-            <Text style={sheetStyles.noteMaxLabel}>Max 30 characters</Text>
+            <Text style={sheetStyles.noteMaxLabel}>Max 50 characters</Text>
             {(noteFocused || charCount > 0) && (
-              <Text style={[sheetStyles.charCount, charCount >= 30 ? { color: Colors.danger } : charCount >= 22 ? { color: Colors.warning } : null]}>{charCount}/30</Text>
+              <Text style={[sheetStyles.charCount, charCount >= 50 ? { color: Colors.danger } : charCount >= 40 ? { color: Colors.warning } : null]}>{charCount}/50</Text>
             )}
           </View>
         </View>
@@ -349,17 +367,46 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
     ? formatDistance(distToMarker, 'km', 1) + ' km away'
     : '--';
 
+  // Slide-in animation — same easing/duration as FlagPlantSheet for consistency
+  const slideY = useRef(new Animated.Value(400)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const handleClose = () => {
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => onClose());
+  };
+
+  const handleDelete = () => {
+    Alert.alert('Delete Flag', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => {
+        Animated.parallel([
+          Animated.timing(slideY, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+        ]).start(() => onDelete());
+      }},
+    ]);
+  };
+
   return (
-    <View style={detailStyles.container}>
-      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onClose} activeOpacity={1} />
-      <View style={detailStyles.sheet}>
+    <Animated.View style={[detailStyles.container, { opacity }]}>
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={handleClose} activeOpacity={1} />
+      <Animated.View style={[detailStyles.sheet, { transform: [{ translateY: slideY }] }]}>
         <View style={detailStyles.handle} />
         <View style={detailStyles.headerRow}>
           <View style={[detailStyles.typeBadge, { backgroundColor: meta.bg, borderColor: meta.color }]}>
             {flagType && <Icon name={flagType.icon} size={14} color={meta.color} strokeWidth={2.5} />}
             <Text style={[detailStyles.typeLabel, { color: meta.color }]}>{meta.label}</Text>
           </View>
-          <TouchableOpacity style={detailStyles.closeChip} onPress={onClose}>
+          <TouchableOpacity style={detailStyles.closeChip} onPress={handleClose}>
             <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.5} />
           </TouchableOpacity>
         </View>
@@ -380,18 +427,25 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
           <Icon name="Route" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
           <Text style={detailStyles.meta}>{distStr}</Text>
         </View>
+        {marker.approximate && (
+          <View style={[detailStyles.metaRow, { backgroundColor: Colors.warningBg, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }]}>
+            <Icon name="Info" size={IconSize.sm} color={Colors.warning} strokeWidth={1.8} />
+            <Text style={[detailStyles.meta, { color: Colors.warning }]}>
+              Approximate position{marker.gpsAgeS != null && marker.gpsAgeS > 0
+                ? ` (GPS was ${marker.gpsAgeS < 60 ? `${marker.gpsAgeS}s` : `${Math.round(marker.gpsAgeS / 60)}min`} old)`
+                : ''}
+            </Text>
+          </View>
+        )}
         <TouchableOpacity
           style={detailStyles.deleteBtn}
-          onPress={() => Alert.alert('Delete Flag', 'Are you sure?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete', style: 'destructive', onPress: onDelete },
-          ])}
+          onPress={handleDelete}
         >
           <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
           <Text style={detailStyles.deleteBtnText}>Delete Flag</Text>
         </TouchableOpacity>
-      </View>
-    </View>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
@@ -426,8 +480,14 @@ export function HikingScreen() {
   const [ui, setUi] = useState<UIState>('map');
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
   const [showSavedToast, setShowSavedToast] = useState(false);
+  const [phase, setPhase] = useState<'select' | 'tracking'>('select');
+  const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
 
+  const routes = useRouteStore(s => s.routes);
+  const loadRoutes = useRouteStore(s => s.loadRoutes);
   const isTracking = status === 'tracking';
+
+  useEffect(() => { loadRoutes(); }, []);
 
   // Spring press scales
   const trackBtnScale = useRef(new Animated.Value(1)).current;
@@ -472,6 +532,151 @@ export function HikingScreen() {
   const distDisplay = formatDistance(distanceM, 'km', 1);
   const durationDisplay = formatDuration(durationS);
 
+  const [showRoutePicker, setShowRoutePicker] = useState(false);
+  const routePickerSlide = useRef(new Animated.Value(300)).current;
+  const routePickerOpacity = useRef(new Animated.Value(0)).current;
+
+  const openRoutePicker = () => {
+    setShowRoutePicker(true);
+    Animated.parallel([
+      Animated.timing(routePickerSlide, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(routePickerOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    ]).start();
+  };
+  const closeRoutePicker = () => {
+    Animated.parallel([
+      Animated.timing(routePickerSlide, { toValue: 300, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(routePickerOpacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => setShowRoutePicker(false));
+  };
+  const pickRoute = (id: string | null) => {
+    setSelectedRoute(id);
+    closeRoutePicker();
+  };
+
+  const selectedRouteName = routes.find(r => r.id === selectedRoute)?.name ?? 'Free Hiking';
+
+  // ── Phase 1: Route Selection ─────────────────────────────────────────────
+  if (phase === 'select') {
+    return (
+      <View style={styles.container}>
+        <HikingMap markers={[]} trackPoints={[]} onMarkerPress={() => {}} />
+
+        {/* Top overlay */}
+        <SafeAreaView style={styles.topOverlay} edges={['top']} pointerEvents="box-none">
+          <View style={styles.topRow}>
+            <BackButton variant="pill" onPress={() => nav.goBack()} />
+            <View style={[styles.gpsChip, styles.gpsChipAmber]}>
+              <View style={[styles.gpsDot, { backgroundColor: Colors.warning }]} />
+              <Text style={[styles.gpsText, styles.gpsTextAmber]}>Enable GPS</Text>
+            </View>
+          </View>
+        </SafeAreaView>
+
+        {/* Bottom: route selector pill + start button */}
+        <SafeAreaView style={styles.bottomOverlay} edges={['bottom']} pointerEvents="box-none">
+          <View style={styles.bottomPanel}>
+            {/* Route selector pill — single row, card style */}
+            <TouchableOpacity style={styles.routePill} onPress={openRoutePicker} activeOpacity={0.85}>
+              <View style={styles.routePillIcon}>
+                <Icon name={selectedRoute ? 'Route' : 'Target'} size={20} color={Colors.primary} strokeWidth={1.8} />
+              </View>
+              <View style={styles.routePillTextGroup}>
+                <Text style={styles.routePillText} numberOfLines={1}>{selectedRouteName}</Text>
+                <Text style={styles.routePillHint}>Tap to change route</Text>
+              </View>
+              <Icon name="ChevronUp" size={16} color={Colors.primary} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+            {/* Start + FAB row */}
+            <View style={styles.bottomRow}>
+              <Animated.View style={[{ flex: 1, height: 56 }, { transform: [{ scale: trackBtnScale }] }]}>
+                <TouchableOpacity
+                  style={styles.trackBtn}
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); startTracking(); setPhase('tracking'); }}
+                  activeOpacity={1}
+                  onPressIn={() => springIn(trackBtnScale)}
+                  onPressOut={() => springOut(trackBtnScale)}
+                >
+                  <Icon name="Play" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
+                  <Text style={styles.trackBtnText}>Start Hiking</Text>
+                </TouchableOpacity>
+              </Animated.View>
+              <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+                <TouchableOpacity
+                  style={styles.fab}
+                  onPress={() => nav.navigate('AR')}
+                  activeOpacity={1}
+                  onPressIn={() => springIn(fabScale)}
+                  onPressOut={() => springOut(fabScale)}
+                >
+                  <Icon name="Flag" size={IconSize.md} color="#fff" strokeWidth={2} />
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+          </View>
+        </SafeAreaView>
+
+        {/* Route picker sheet — non-fullscreen, slides up from bottom */}
+        {showRoutePicker && (
+          <Animated.View style={[styles.routePickerBackdrop, { opacity: routePickerOpacity }]}>
+            <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={closeRoutePicker} activeOpacity={1} />
+            <Animated.View style={[styles.routePickerSheet, { transform: [{ translateY: routePickerSlide }] }]}>
+              <View style={styles.routePickerHandle} />
+              <Text style={styles.routePickerTitle}>Choose a route</Text>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 280 }} contentContainerStyle={{ gap: Spacing.sm }}>
+                {/* Free Hiking */}
+                <TouchableOpacity
+                  style={[styles.routePickerRow, selectedRoute === null && styles.routePickerRowSelected]}
+                  onPress={() => pickRoute(null)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.routePickerBadge, { backgroundColor: Colors.primaryLight }]}>
+                    <Icon name="Target" size={16} color={Colors.primary} strokeWidth={2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.routePickerName}>Free Hiking</Text>
+                    <Text style={styles.routePickerMeta}>No route · explore freely</Text>
+                  </View>
+                  {selectedRoute === null && <Icon name="Check" size={16} color={Colors.primary} strokeWidth={2.5} />}
+                </TouchableOpacity>
+
+                {/* Saved routes */}
+                {routes.map(r => (
+                  <TouchableOpacity
+                    key={r.id}
+                    style={[styles.routePickerRow, selectedRoute === r.id && styles.routePickerRowSelected]}
+                    onPress={() => pickRoute(r.id)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.routePickerBadge, { backgroundColor: Colors.primaryLight }]}>
+                      <Icon name="Route" size={16} color={Colors.primary} strokeWidth={2} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.routePickerName}>{r.name}</Text>
+                      <Text style={styles.routePickerMeta}>
+                        {(r.distanceM / 1000).toFixed(1)} km
+                        {r.elevationGainM > 0 ? ` · ↑${Math.round(r.elevationGainM)}m` : ''}
+                        {r.runCount > 0 ? ` · ${r.runCount}× done` : ''}
+                      </Text>
+                    </View>
+                    {selectedRoute === r.id && <Icon name="Check" size={16} color={Colors.primary} strokeWidth={2.5} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </Animated.View>
+          </Animated.View>
+        )}
+      </View>
+    );
+  }
+
+  // ── Phase 2: Tracking ────────────────────────────────────────────────────
+
+  // Get selected route points for polyline display
+  const activeRoute = selectedRoute ? routes.find(r => r.id === selectedRoute) : null;
+  const routePolyline = activeRoute?.points ?? [];
+
   return (
     <View style={styles.container}>
       <HikingMap
@@ -483,7 +688,7 @@ export function HikingScreen() {
       {/* Top overlay: back button (left) + GPS chip (right) */}
       <SafeAreaView style={styles.topOverlay} edges={['top']} pointerEvents="box-none">
         <View style={styles.topRow}>
-          <BackButton variant="pill" />
+          <BackButton variant="pill" onPress={() => nav.goBack()} />
           <View style={[
             styles.gpsChip,
             status === 'idle' ? styles.gpsChipAmber : (!locationAvailable && styles.gpsChipOffline),
@@ -530,10 +735,26 @@ export function HikingScreen() {
                 </View>
               </>
             )}
-            <TouchableOpacity style={styles.stopBtn} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); stopTracking(); }}>
+            {selectedRoute && (
+              <PressBtn
+                style={styles.routeSwitchBtn}
+                onPress={() => Alert.alert('Route', activeRoute?.name ?? 'Free Hiking', [
+                  { text: 'Switch to Free', onPress: () => setSelectedRoute(null) },
+                  { text: 'Cancel', style: 'cancel' },
+                ])}
+                scaleTo={0.9}
+              >
+                <Icon name="Route" size={12} color={Colors.primary} strokeWidth={2.5} />
+              </PressBtn>
+            )}
+            <PressBtn
+              style={styles.stopBtn}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); stopTracking(); }}
+              scaleTo={0.95}
+            >
               <Icon name="Square" size={12} color="#fff" strokeWidth={3} />
               <Text style={styles.stopBtnText}>Stop</Text>
-            </TouchableOpacity>
+            </PressBtn>
           </View>
         )}
       </SafeAreaView>
@@ -552,7 +773,7 @@ export function HikingScreen() {
         )}
         <View style={styles.bottomRow}>
           {!isTracking ? (
-            <Animated.View style={[{ flex: 1 }, { transform: [{ scale: trackBtnScale }] }]}>
+            <Animated.View style={[{ flex: 1, height: 60 }, { transform: [{ scale: trackBtnScale }] }]}>
               <TouchableOpacity
                 style={styles.trackBtn}
                 onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); startTracking(); }}
@@ -571,7 +792,7 @@ export function HikingScreen() {
           <Animated.View style={{ transform: [{ scale: fabScale }] }}>
             <TouchableOpacity
               style={styles.fab}
-              onPress={() => setUi('plant')}
+              onPress={() => nav.navigate('AR')}
               activeOpacity={1}
               onPressIn={() => springIn(fabScale)}
               onPressOut={() => springOut(fabScale)}
@@ -586,14 +807,6 @@ export function HikingScreen() {
           </Animated.View>
         </View>
       </SafeAreaView>
-
-      {/* Flag Plant Bottom Sheet */}
-      {ui === 'plant' && (
-        <FlagPlantSheet
-          onClose={() => setUi('map')}
-          onSave={handlePlantSave}
-        />
-      )}
 
       {/* Marker Detail Sheet */}
       {ui === 'detail' && selectedMarker && (
@@ -674,12 +887,97 @@ const styles = StyleSheet.create({
     borderWidth: 2.5, alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.surface, ...Shadow.card,
   },
+  approxBadge: {
+    position: 'absolute', top: -4, right: -4,
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: Colors.warning, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: '#fff',
+  },
+  approxBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
+
+  // Route selection (phase 1)
+  bottomPanel: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm, gap: Spacing.sm },
+  routePill: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.97)', borderRadius: Radius.card,
+    padding: Spacing.md,
+    borderWidth: 1.5, borderColor: Colors.primary + '40',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10, shadowRadius: 14, elevation: 5,
+  },
+  routePillIcon: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center',
+  },
+  routePillTextGroup: { flex: 1, gap: 1 },
+  routePillText: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  routePillHint: { fontSize: FontSize.small, color: Colors.primary, fontWeight: '500' },
+  routePillChevron: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Route picker sheet
+  routePickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+  },
+  routePickerSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.sm, paddingBottom: Spacing.xxl,
+    gap: Spacing.sm,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 20, elevation: 12,
+  },
+  routePickerHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: Colors.border, alignSelf: 'center', marginBottom: Spacing.xs,
+  },
+  routePickerTitle: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 },
+  routePickerRow: {
+    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: Radius.card,
+    flexDirection: 'row', alignItems: 'center',
+    padding: Spacing.base, gap: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    borderLeftWidth: 3, borderLeftColor: 'transparent',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
+  },
+  routePickerRowSelected: { borderLeftColor: Colors.primary, backgroundColor: Colors.primaryBg, borderColor: Colors.primaryMuted },
+  routePickerBadge: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  routePickerName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  routePickerMeta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+
+  // (kept for unused ref cleanup)
+  selectSection: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.lg, gap: Spacing.sm },
+  selectLabel: { fontSize: FontSize.small, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 },
+  routeCard: {
+    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: Radius.card,
+    flexDirection: 'row', alignItems: 'center',
+    padding: Spacing.base, gap: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
+  },
+  routeCardSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+  routeIconBadge: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  routeName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  routeMeta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+  routeCheck: {
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
 
   // Top overlay
   topOverlay: { position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'box-none' },
   topRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.sm, gap: Spacing.sm,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.lg, gap: Spacing.sm,
   },
   gpsChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -720,6 +1018,11 @@ const styles = StyleSheet.create({
   trackingValue: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary },
   trackingUnit: { fontSize: FontSize.tiny, color: Colors.textSecondary, marginTop: 1 },
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
+  routeSwitchBtn: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.primary,
+  },
   stopBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: Colors.danger, borderRadius: Radius.button,
@@ -730,21 +1033,23 @@ const styles = StyleSheet.create({
   // Bottom overlay
   bottomOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, pointerEvents: 'box-none' },
   bottomRow: {
-    flexDirection: 'row', alignItems: 'flex-end',
-    paddingHorizontal: Spacing.base, paddingBottom: Spacing.lg, gap: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center',
+    paddingBottom: Spacing.lg, gap: Spacing.sm,
   },
   trackBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
     backgroundColor: 'rgba(255,255,255,0.95)',
     borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+    height: 60,
+    paddingHorizontal: Spacing.xl,
     borderWidth: 2, borderColor: Colors.primaryMuted,
     ...Shadow.card,
   },
   trackBtnText: { fontSize: FontSize.body, fontWeight: '700', color: Colors.primary },
   fab: {
-    backgroundColor: Colors.primary, borderRadius: Radius.circle,
-    width: 60, height: 60, alignItems: 'center', justifyContent: 'center',
+    width: 60, height: 60,
+    backgroundColor: Colors.primary, borderRadius: 30,
+    alignItems: 'center', justifyContent: 'center',
     ...Shadow.fab,
   },
   fabLabel: { fontSize: 8, color: '#fff', fontWeight: '700', marginTop: 1 },

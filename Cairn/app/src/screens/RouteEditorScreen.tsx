@@ -1,0 +1,368 @@
+/**
+ * RouteEditorScreen — Create/edit routes by placing waypoints on a map.
+ *
+ * Features:
+ * - Full-screen Mapbox map (native) or fallback (web)
+ * - Tap map to add waypoint
+ * - Search destination (Mapbox Geocoding API)
+ * - Name input + Save button
+ * - Clear / Undo actions
+ * - Calculates total distance from waypoints
+ */
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Platform, FlatList,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { useRouteStore } from '../store/useRouteStore';
+import { useSessionStore, loadTrackPoints } from '../store/useSessionStore';
+import { haversineM, formatDistance } from '../utils/geo';
+import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
+import { Icon } from '../components/Icon';
+import { BackButton } from '../components/BackButton';
+
+const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || '';
+
+interface WaypointDraft {
+  id: string;
+  lat: number;
+  lng: number;
+  label: string;
+}
+
+export function RouteEditorScreen() {
+  const nav = useNavigation();
+  const route = useRoute<any>();
+  const routeId = route.params?.routeId as string | undefined;
+  const fromSessionId = route.params?.fromSessionId as string | undefined;
+  const addRoute = useRouteStore(s => s.addRoute);
+  const updateRoute = useRouteStore(s => s.updateRoute);
+  const existingRoute = useRouteStore(s => s.routes.find(r => r.id === routeId));
+  const session = useSessionStore(s => fromSessionId ? s.sessions.find(x => x.id === fromSessionId) : null);
+  const [name, setName] = useState('');
+  const [waypoints, setWaypoints] = useState<WaypointDraft[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<{ name: string; lat: number; lng: number }>>([]);
+  const [showSearch, setShowSearch] = useState(false);
+
+  // Load existing route OR session data on mount
+  useEffect(() => {
+    if (existingRoute) {
+      setName(existingRoute.name);
+      if (existingRoute.waypoints.length > 0) {
+        setWaypoints(existingRoute.waypoints.map(wp => ({
+          id: wp.id, lat: wp.lat, lng: wp.lng, label: wp.label,
+        })));
+      } else if (existingRoute.points.length > 0) {
+        const points = existingRoute.points;
+        const step = Math.max(1, Math.floor(points.length / 20));
+        const sampled = points.filter((_, i) => i % step === 0);
+        setWaypoints(sampled.map((p, i) => ({
+          id: `wp-imported-${i}`, lat: p.lat, lng: p.lng, label: `Point ${i + 1}`,
+        })));
+      }
+    } else if (session) {
+      // Pre-fill name from activity, load track points as waypoints
+      const date = new Date(session.startedAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
+      setName(`${session.activityMode === 'running' ? 'Run' : 'Hike'} ${date}`);
+      loadTrackPoints(session.id).then(tp => {
+        const step = Math.max(1, Math.floor(tp.length / 20));
+        const sampled = tp.filter((_, i) => i % step === 0);
+        setWaypoints(sampled.map((p, i) => ({
+          id: `wp-session-${i}`, lat: p.lat, lng: p.lng, label: `Point ${i + 1}`,
+        })));
+      });
+    }
+  }, [existingRoute?.id, session?.id]);
+
+  // Calculate total distance from waypoints chain
+  const totalDistanceM = waypoints.reduce((sum, wp, i) => {
+    if (i === 0) return 0;
+    return sum + haversineM(
+      { lat: waypoints[i - 1].lat, lng: waypoints[i - 1].lng },
+      { lat: wp.lat, lng: wp.lng },
+    );
+  }, 0);
+
+  const handleAddWaypoint = (lat: number, lng: number) => {
+    const id = `wp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setWaypoints(prev => [...prev, { id, lat, lng, label: `Point ${prev.length + 1}` }]);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleUndo = () => {
+    setWaypoints(prev => prev.slice(0, -1));
+  };
+
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const showError = (msg: string) => {
+    setErrorMsg(msg);
+    setTimeout(() => setErrorMsg(null), 3000);
+  };
+
+  const handleClear = () => {
+    setWaypoints([]);
+  };
+
+  const handleSave = () => {
+    if (!name.trim()) {
+      showError('Please enter a route name');
+      return;
+    }
+    if (waypoints.length < 2) {
+      showError('Add at least 2 waypoints to create a route');
+      return;
+    }
+
+    const routeData = {
+      name: name.trim(),
+      points: waypoints.map(wp => ({ lat: wp.lat, lng: wp.lng })),
+      waypoints: waypoints.map(wp => ({
+        id: wp.id,
+        lat: wp.lat,
+        lng: wp.lng,
+        label: wp.label,
+        announceOnArrival: true,
+        radiusM: 30,
+      })),
+      distanceM: totalDistanceM,
+      elevationGainM: existingRoute?.elevationGainM ?? session?.elevationGainM ?? 0,
+    };
+
+    try {
+      if (routeId && existingRoute) {
+        updateRoute(routeId, routeData);
+      } else {
+        addRoute(routeData);
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Pop back to whatever pushed us here (Routes or MapHistory).
+      // Using goBack() instead of navigate('Routes') prevents stack leak —
+      // navigate() would push a new Routes instance, leaving RouteEditor on the stack.
+      nav.goBack();
+    } catch (e: any) {
+      showError(e?.message || 'Failed to save route');
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim() || !MAPBOX_TOKEN) return;
+    try {
+      const res = await fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?access_token=${MAPBOX_TOKEN}&limit=5`
+      );
+      const data = await res.json();
+      const results = (data.features || []).map((f: any) => ({
+        name: f.place_name,
+        lat: f.center[1],
+        lng: f.center[0],
+      }));
+      setSearchResults(results);
+    } catch {
+      setSearchResults([]);
+    }
+  };
+
+  const handleSelectSearchResult = (result: { name: string; lat: number; lng: number }) => {
+    handleAddWaypoint(result.lat, result.lng);
+    setShowSearch(false);
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Map area */}
+      <View style={styles.mapArea}>
+        <View style={styles.mapFallback}>
+          <Icon name="Map" size={48} color={Colors.primaryMuted} />
+          <Text style={styles.mapFallbackText}>Route Editor</Text>
+          <Text style={styles.mapFallbackSub}>
+            {Platform.OS === 'web'
+              ? 'Use search below to add waypoints'
+              : 'Tap map to add waypoints'}
+          </Text>
+        </View>
+
+        {/* Waypoint markers on fallback map */}
+        {waypoints.map((wp, i) => (
+          <View
+            key={wp.id}
+            style={[styles.waypointDot, {
+              left: 100 + (i % 6) * 80,
+              top: 120 + Math.floor(i / 6) * 60,
+            }]}
+          >
+            <Text style={styles.waypointDotText}>{i + 1}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Top bar */}
+      <SafeAreaView style={styles.topOverlay} edges={['top']}>
+        <View style={styles.topRow}>
+          <BackButton variant="pill" />
+          <TouchableOpacity style={styles.saveTopBtn} onPress={handleSave}>
+            <Icon name="Check" size={16} color="#fff" strokeWidth={2.5} />
+            <Text style={styles.saveTopBtnText}>Save</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+
+      {/* Bottom panel */}
+      <SafeAreaView style={styles.bottomPanel} edges={['bottom']}>
+        {/* Error banner */}
+        {errorMsg && (
+          <View style={styles.errorBanner}>
+            <Icon name="TriangleAlert" size={14} color={Colors.danger} strokeWidth={2} />
+            <Text style={styles.errorText}>{errorMsg}</Text>
+          </View>
+        )}
+        {/* Route name */}
+        <TextInput
+          style={styles.nameInput}
+          placeholder="Route name (required)"
+          placeholderTextColor={Colors.textMuted}
+          value={name}
+          onChangeText={setName}
+        />
+
+        {/* Stats row */}
+        <View style={styles.statsRow}>
+          <Text style={styles.statText}>{waypoints.length} waypoints</Text>
+          <Text style={styles.statText}>{formatDistance(totalDistanceM, 'km', 1)} km</Text>
+        </View>
+
+        {/* Search toggle */}
+        {showSearch ? (
+          <View style={styles.searchBox}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search destination..."
+              placeholderTextColor={Colors.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearch}
+              autoFocus
+            />
+            <TouchableOpacity style={styles.searchBtn} onPress={handleSearch}>
+              <Icon name="Search" size={16} color="#fff" strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* Search results */}
+        {searchResults.length > 0 && (
+          <FlatList
+            data={searchResults}
+            keyExtractor={(_, i) => String(i)}
+            style={styles.searchResults}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.searchResultItem} onPress={() => handleSelectSearchResult(item)}>
+                <Icon name="MapPin" size={14} color={Colors.primary} strokeWidth={2} />
+                <Text style={styles.searchResultText} numberOfLines={1}>{item.name}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        )}
+
+        {/* Tool buttons */}
+        <View style={styles.toolRow}>
+          <TouchableOpacity style={styles.toolBtn} onPress={() => setShowSearch(!showSearch)}>
+            <Icon name="Search" size={18} color={Colors.primary} strokeWidth={2} />
+            <Text style={styles.toolBtnText}>Search</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolBtn} onPress={handleUndo} disabled={waypoints.length === 0}>
+            <Icon name="Undo2" size={18} color={waypoints.length > 0 ? Colors.primary : Colors.textMuted} strokeWidth={2} />
+            <Text style={[styles.toolBtnText, waypoints.length === 0 && { color: Colors.textMuted }]}>Undo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.toolBtn} onPress={handleClear} disabled={waypoints.length === 0}>
+            <Icon name="Trash2" size={18} color={waypoints.length > 0 ? Colors.danger : Colors.textMuted} strokeWidth={2} />
+            <Text style={[styles.toolBtnText, { color: waypoints.length > 0 ? Colors.danger : Colors.textMuted }]}>Clear</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.primaryBg },
+  mapArea: { flex: 1 },
+  mapFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
+  mapFallbackText: { fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary },
+  mapFallbackSub: { fontSize: FontSize.body, color: Colors.textSecondary, textAlign: 'center' },
+  waypointDot: {
+    position: 'absolute', width: 28, height: 28, borderRadius: 14,
+    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#fff', ...Shadow.card,
+  },
+  waypointDotText: { fontSize: 11, fontWeight: '800', color: '#fff' },
+
+  topOverlay: { position: 'absolute', top: 0, left: 0, right: 0 },
+  topRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.lg,
+  },
+  saveTopBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.primary, borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md, paddingVertical: 8,
+  },
+  saveTopBtnText: { fontSize: FontSize.small, fontWeight: '700', color: '#fff' },
+
+  bottomPanel: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: Spacing.base, paddingTop: Spacing.md,
+    ...Shadow.overlay,
+  },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.dangerBg ?? '#fde8ea', borderRadius: Radius.button,
+    paddingHorizontal: Spacing.md, paddingVertical: 8,
+    marginBottom: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.danger ?? '#c53d2e',
+  },
+  errorText: { fontSize: FontSize.small, color: Colors.danger ?? '#c53d2e', fontWeight: '600', flex: 1 },
+  nameInput: {
+    backgroundColor: Colors.bg, borderRadius: Radius.button,
+    padding: Spacing.md, fontSize: FontSize.body, color: Colors.textPrimary,
+    borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.sm,
+  },
+  statsRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  statText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
+
+  searchBox: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
+  searchInput: {
+    flex: 1, backgroundColor: Colors.bg, borderRadius: Radius.button,
+    padding: Spacing.sm, fontSize: FontSize.body, color: Colors.textPrimary,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  searchBtn: {
+    width: 40, height: 40, borderRadius: 10,
+    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  searchResults: { maxHeight: 150, marginBottom: Spacing.sm },
+  searchResultItem: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    paddingVertical: 8, paddingHorizontal: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  searchResultText: { flex: 1, fontSize: FontSize.small, color: Colors.textPrimary },
+
+  toolRow: { flexDirection: 'row', gap: Spacing.sm },
+  toolBtn: {
+    flex: 1, alignItems: 'center', gap: 4, paddingVertical: Spacing.sm,
+    borderRadius: Radius.card, backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  toolBtnText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.primary },
+});

@@ -26,6 +26,7 @@ import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../componen
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
+import { PressBtn } from '../components/PressBtn';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -137,13 +138,13 @@ function ActionRow({
   label: string; labelColor?: string; onPress: () => void;
 }) {
   return (
-    <TouchableOpacity style={rowStyles.actionRow} onPress={onPress} activeOpacity={0.7}>
+    <PressBtn style={rowStyles.actionRow} onPress={onPress} scaleTo={0.97}>
       <View style={[rowStyles.iconWrap, { backgroundColor: iconBg }]}>
         <Icon name={iconName} size={16} color={iconColor} strokeWidth={1.8} />
       </View>
       <Text style={[rowStyles.actionLabel, labelColor ? { color: labelColor } : null]}>{label}</Text>
       <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
-    </TouchableOpacity>
+    </PressBtn>
   );
 }
 
@@ -234,18 +235,21 @@ export function SettingsScreen() {
   };
 
   return (
+    <View style={{ flex: 1 }}>
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <BackButton variant="inline" />
+        <BackButton variant="pill" onPress={() => nav.goBack()} />
         <Text style={styles.topTitle}>Settings</Text>
-        <TouchableOpacity
+        <PressBtn
           style={[styles.saveBtn, hasChanges && styles.saveBtnActive]}
           onPress={handleSave}
+          scaleTo={0.94}
+          disabled={!hasChanges}
         >
           <Icon name="Save" size={14} color={hasChanges ? '#fff' : Colors.textMuted} strokeWidth={2} />
           <Text style={[styles.saveBtnText, hasChanges && styles.saveBtnTextActive]}>Save</Text>
-        </TouchableOpacity>
+        </PressBtn>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
@@ -382,17 +386,17 @@ export function SettingsScreen() {
                     secureTextEntry
                     autoCapitalize="none"
                   />
-                  <TouchableOpacity
+                  <PressBtn
                     style={[pwStyles.btn, pwLoading && { opacity: 0.6 }]}
                     onPress={handleChangePassword}
                     disabled={pwLoading}
-                    activeOpacity={0.8}
+                    scaleTo={0.96}
                   >
                     {pwLoading
                       ? <ActivityIndicator size="small" color="#fff" />
                       : <Text style={pwStyles.btnText}>Update Password</Text>
                     }
-                  </TouchableOpacity>
+                  </PressBtn>
                 </View>
               )}
               <View style={styles.divider} />
@@ -400,7 +404,7 @@ export function SettingsScreen() {
           ) : (
             <>
               {/* Not logged in CTA */}
-              <TouchableOpacity style={rowStyles.actionRow} onPress={() => nav.replace('Auth')} activeOpacity={0.7}>
+              <PressBtn style={rowStyles.actionRow} onPress={() => nav.replace('Auth')} scaleTo={0.97}>
                 <View style={[rowStyles.iconWrap, { backgroundColor: Colors.primaryLight }]}>
                   <Icon name="User" size={16} color={Colors.primary} strokeWidth={1.8} />
                 </View>
@@ -409,7 +413,7 @@ export function SettingsScreen() {
                   <Text style={{ fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 1 }}>Your sessions will sync across devices</Text>
                 </View>
                 <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
-              </TouchableOpacity>
+              </PressBtn>
               <View style={styles.divider} />
             </>
           )}
@@ -535,10 +539,11 @@ export function SettingsScreen() {
         </View>
 
         {/* Save button (bottom) with shimmer when active */}
-        <TouchableOpacity
+        <PressBtn
           style={[styles.saveBtnBottom, hasChanges && styles.saveBtnBottomActive]}
           onPress={handleSave}
-          activeOpacity={hasChanges ? 0.8 : 1}
+          scaleTo={0.97}
+          disabled={!hasChanges}
         >
           <Icon name="Save" size={IconSize.sm} color={hasChanges ? '#fff' : Colors.textMuted} strokeWidth={2} />
           <Text style={[styles.saveBtnBottomText, !hasChanges && { color: Colors.textMuted }]}>Save Settings</Text>
@@ -555,11 +560,12 @@ export function SettingsScreen() {
               />
             </Animated.View>
           )}
-        </TouchableOpacity>
+        </PressBtn>
 
         <Text style={styles.version}>Cairn v0.1.0</Text>
       </ScrollView>
     </SafeAreaView>
+    </View>
   );
 }
 
@@ -569,8 +575,7 @@ const styles = StyleSheet.create({
 
   topBar: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.lg, paddingBottom: Spacing.sm,
     backgroundColor: Colors.bg,
   },
   backBtn: {
@@ -646,26 +651,24 @@ const styles = StyleSheet.create({
 
 const modeStyles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.surface, borderRadius: Radius.card,
-    padding: Spacing.md, borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
+    flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.card,
+    padding: Spacing.sm, borderWidth: 1, borderColor: Colors.border,
+    alignItems: 'center', gap: 4,
   },
   cardSelected: {
     borderWidth: 2, borderColor: Colors.primary, backgroundColor: Colors.primaryBg,
-    ...Shadow.card,
   },
   top: {
     flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: Spacing.sm,
+    alignItems: 'center', width: '100%', marginBottom: 2,
   },
   iconWrap: {
-    width: 40, height: 40, borderRadius: 12,
+    width: 32, height: 32, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
-  checkBadge: {
-    // Uses Icon name="CircleCheck" directly — no wrapper needed
-  },
-  title: { fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary, marginBottom: 2 },
-  desc: { fontSize: FontSize.small, color: Colors.textSecondary, lineHeight: 18 },
+  checkBadge: {},
+  title: { fontSize: FontSize.caption, fontWeight: '600', color: Colors.textPrimary },
+  desc: { fontSize: FontSize.tiny, color: Colors.textSecondary, textAlign: 'center' },
 });
 
 const rowStyles = StyleSheet.create({
