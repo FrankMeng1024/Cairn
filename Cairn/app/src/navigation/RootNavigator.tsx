@@ -19,6 +19,7 @@ import { FriendsScreen } from '../screens/FriendsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { ARScreen } from '../screens/ARScreen';
 import { RouteEditorScreen } from '../screens/RouteEditorScreen';
+import { DebugScreen } from '../screens/DebugScreen';
 import { useAppStore } from '../store/useAppStore';
 
 export type RootStackParamList = {
@@ -33,6 +34,7 @@ export type RootStackParamList = {
   Friends: undefined;
   Settings: undefined;
   AR: undefined;
+  Debug: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -67,6 +69,7 @@ export function RootNavigator() {
             <Stack.Screen name="MapHistory"  component={MapHistoryScreen} />
             <Stack.Screen name="Map"         component={MapScreen} />
             <Stack.Screen name="RouteEditor" component={RouteEditorScreen} />
+            <Stack.Screen name="Debug"       component={DebugScreen} />
           </>
         ) : (
           <Stack.Screen

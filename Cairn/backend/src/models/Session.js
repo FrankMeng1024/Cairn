@@ -4,12 +4,12 @@
 const pool = require('../config/db');
 
 const Session = {
-  async create({ userId, type, startTime, endTime, distanceM, durationS, routePoints, flags }) {
+  async create({ userId, routeId, type, startTime, endTime, distanceM, durationS, routePoints, flags }) {
     const [result] = await pool.execute(
-      `INSERT INTO sessions (user_id, type, start_time, end_time, distance_m, duration_s, route_points, flags)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sessions (user_id, route_id, type, start_time, end_time, distance_m, duration_s, route_points, flags)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        userId, type, startTime, endTime,
+        userId, routeId ?? null, type, startTime, endTime,
         distanceM ?? 0, durationS ?? 0,
         routePoints ? JSON.stringify(routePoints) : null,
         flags ? JSON.stringify(flags) : null,
@@ -20,7 +20,7 @@ const Session = {
 
   async findByUser(userId) {
     const [rows] = await pool.execute(
-      `SELECT id, user_id, type, start_time, end_time, distance_m, duration_s, created_at
+      `SELECT id, user_id, route_id, type, start_time, end_time, distance_m, duration_s, created_at
        FROM sessions WHERE user_id = ? ORDER BY start_time DESC`,
       [userId]
     );
@@ -29,7 +29,7 @@ const Session = {
 
   async findByIdAndUser(id, userId) {
     const [rows] = await pool.execute(
-      `SELECT id, user_id, type, start_time, end_time, distance_m, duration_s, route_points, flags, created_at
+      `SELECT id, user_id, route_id, type, start_time, end_time, distance_m, duration_s, route_points, flags, created_at
        FROM sessions WHERE id = ? AND user_id = ?`,
       [id, userId]
     );

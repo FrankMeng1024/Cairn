@@ -18,7 +18,7 @@ router.use(authenticate);
 router.get('/', async (req, res) => {
   try {
     const [markers] = await pool.execute(
-      `SELECT id, type, text, lat, lng, alt, permission, created_at, updated_at
+      `SELECT id, type, text, lat, lng, alt, permission, approximate, created_at, updated_at
        FROM markers WHERE user_id = ? ORDER BY created_at DESC`,
       [req.user.userId]
     );
@@ -32,27 +32,28 @@ router.get('/', async (req, res) => {
 // ── Create marker ───────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
-    const { type, text, lat, lng, alt, permission } = req.body;
+    const { type, text, lat, lng, alt, permission, approximate } = req.body;
 
     if (!type || lat == null || lng == null) {
       return res.status(400).json({ error: 'type, lat, lng required' });
     }
-    if (text && text.length > 30) {
-      return res.status(400).json({ error: 'Text max 30 characters' });
+    if (text && text.length > 50) {
+      return res.status(400).json({ error: 'Text max 50 characters' });
     }
 
     const validPermissions = ['personal', 'group', 'public'];
     const perm = validPermissions.includes(permission) ? permission : 'personal';
+    const approx = approximate ? 1 : 0;
 
     const [result] = await pool.execute(
-      `INSERT INTO markers (user_id, type, text, lat, lng, alt, permission, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-      [req.user.userId, type, text || '', lat, lng, alt || null, perm]
+      `INSERT INTO markers (user_id, type, text, lat, lng, alt, permission, approximate, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [req.user.userId, type, text || '', lat, lng, alt || null, perm, approx]
     );
 
     res.status(201).json({
       id: result.insertId,
-      type, text: text || '', lat, lng, alt, permission: perm,
+      type, text: text || '', lat, lng, alt, permission: perm, approximate: !!approximate,
       created_at: new Date().toISOString(),
     });
   } catch (err) {
@@ -64,7 +65,7 @@ router.post('/', async (req, res) => {
 // ── Update marker ───────────────────────────────────────────────────────────
 router.put('/:id', async (req, res) => {
   try {
-    const { text, permission } = req.body;
+    const { text, permission, type } = req.body;
     const markerId = req.params.id;
 
     // Verify ownership
@@ -77,8 +78,16 @@ router.put('/:id', async (req, res) => {
     const updates = [];
     const values = [];
 
+    if (type !== undefined) {
+      const validTypes = ['danger', 'scenic', 'supply', 'junction', 'free'];
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({ error: 'Invalid type' });
+      }
+      updates.push('type = ?');
+      values.push(type);
+    }
     if (text !== undefined) {
-      if (text.length > 30) return res.status(400).json({ error: 'Text max 30 characters' });
+      if (text.length > 50) return res.status(400).json({ error: 'Text max 50 characters' });
       updates.push('text = ?');
       values.push(text);
     }

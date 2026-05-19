@@ -1,14 +1,18 @@
 /**
- * useRouteStore — Route management store for Phase 2 (E-007).
+ * useRouteStore — Route management store.
  *
- * Manages user-created routes, waypoints, and route metadata.
- * Persists to AsyncStorage.
- *
- * Sprint 45 — STORY-00151
+ * Backend-first: all routes live in the DB via /api/routes.
+ * No local AsyncStorage persistence — source of truth is the server.
  */
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateId } from '../utils/geo';
+import {
+  fetchRoutes,
+  createRoute,
+  updateRoute as apiUpdateRoute,
+  deleteRoute as apiDeleteRoute,
+  incrementRouteRunCount,
+} from '../services/routeService';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -31,7 +35,7 @@ export interface Route {
   id: string;
   name: string;
   description?: string;
-  createdAt: number;       // timestamp
+  createdAt: number;       // timestamp (ms)
   updatedAt: number;
   points: RoutePoint[];    // the route polyline
   waypoints: Waypoint[];   // interactive points along route
@@ -48,28 +52,29 @@ export interface RouteStore {
   routes: Route[];
   activeRouteId: string | null;
 
-  // CRUD
-  addRoute: (route: Omit<Route, 'id' | 'createdAt' | 'updatedAt' | 'runCount' | 'isActive' | 'mutedMarkerIds'>) => string;
-  updateRoute: (id: string, updates: Partial<Route>) => void;
-  deleteRoute: (id: string) => void;
+  // Load from backend
+  loadRoutes: () => Promise<void>;
 
-  // Waypoints
+  // CRUD
+  addRoute: (route: Omit<Route, 'id' | 'createdAt' | 'updatedAt' | 'runCount' | 'isActive' | 'mutedMarkerIds'>) => Promise<string | null>;
+  updateRoute: (id: string, updates: Partial<Route>) => Promise<void>;
+  deleteRoute: (id: string) => Promise<void>;
+
+  // Waypoints (local-only until next save)
   addWaypoint: (routeId: string, waypoint: Omit<Waypoint, 'id'>) => void;
   removeWaypoint: (routeId: string, waypointId: string) => void;
 
   // Navigation
   setActiveRoute: (id: string | null) => void;
-  incrementRunCount: (id: string) => void;
+  incrementRunCount: (id: string) => Promise<void>;
 
-  // Marker muting
+  // Marker muting (local UI state — not persisted to backend)
   muteMarker: (routeId: string, markerId: string) => void;
   unmuteMarker: (routeId: string, markerId: string) => void;
 
-  // Persistence
+  // Legacy — kept for compatibility, calls loadRoutes
   hydrate: () => Promise<void>;
 }
-
-const STORAGE_KEY = 'cairn_routes';
 
 // ── Store ───────────────────────────────────────────────────────────────────
 
@@ -77,134 +82,127 @@ export const useRouteStore = create<RouteStore>((set, get) => ({
   routes: [],
   activeRouteId: null,
 
-  addRoute: (routeData) => {
-    const id = generateId();
-    const now = Date.now();
+  loadRoutes: async () => {
+    const routes = await fetchRoutes();
+    set({ routes });
+  },
+
+  addRoute: async (routeData) => {
+    const created = await createRoute({
+      name: routeData.name,
+      description: routeData.description,
+      points: routeData.points,
+      waypoints: routeData.waypoints,
+      distance_m: routeData.distanceM,
+      elevation_gain_m: routeData.elevationGainM,
+    });
+    if (!created) return null;
     const route: Route = {
       ...routeData,
-      id,
-      createdAt: now,
-      updatedAt: now,
-      runCount: 0,
+      ...created,
       isActive: false,
       mutedMarkerIds: [],
     };
-    set((s) => {
-      const routes = [...s.routes, route];
-      persist(routes);
-      return { routes };
-    });
-    return id;
+    set((s) => ({ routes: [route, ...s.routes] }));
+    return created.id;
   },
 
-  updateRoute: (id, updates) => {
-    set((s) => {
-      const routes = s.routes.map(r =>
+  updateRoute: async (id, updates) => {
+    // Optimistic local update
+    set((s) => ({
+      routes: s.routes.map(r =>
         r.id === id ? { ...r, ...updates, updatedAt: Date.now() } : r
-      );
-      persist(routes);
-      return { routes };
-    });
+      ),
+    }));
+    // Sync to backend
+    const route = get().routes.find(r => r.id === id);
+    if (route) {
+      await apiUpdateRoute(id, {
+        name: route.name,
+        description: route.description,
+        points: route.points,
+        waypoints: route.waypoints,
+        distance_m: route.distanceM,
+        elevation_gain_m: route.elevationGainM,
+        ...Object.fromEntries(
+          Object.entries(updates).map(([k, v]) => {
+            if (k === 'distanceM') return ['distance_m', v];
+            if (k === 'elevationGainM') return ['elevation_gain_m', v];
+            return [k, v];
+          })
+        ),
+      });
+    }
   },
 
-  deleteRoute: (id) => {
-    set((s) => {
-      const routes = s.routes.filter(r => r.id !== id);
-      const activeRouteId = s.activeRouteId === id ? null : s.activeRouteId;
-      persist(routes);
-      return { routes, activeRouteId };
-    });
+  deleteRoute: async (id) => {
+    set((s) => ({
+      routes: s.routes.filter(r => r.id !== id),
+      activeRouteId: s.activeRouteId === id ? null : s.activeRouteId,
+    }));
+    await apiDeleteRoute(id);
   },
 
   addWaypoint: (routeId, waypointData) => {
     const waypoint: Waypoint = { ...waypointData, id: generateId() };
-    set((s) => {
-      const routes = s.routes.map(r =>
+    set((s) => ({
+      routes: s.routes.map(r =>
         r.id === routeId
           ? { ...r, waypoints: [...r.waypoints, waypoint], updatedAt: Date.now() }
           : r
-      );
-      persist(routes);
-      return { routes };
-    });
+      ),
+    }));
   },
 
   removeWaypoint: (routeId, waypointId) => {
-    set((s) => {
-      const routes = s.routes.map(r =>
+    set((s) => ({
+      routes: s.routes.map(r =>
         r.id === routeId
           ? { ...r, waypoints: r.waypoints.filter(w => w.id !== waypointId), updatedAt: Date.now() }
           : r
-      );
-      persist(routes);
-      return { routes };
-    });
+      ),
+    }));
   },
 
   setActiveRoute: (id) => {
-    set((s) => {
-      const routes = s.routes.map(r => ({ ...r, isActive: r.id === id }));
-      persist(routes);
-      return { routes, activeRouteId: id };
-    });
+    set((s) => ({
+      routes: s.routes.map(r => ({ ...r, isActive: r.id === id })),
+      activeRouteId: id,
+    }));
   },
 
-  incrementRunCount: (id) => {
-    set((s) => {
-      const routes = s.routes.map(r =>
+  incrementRunCount: async (id) => {
+    set((s) => ({
+      routes: s.routes.map(r =>
         r.id === id
           ? { ...r, runCount: r.runCount + 1, lastRunAt: Date.now(), updatedAt: Date.now() }
           : r
-      );
-      persist(routes);
-      return { routes };
-    });
+      ),
+    }));
+    await incrementRouteRunCount(id);
   },
 
   muteMarker: (routeId, markerId) => {
-    set((s) => {
-      const routes = s.routes.map(r =>
+    set((s) => ({
+      routes: s.routes.map(r =>
         r.id === routeId && !r.mutedMarkerIds.includes(markerId)
           ? { ...r, mutedMarkerIds: [...r.mutedMarkerIds, markerId], updatedAt: Date.now() }
           : r
-      );
-      persist(routes);
-      return { routes };
-    });
+      ),
+    }));
   },
 
   unmuteMarker: (routeId, markerId) => {
-    set((s) => {
-      const routes = s.routes.map(r =>
+    set((s) => ({
+      routes: s.routes.map(r =>
         r.id === routeId
           ? { ...r, mutedMarkerIds: r.mutedMarkerIds.filter(id => id !== markerId), updatedAt: Date.now() }
           : r
-      );
-      persist(routes);
-      return { routes };
-    });
+      ),
+    }));
   },
 
   hydrate: async () => {
-    try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const routes: Route[] = JSON.parse(stored);
-        const activeRoute = routes.find(r => r.isActive);
-        set({ routes, activeRouteId: activeRoute?.id ?? null });
-      }
-    } catch {
-      // Ignore parse errors — start fresh
-    }
+    await get().loadRoutes();
   },
 }));
-
-// ── Persistence helper ──────────────────────────────────────────────────────
-
-async function persist(routes: Route[]): Promise<void> {
-  try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(routes));
-  } catch {
-    // Silent fail — data in memory, will retry next mutation
-  }
-}

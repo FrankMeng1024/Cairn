@@ -158,7 +158,7 @@ export function OfflineMapSheet({ visible, onClose }: Props) {
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: Colors.overlayDark, // cream tint (token renamed semantically)
     justifyContent: 'flex-end',
   },
   container: { flex: 1, justifyContent: 'flex-end' },

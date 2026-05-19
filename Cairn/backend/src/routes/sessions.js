@@ -12,7 +12,7 @@ const router = express.Router();
 
 // ── POST /api/sessions ─────────────────────────────────────────────────────
 router.post('/', authenticate, async (req, res) => {
-  const { type, start_time, end_time, distance_m, duration_s, route_points, flags } = req.body;
+  const { type, start_time, end_time, distance_m, duration_s, route_points, flags, route_id } = req.body;
 
   if (!type || !['hiking', 'running'].includes(type)) {
     return res.status(400).json({ error: 'type must be "hiking" or "running".' });
@@ -30,6 +30,7 @@ router.post('/', authenticate, async (req, res) => {
   try {
     const id = await Session.create({
       userId: req.user.userId,
+      routeId: route_id ?? null,
       type,
       startTime: new Date(start_time),
       endTime: new Date(end_time),

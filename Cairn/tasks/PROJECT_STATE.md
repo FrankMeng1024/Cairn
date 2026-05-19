@@ -1,9 +1,9 @@
 # PROJECT_STATE.md — Cairn
 
 **Status**: IN_PROGRESS
-**Current Sprint**: 52+ (美工迭代 + Phase 3 continuation)
-**Last Updated**: 2026-05-17
-**Governing Document**: docs/PRD2.md (supersedes PRD.md)
+**Current Sprint**: 55+ (Debug Logger + Telemetry + PRD3 Phase 4 partial)
+**Last Updated**: 2026-05-19
+**Governing Document**: docs/PRD2.md (PRD3.md adds NZ localization layer)
 
 ## Key Decisions
 - acceptance_mode: auto
@@ -34,6 +34,7 @@
 - Sprint 52: Unit tests expansion (51 total tests all passing)
 - Sprint 53: Backend routes (friends + markers API), MapScreen edit/delete, HikingScreen SOS, glass styling all screens
 - Sprint 54: Full front/backend wiring — useMarkerStore async+sync, useFriendStore authenticatedFetch, MapScreen real markers, FriendsScreen real API
+- Sprint 54 cont: Edit marker modal (MapScreen), RoutesScreen navigation, loadFriendsFromBackend, AuthScreen TS fixes, SettingsScreen toggle wiring, RunningScreen real routes, session backend sync
 
 ## Test Status
 - 51 unit tests: ALL PASSING
@@ -57,8 +58,8 @@
 | Content | contentFilter (keyword blacklist, extensible for AI) |
 
 ## Next Steps
-1. Per-page functional + visual review (一个个页面看功能和美工)
+1. Per-page functional + visual review (一个个页面看功能和美工) ← READY NOW
 2. EAS build testing when Mapbox token available
 3. Complete AR native integration (requires @viro-community/react-viro + EAS build)
-4. Sessions sync to backend (/api/sessions)
+4. Sessions sync to backend (/api/sessions) ← DONE
 5. VU (Virtual User) acceptance when product is testable on device
