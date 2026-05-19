@@ -4,14 +4,17 @@
 #   1. ssh into server
 #   2. git clone the repo
 #   3. cd Cairn/docker
-#   4. cp .env.example .env  &&  edit .env (set strong passwords + telemetry key)
-#   5. ./deploy.sh
+#   4. cp .env.example .env  &&  edit .env (set DB_PASSWORD + telemetry key)
+#   5. (one-time) Make sure the `cairn` database + migrations exist on the
+#      shared MySQL — run init.sql against it if this is a fresh install:
+#          docker exec -i ainews-db mysql -uroot -p"$DB_PASSWORD" < init.sql
+#   6. ./deploy.sh
 #
 # What this does:
 #   - Builds the cairn-backend image
-#   - Brings up MySQL + backend with docker-compose
+#   - Starts only the backend container (connects to existing MySQL on host)
 #   - Waits for healthcheck
-#   - Tails logs
+#   - Prints the smoke-test command
 
 set -euo pipefail
 
