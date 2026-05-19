@@ -274,6 +274,21 @@ export async function acceptFriendRequestAPI(requestId: string): Promise<boolean
 }
 
 /**
+ * Reject a friend request.
+ */
+export async function rejectFriendRequestAPI(requestId: string): Promise<boolean> {
+  try {
+    const res = await authenticatedFetch('/api/friends/reject', {
+      method: 'POST',
+      body: JSON.stringify({ requestId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fetch friend's markers (for display on map).
  */
 export async function fetchFriendMarkers(friendId: string): Promise<FriendMarker[]> {
