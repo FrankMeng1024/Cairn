@@ -97,7 +97,10 @@ function RouteSheet({
   if (route !== null) snapshot.current = route;
   const data = snapshot.current;
 
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
   const dismiss = (then?: () => void) => {
+    setDeleteConfirm(false);
     Animated.parallel([
       Animated.timing(slideAnim, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
       Animated.timing(opacityAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
@@ -106,6 +109,7 @@ function RouteSheet({
 
   useEffect(() => {
     if (route !== null) {
+      setDeleteConfirm(false);
       slideAnim.setValue(400);
       opacityAnim.setValue(0);
       Animated.parallel([
@@ -118,11 +122,9 @@ function RouteSheet({
   if (route === null && opacityAnim.__getValue() === 0) return null;
   if (!data) return null;
 
-  const confirmDelete = () => {
-    Alert.alert('Delete Route', `Delete "${data.name}"? This cannot be undone.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => dismiss(() => onDelete(data.id)) },
-    ]);
+  const handleDelete = () => {
+    if (!deleteConfirm) { setDeleteConfirm(true); return; }
+    dismiss(() => onDelete(data.id));
   };
 
   const lastRun = data.lastRunAt ? new Date(data.lastRunAt).toLocaleDateString() : null;
@@ -170,9 +172,9 @@ function RouteSheet({
 
         {/* Actions */}
         <View style={sheetStyles.actions}>
-          <PressBtn style={sheetStyles.deleteBtn} onPress={confirmDelete} scaleTo={0.96}>
-            <Icon name="Trash2" size={14} color={Colors.danger} strokeWidth={2} />
-            <Text style={sheetStyles.deleteBtnText}>Delete</Text>
+          <PressBtn style={[sheetStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]} onPress={handleDelete} scaleTo={0.96}>
+            <Icon name="Trash2" size={14} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
+            <Text style={[sheetStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete'}</Text>
           </PressBtn>
           <PressBtn
             style={sheetStyles.saveBtn}
@@ -204,7 +206,10 @@ function ActivitySheet({
   if (session !== null) snapshot.current = session;
   const data = snapshot.current;
 
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
   const dismiss = (then?: () => void) => {
+    setDeleteConfirm(false);
     Animated.parallel([
       Animated.timing(slideAnim, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
       Animated.timing(opacityAnim, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
@@ -213,6 +218,7 @@ function ActivitySheet({
 
   useEffect(() => {
     if (session !== null) {
+      setDeleteConfirm(false);
       slideAnim.setValue(400);
       opacityAnim.setValue(0);
       Animated.parallel([
@@ -230,11 +236,9 @@ function ActivitySheet({
   const date = new Date(data.startedAt);
   const dateStr = `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
 
-  const confirmDelete = () => {
-    Alert.alert('Delete Activity', 'Delete this activity? This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => dismiss(() => deleteSession(data.id)) },
-    ]);
+  const handleDelete = () => {
+    if (!deleteConfirm) { setDeleteConfirm(true); return; }
+    dismiss(() => deleteSession(data.id));
   };
 
   return (
@@ -274,9 +278,9 @@ function ActivitySheet({
             inside View (MapHistory has its own "Save as Route" CTA), and
             keeping all three made the row feel cramped. */}
         <View style={sheetStyles.actions}>
-          <PressBtn style={sheetStyles.deleteBtn} onPress={confirmDelete} scaleTo={0.96}>
-            <Icon name="Trash2" size={14} color={Colors.danger} strokeWidth={2} />
-            <Text style={sheetStyles.deleteBtnText}>Delete</Text>
+          <PressBtn style={[sheetStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]} onPress={handleDelete} scaleTo={0.96}>
+            <Icon name="Trash2" size={14} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
+            <Text style={[sheetStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete'}</Text>
           </PressBtn>
           <PressBtn
             style={sheetStyles.saveBtn}

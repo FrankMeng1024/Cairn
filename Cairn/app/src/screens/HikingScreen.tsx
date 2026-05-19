@@ -377,7 +377,10 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
     ]).start();
   }, []);
 
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
   const handleClose = () => {
+    setDeleteConfirm(false);
     Animated.parallel([
       Animated.timing(slideY, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
       Animated.timing(opacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
@@ -385,15 +388,11 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
   };
 
   const handleDelete = () => {
-    Alert.alert('Delete Flag', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => {
-        Animated.parallel([
-          Animated.timing(slideY, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
-        ]).start(() => onDelete());
-      }},
-    ]);
+    if (!deleteConfirm) { setDeleteConfirm(true); return; }
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: 400, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => onDelete());
   };
 
   return (
@@ -438,11 +437,11 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
           </View>
         )}
         <TouchableOpacity
-          style={detailStyles.deleteBtn}
+          style={[detailStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]}
           onPress={handleDelete}
         >
-          <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
-          <Text style={detailStyles.deleteBtnText}>Delete Flag</Text>
+          <Icon name="Trash2" size={IconSize.sm} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
+          <Text style={[detailStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete Flag'}</Text>
         </TouchableOpacity>
       </Animated.View>
     </Animated.View>

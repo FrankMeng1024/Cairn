@@ -325,7 +325,10 @@ function FlagDetailSheet({ marker, onClose, onDelete }: {
   const date = new Date(marker.createdAt);
   const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
   const close = () => {
+    setDeleteConfirm(false);
     Animated.parallel([
       Animated.timing(slideY, { toValue: H, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
       Animated.timing(scrimOpacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
@@ -333,15 +336,11 @@ function FlagDetailSheet({ marker, onClose, onDelete }: {
   };
 
   const handleDelete = () => {
-    Alert.alert('Delete Flag', 'This flag will be permanently removed.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => {
-        Animated.parallel([
-          Animated.timing(slideY, { toValue: H, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-          Animated.timing(scrimOpacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
-        ]).start(() => onDelete());
-      }},
-    ]);
+    if (!deleteConfirm) { setDeleteConfirm(true); return; }
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: H, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(scrimOpacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => onDelete());
   };
 
   return (
@@ -365,11 +364,11 @@ function FlagDetailSheet({ marker, onClose, onDelete }: {
         <Text style={sheetStyles.dateLine}>Planted: {dateStr}</Text>
         {/* Delete */}
         <TouchableOpacity
-          style={sheetStyles.deleteBtn}
+          style={[sheetStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]}
           onPress={handleDelete}
         >
-          <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
-          <Text style={sheetStyles.deleteBtnText}>Delete Flag</Text>
+          <Icon name="Trash2" size={IconSize.sm} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
+          <Text style={[sheetStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete Flag'}</Text>
         </TouchableOpacity>
       </Animated.View>
     </>
@@ -410,6 +409,7 @@ export function MapHistoryScreen() {
   const allMarkers = useMarkerStore(s => s.markers);
   const markers = allMarkers.filter(m => m.regionCode === region.code);
   const deleteMarker = useMarkerStore(s => s.deleteMarker);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const selectedSession = sessions.find(s => s.id === selectedSessionId) ?? null;
   const selectedMarker = markers.find(m => m.id === selectedMarkerId) ?? null;
@@ -564,16 +564,15 @@ export function MapHistoryScreen() {
               <Text style={[cardStyles.deleteBtnText, { color: Colors.primary }]}>Save as Route</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[cardStyles.deleteBtn, { flex: 1 }]}
+              style={[cardStyles.deleteBtn, { flex: 1 }, deleteConfirm && { backgroundColor: Colors.danger }]}
               onPress={() => {
-                Alert.alert('Delete Activity', 'Delete this activity? This cannot be undone.', [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Delete', style: 'destructive', onPress: () => { deleteSession(selectedSession.id); nav.goBack(); } },
-                ]);
+                if (!deleteConfirm) { setDeleteConfirm(true); return; }
+                deleteSession(selectedSession.id);
+                nav.goBack();
               }}
             >
-              <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
-              <Text style={cardStyles.deleteBtnText}>Delete</Text>
+              <Icon name="Trash2" size={IconSize.sm} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
+              <Text style={[cardStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -614,21 +613,16 @@ export function MapHistoryScreen() {
             )}
             {selectedSession && (
               <TouchableOpacity
-                style={cardStyles.deleteBtn}
-                onPress={() => Alert.alert(
-                  'Delete Route',
-                  'Are you sure you want to delete this route?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Delete', style: 'destructive', onPress: () => {
-                      deleteSession(selectedSession.id);
-                      setSelectedSessionId(null);
-                    }},
-                  ]
-                )}
+                style={[cardStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]}
+                onPress={() => {
+                  if (!deleteConfirm) { setDeleteConfirm(true); return; }
+                  deleteSession(selectedSession.id);
+                  setSelectedSessionId(null);
+                  setDeleteConfirm(false);
+                }}
               >
-                <Icon name="Trash2" size={IconSize.sm} color={Colors.danger} strokeWidth={2} />
-                <Text style={cardStyles.deleteBtnText}>Delete Route</Text>
+                <Icon name="Trash2" size={IconSize.sm} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
+                <Text style={[cardStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete Route'}</Text>
               </TouchableOpacity>
             )}
           </ScrollView>

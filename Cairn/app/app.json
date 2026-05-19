@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.cairn.app",
+      "bundleIdentifier": "com.yiiling.cairn",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Cairn needs your location to track your track and show nearby markers.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Cairn needs background location to keep recording your track when the screen is locked or you switch apps.",
