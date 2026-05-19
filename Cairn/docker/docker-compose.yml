@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Cairn backend deployment.
 #
 # IMPORTANT: this compose file does NOT spin up its own MySQL.
@@ -23,8 +21,12 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     container_name: cairn-backend
+    # Bind to 127.0.0.1 only — backend is reached from the public internet
+    # exclusively through nginx (api.yiiling.cn -> :443 -> proxy_pass :3001).
+    # Removing the 0.0.0.0 binding closes off direct :3001 access from the LAN
+    # / public IP, which is the desired security posture once HTTPS is up.
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     environment:
       - NODE_ENV=production
       - PORT=3001
