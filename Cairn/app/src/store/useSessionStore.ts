@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import { storage } from './storage';
 import type { Coordinate } from '../utils/geo';
 import { authenticatedFetch } from '../services/apiService';
+import { deleteRemoteSession } from '../services/sessionService';
 
 export type ActivityMode = 'hiking' | 'running';
 
@@ -20,6 +21,7 @@ export interface TrackPoint extends Coordinate {
 
 export interface TrackingSession {
   id: string;
+  remoteId?: number;           // backend session ID — set after successful sync
   activityMode: ActivityMode;
   regionCode: string;         // geo-extensible: 'nz', 'au', etc.
   startedAt: number;          // Unix ms
@@ -66,7 +68,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return { sessions: next };
     });
 
-    // Sync to backend (fire-and-forget)
+    // Sync to backend, capture remote ID
     authenticatedFetch('/api/sessions', {
       method: 'POST',
       body: JSON.stringify({
@@ -78,8 +80,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         route_points: session.trackPoints.length > 0 ? session.trackPoints : null,
         flags: session.markerIds.length > 0 ? session.markerIds : null,
       }),
+    }).then(async (res) => {
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      const remoteId = data?.session?.id;
+      if (!remoteId) return;
+      // Patch remoteId into the stored session
+      set((s) => {
+        const updated = s.sessions.map((sess) =>
+          sess.id === session.id ? { ...sess, remoteId } : sess
+        );
+        const summaries = updated.map(({ trackPoints: _, ...rest }) => rest);
+        storage.setItem(STORAGE_KEY, JSON.stringify(summaries));
+        return { sessions: updated };
+      });
     }).catch(() => {
-      // Network failure — session remains in local store
+      // Network failure — session remains in local store without remoteId
     });
   },
 
@@ -89,6 +105,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   deleteSession: (id) => {
+    const session = get().sessions.find((s) => s.id === id);
     set((s) => {
       const next = s.sessions.filter((sess) => sess.id !== id);
       const summaries = next.map(({ trackPoints: _, ...rest }) => rest);
@@ -96,6 +113,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       storage.removeItem(`cairn_trackpoints_${id}`);
       return { sessions: next };
     });
+    // Mirror deletion to backend (fire-and-forget)
+    if (session?.remoteId) {
+      deleteRemoteSession(session.remoteId).catch(() => {});
+    }
   },
 
   getSessions: () => get().sessions,

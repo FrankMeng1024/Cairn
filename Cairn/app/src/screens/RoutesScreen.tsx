@@ -18,6 +18,7 @@ import { useMarkerStore, type Marker, type MarkerPermission } from '../store/use
 import { useTrackingStore } from '../store/useTrackingStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon, type IconName } from '../components/Icon';
+import { HikingIcon, RunningIcon } from '../components/ActivityIcons';
 import { BackButton } from '../components/BackButton';
 import { PressBtn } from '../components/PressBtn';
 import { formatDistance, formatDuration, haversineM } from '../utils/geo';
@@ -368,7 +369,10 @@ function ActivitiesTab() {
               scaleTo={0.97}
             >
               <View style={[styles.cardBadge, { backgroundColor: bg }]}>
-                <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={18} color={accent} strokeWidth={1.8} />
+                {isRun
+                  ? <RunningIcon size={18} color={accent} />
+                  : <HikingIcon size={18} color={accent} />
+                }
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>{isRun ? 'Run' : 'Hike'}</Text>

@@ -9,13 +9,13 @@ import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, LayoutChangeEvent,
 } from 'react-native';
-import Svg, { Rect } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { Colors, Spacing, Radius, FontSize, Shadow } from '../components/tokens';
 import { Icon, type IconName } from '../components/Icon';
+import { HikingIcon, RunningIcon, FlagMarkerIcon, CairnLogo } from '../components/ActivityIcons';
 import { useAppStore } from '../store/useAppStore';
 import { useSessionStore } from '../store/useSessionStore';
 import { useMarkerStore } from '../store/useMarkerStore';
@@ -36,36 +36,6 @@ function getGreeting(mode: 'beginner' | 'expert') {
   return `Good evening, ${label}`;
 }
 
-// ── Small static cairn logo (3 stacked stones, inline SVG) ───────────────────
-function CairnLogo({ size = 22 }: { size?: number }) {
-  const s = size / 22;
-  const stones = [
-    { w: 14 * s, h: 5 * s, color: Colors.primary },
-    { w: 19 * s, h: 5 * s, color: '#7a9e5a' },
-    { w: 12 * s, h: 5 * s, color: Colors.primary },
-  ];
-  const gap = 2 * s;
-  const totalH = stones.reduce((acc, st) => acc + st.h, 0) + gap * (stones.length - 1);
-  const maxW = Math.max(...stones.map(st => st.w));
-  return (
-    <Svg width={maxW} height={totalH} style={{ overflow: 'visible' }}>
-      {stones.map((stone, i) => {
-        const y = i * (stones[0].h + gap);
-        const x = (maxW - stone.w) / 2;
-        return (
-          <Rect
-            key={i}
-            x={x} y={y}
-            width={stone.w} height={stone.h}
-            rx={stone.h / 2}
-            fill={stone.color}
-          />
-        );
-      })}
-    </Svg>
-  );
-}
-
 // ── Compact recent activity row — placed ABOVE cards ─────────────────────────
 function RecentRow({ onPress }: { onPress: (id: string) => void }) {
   const sessions = useSessionStore(s => s.sessions);
@@ -84,7 +54,10 @@ function RecentRow({ onPress }: { onPress: (id: string) => void }) {
   return (
     <TouchableOpacity style={recentStyles.row} onPress={() => onPress(last.id)} activeOpacity={0.7}>
       <View style={[recentStyles.dot, { backgroundColor: bg }]}>
-        <Icon name={isRun ? 'PersonStanding' : 'Mountain'} size={14} color={accent} strokeWidth={2} />
+        {isRun
+          ? <RunningIcon size={14} color={accent} />
+          : <HikingIcon size={14} color={accent} />
+        }
       </View>
       <View style={recentStyles.textGroup}>
         <Text style={[recentStyles.badge, { color: accent }]}>{label}</Text>
@@ -98,9 +71,9 @@ function RecentRow({ onPress }: { onPress: (id: string) => void }) {
 
 // ── Big activity card — flex-based, no parent height dependency ──────────────
 function ActivityCard({
-  iconName, title, subtitle, accentColor, lightBg, cardBg, onPress, anim,
+  icon, title, subtitle, accentColor, lightBg, cardBg, onPress, anim,
 }: {
-  iconName: IconName;
+  icon: (size: number) => React.ReactNode;
   title: string;
   subtitle: string;
   accentColor: string;
@@ -110,8 +83,6 @@ function ActivityCard({
   anim: Animated.Value;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
-  // Measure self height for icon/panel sizing — first-frame fallback is safe
-  // because it only affects internal icon size, not card position or toolbar location.
   const [h, setH] = useState(0);
   const panelW = h > 0 ? Math.min(Math.round(h * 0.38), 130) : 90;
   const iconSize = Math.round(panelW * 0.55);
@@ -131,9 +102,9 @@ function ActivityCard({
         onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 200, friction: 8 }).start()}
         style={[cardStyles.card, { backgroundColor: cardBg, flex: 1 }]}
       >
-        {/* Left panel — absolute position ensures it fills card height regardless of RN Web flex quirks */}
+        {/* Left panel */}
         <View style={[cardStyles.leftPanel, { width: panelW, backgroundColor: lightBg }]}>
-          <Icon name={iconName} size={iconSize} color={accentColor} strokeWidth={1.4} />
+          {icon(iconSize)}
         </View>
 
         {/* Text area */}
@@ -196,7 +167,7 @@ export function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoRow}>
-            <CairnLogo size={22} />
+            <CairnLogo size={22} color={Colors.primary} />
             <Text style={styles.logo}>Cairn</Text>
           </View>
           <Text style={styles.greeting}>{getGreeting(uiMode)}</Text>
@@ -210,7 +181,7 @@ export function HomeScreen() {
               <Text style={styles.statText}>{plural(sessions.length, 'session')}</Text>
             </View>
             <View style={styles.statChip}>
-              <Icon name="Flag" size={12} color={Colors.flag} strokeWidth={2} />
+              <FlagMarkerIcon size={14} stoneColor={Colors.flag} flagColor={Colors.primary} />
               <Text style={styles.statText}>{plural(markerCount, 'flag')}</Text>
             </View>
           </View>
@@ -222,7 +193,7 @@ export function HomeScreen() {
         {/* Activity Cards — fill remaining vertical space, two equal halves */}
         <View style={styles.cardsArea}>
           <ActivityCard
-            iconName="Mountain"
+            icon={(sz) => <HikingIcon size={sz} color={Colors.primary} />}
             title="Hiking"
             subtitle="Navigate tracks · Leave cairns · Explore at your pace"
             accentColor={Colors.primary}
@@ -232,7 +203,7 @@ export function HomeScreen() {
             anim={card1}
           />
           <ActivityCard
-            iconName="PersonStanding"
+            icon={(sz) => <RunningIcon size={sz} color={Colors.running} />}
             title="Running"
             subtitle="Route planning · Voice guidance · Lock mode"
             accentColor={Colors.running}

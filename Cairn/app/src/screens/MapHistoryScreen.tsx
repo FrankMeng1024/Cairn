@@ -22,6 +22,7 @@ import { formatDistance, formatDuration, formatDate, getRelativeTime } from '../
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
+import { HikingIcon, RunningIcon } from '../components/ActivityIcons';
 import { BackButton } from '../components/BackButton';
 import { PressBtn } from '../components/PressBtn';
 import { MARKER_META } from '../data/mockData';
@@ -151,14 +152,14 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
   onPress: () => void;
   onViewOnMap: () => void;
 }) {
+  const isRun = session.activityMode === 'running';
   const dateStr = formatDate(session.startedAt);
-  const actLabel = session.activityMode === 'running' ? 'Run' : 'Hike';
-  const actColor = session.activityMode === 'running' ? Colors.running : Colors.primary;
-  const actLightBg = session.activityMode === 'running' ? Colors.runningLight : Colors.primaryLight;
-  const actDeepBg = session.activityMode === 'running'
+  const actLabel = isRun ? 'Run' : 'Hike';
+  const actColor = isRun ? Colors.running : Colors.primary;
+  const actLightBg = isRun ? Colors.runningLight : Colors.primaryLight;
+  const actDeepBg = isRun
     ? Colors.runningLight.replace('0.12', '0.24')
     : Colors.primaryLight.replace('0.15', '0.28');
-  const actIcon: IconName = session.activityMode === 'running' ? 'PersonStanding' : 'Mountain';
   const rawDistStr = formatDistance(session.distanceM, 'km', 1);
   const distStr = rawDistStr === '--' ? 'No GPS' : `${rawDistStr} km`;
   const durationStr = formatDuration(session.durationS);
@@ -218,7 +219,10 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={cardStyles.activityBadge}
           >
-            <Icon name={actIcon} size={20} color={actColor} strokeWidth={1.8} />
+            {isRun
+              ? <RunningIcon size={20} color={actColor} />
+              : <HikingIcon size={20} color={actColor} />
+            }
           </LinearGradient>
           <View style={cardStyles.routeInfo}>
             {/* Activity type pill badge */}

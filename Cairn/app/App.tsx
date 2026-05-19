@@ -12,7 +12,6 @@ import { debugLogger } from './src/services/debugLogger';
 import { registerBackgroundTask } from './src/services/backgroundLocationTask';
 import { telemetryUploader } from './src/services/telemetryUploader';
 import { networkMonitor } from './src/services/networkMonitor';
-import { DebugAnnotationFAB } from './src/components/DebugAnnotationFAB';
 
 // Must run at app entry — handles Google OAuth popup redirect on web
 WebBrowser.maybeCompleteAuthSession();
@@ -200,7 +199,6 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AppRoot />
-      <DebugAnnotationFAB />
     </SafeAreaProvider>
   );
 }

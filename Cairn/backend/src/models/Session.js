@@ -27,6 +27,14 @@ const Session = {
     return rows;
   },
 
+  async deleteByIdAndUser(id, userId) {
+    const [result] = await pool.execute(
+      `DELETE FROM sessions WHERE id = ? AND user_id = ?`,
+      [id, userId]
+    );
+    return result.affectedRows > 0;
+  },
+
   async findByIdAndUser(id, userId) {
     const [rows] = await pool.execute(
       `SELECT id, user_id, route_id, type, start_time, end_time, distance_m, duration_s, route_points, flags, created_at

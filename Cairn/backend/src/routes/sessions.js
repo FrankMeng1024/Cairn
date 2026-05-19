@@ -77,4 +77,22 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
+// ── DELETE /api/sessions/:id ───────────────────────────────────────────────
+router.delete('/:id', authenticate, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id || isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid session ID.' });
+  }
+  try {
+    const deleted = await Session.deleteByIdAndUser(id, req.user.userId);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Session not found.' });
+    }
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('[sessions/delete]', err);
+    return res.status(500).json({ error: 'Server error.' });
+  }
+});
+
 module.exports = router;

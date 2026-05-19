@@ -45,9 +45,17 @@ export async function syncSession(payload: SessionPayload): Promise<number | nul
 }
 
 /**
- * GET the user's session list from the backend.
- * Returns empty array on failure.
+ * DELETE the session from the backend.
+ * Returns true on success, false on failure (caller continues regardless).
  */
+export async function deleteRemoteSession(remoteId: number): Promise<boolean> {
+  try {
+    const res = await authenticatedFetch(`/api/sessions/${remoteId}`, { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 export async function fetchSessions(): Promise<RemoteSession[]> {
   try {
     const res = await authenticatedFetch('/api/sessions');
