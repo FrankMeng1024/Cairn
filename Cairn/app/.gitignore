@@ -39,6 +39,3 @@ yarn-error.*
 # generated native folders
 /ios
 /android
-
-# Secrets — never commit (Mapbox tokens etc)
-.env
