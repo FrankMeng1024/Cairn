@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, FontSize } from './tokens';
 import { Icon } from './Icon';
 import { sendSOS, getEmergencyContacts, type SOSState } from '../services/sosService';
+import { debugLogger } from '../services/debugLogger';
 
 interface Props {
   /** Current GPS coordinates */
@@ -43,6 +44,15 @@ export function SOSButton({ lat, lng, accuracy, onSent, onError }: Props) {
     if (state !== 'idle') return;
     setState('holding');
 
+    debugLogger.log({
+      ts: Date.now(),
+      event: 'sos_triggered',
+      stage: 'longpress_start',
+      lat: lat ?? undefined,
+      lon: lng ?? undefined,
+      accuracy_m: accuracy,
+    });
+
     // Animate hold progress (3 seconds)
     Animated.timing(holdProgress, {
       toValue: 1,
@@ -53,18 +63,42 @@ export function SOSButton({ lat, lng, accuracy, onSent, onError }: Props) {
     // After 3s hold → start countdown
     holdTimer.current = setTimeout(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      debugLogger.log({
+        ts: Date.now(),
+        event: 'sos_triggered',
+        stage: 'longpress_complete',
+        lat: lat ?? undefined,
+        lon: lng ?? undefined,
+        accuracy_m: accuracy,
+      });
+      debugLogger.log({
+        ts: Date.now(),
+        event: 'sos_triggered',
+        stage: 'countdown_start',
+        lat: lat ?? undefined,
+        lon: lng ?? undefined,
+        accuracy_m: accuracy,
+      });
       setState('countdown');
       setCountdown(5);
       startCountdown();
     }, 3000);
-  }, [state]);
+  }, [state, lat, lng, accuracy]);
 
   const handlePressOut = useCallback(() => {
     if (state === 'holding') {
       // Cancelled before 3s hold complete
+      debugLogger.log({
+        ts: Date.now(),
+        event: 'sos_triggered',
+        stage: 'longpress_cancelled',
+        lat: lat ?? undefined,
+        lon: lng ?? undefined,
+        accuracy_m: accuracy,
+      });
       cancelHold();
     }
-  }, [state]);
+  }, [state, lat, lng, accuracy]);
 
   const cancelHold = () => {
     setState('idle');
@@ -76,6 +110,14 @@ export function SOSButton({ lat, lng, accuracy, onSent, onError }: Props) {
   };
 
   const cancelCountdown = () => {
+    debugLogger.log({
+      ts: Date.now(),
+      event: 'sos_triggered',
+      stage: 'countdown_cancelled',
+      lat: lat ?? undefined,
+      lon: lng ?? undefined,
+      accuracy_m: accuracy,
+    });
     setState('idle');
     holdProgress.setValue(0);
     setCountdown(5);

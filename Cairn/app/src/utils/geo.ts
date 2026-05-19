@@ -9,7 +9,8 @@ export type DistanceUnit = 'km' | 'mi';
 export interface Coordinate {
   lat: number;
   lng: number;
-  alt?: number | null;  // meters, nullable (web/simulator may not provide)
+  alt?: number | null;        // meters, nullable (web/simulator may not provide)
+  accuracy?: number | null;   // meters; expo-location coords.accuracy (added Sprint 55)
 }
 
 const EARTH_RADIUS_M = 6_371_000;
@@ -304,11 +305,13 @@ export function smoothGPSPoint(
     }
     state.lastAccepted = raw;
     state.movement = classifyMovement(raw.speed ?? 0);
+    logKalmanEvent(raw, { lat: raw.lat, lon: raw.lng }, false, state.movement);
     return { lat: raw.lat, lng: raw.lng, alt: raw.alt };
   }
 
   // Validate consistency
   if (state.lastAccepted && !isConsistentPoint(state.lastAccepted, raw)) {
+    logKalmanEvent(raw, { lat: raw.lat, lon: raw.lng }, true, state.movement);
     return null; // reject this point
   }
 
@@ -334,7 +337,38 @@ export function smoothGPSPoint(
 
   state.lastAccepted = raw;
 
+  logKalmanEvent(raw, { lat: smoothedLat, lon: smoothedLng }, false, state.movement);
   return { lat: smoothedLat, lng: smoothedLng, alt: smoothedAlt };
+}
+
+// ── Debug logger hook (no-op in web; lazy import to avoid circular dep) ────
+let debugLoggerRef: { log: (e: unknown) => void } | null = null;
+function getDebugLogger() {
+  if (debugLoggerRef) return debugLoggerRef;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    debugLoggerRef = require('../services/debugLogger').debugLogger;
+  } catch {
+    debugLoggerRef = { log: () => {} };
+  }
+  return debugLoggerRef;
+}
+function logKalmanEvent(
+  input: GPSPoint,
+  output: { lat: number; lon: number },
+  rejected: boolean,
+  movement: 'static' | 'walking' | 'running' | 'driving',
+) {
+  try {
+    getDebugLogger()?.log({
+      ts: Date.now(),
+      event: 'kalman_output',
+      input: { lat: input.lat, lon: input.lng, accuracy_m: input.accuracy ?? 10 },
+      output,
+      rejected,
+      movement,
+    });
+  } catch { /* never let logging break GPS pipeline */ }
 }
 
 // ── Route Deviation Detection ───────────────────────────────────────────────

@@ -9,6 +9,7 @@
 import { checkRouteDeviation, isWithinRadius, type Coordinate } from '../utils/geo';
 import { announceP0, announceP1, broadcastService } from './broadcastService';
 import { useRouteStore, type Route, type Waypoint } from '../store/useRouteStore';
+import { debugLogger } from './debugLogger';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -117,6 +118,20 @@ class NavigationController {
       if (isWithinRadius(position, waypoint.lat, waypoint.lng, waypoint.radiusM)) {
         this.state.visitedWaypointIds.add(waypoint.id);
         result.arrivedWaypoint = waypoint;
+
+        // Compute exact distance for debug logging
+        const trueDistance = Math.sqrt(
+          Math.pow((position.lat - waypoint.lat) * 111000, 2) +
+          Math.pow((position.lng - waypoint.lng) * 111000 * Math.cos(position.lat * Math.PI / 180), 2)
+        );
+        debugLogger.log({
+          ts: Date.now(),
+          event: 'waypoint_arrived',
+          waypoint_id: waypoint.id,
+          route_id: route.id,
+          distance_at_trigger_m: trueDistance,
+          expected_radius_m: waypoint.radiusM,
+        });
 
         if (waypoint.announceOnArrival) {
           announceP1(waypoint.label);

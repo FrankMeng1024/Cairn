@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import { storage } from './storage';
 import { generateId } from '../utils/geo';
 import { authenticatedFetch } from '../services/apiService';
+import { debugLogger } from '../services/debugLogger';
 import type { MarkerType } from '../data/mockData';
 
 export type MarkerPermission = 'personal' | 'group' | 'public';
@@ -30,6 +31,8 @@ export interface Marker {
   sessionId?: string;      // which tracking session this was planted in
   synced?: boolean;        // true = exists in backend, false = local-only
   alt?: number;
+  approximate?: boolean;   // true if placed with stale/no GPS signal
+  gpsAgeS?: number;        // seconds since last GPS fix when placed
 }
 
 const STORAGE_KEY_PREFIX = 'cairn_markers';
@@ -47,6 +50,7 @@ function fromBackend(row: {
   lng: number;
   alt?: number | null;
   permission: string;
+  approximate?: number | boolean | null;
   created_at: string;
 }): Marker {
   return {
@@ -61,6 +65,7 @@ function fromBackend(row: {
     createdAt: new Date(row.created_at).getTime(),
     permission: (row.permission as MarkerPermission) || 'personal',
     synced: true,
+    approximate: row.approximate === true || row.approximate === 1 || false,
   };
 }
 
@@ -97,6 +102,19 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
       return { markers: next };
     });
 
+    // Debug logger: marker_placed
+    debugLogger.log({
+      ts: Date.now(),
+      event: 'marker_placed',
+      marker_id: localId,
+      type: String(data.type),
+      lat: data.lat,
+      lon: data.lng,
+      accuracy_m: null,
+      text_length: (data.note ?? '').length,
+      permission: (data.permission ?? 'personal') as 'personal' | 'group' | 'public',
+    });
+
     // Sync to backend
     try {
       const res = await authenticatedFetch('/api/markers', {
@@ -108,6 +126,7 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
           lng: data.lng,
           alt: data.alt,
           permission: data.permission,
+          approximate: data.approximate || false,
         }),
       });
       if (res.ok) {
@@ -137,10 +156,11 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
       return { markers: next };
     });
 
-    // Sync to backend (only text and permission are updatable)
+    // Sync to backend (text, permission, type are updatable)
     const backendUpdates: Record<string, string> = {};
     if (updates.note !== undefined) backendUpdates.text = updates.note;
     if (updates.permission !== undefined) backendUpdates.permission = updates.permission;
+    if (updates.type !== undefined) backendUpdates.type = updates.type;
     if (Object.keys(backendUpdates).length === 0) return;
 
     try {

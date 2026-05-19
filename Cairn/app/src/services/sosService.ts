@@ -13,6 +13,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { debugLogger } from './debugLogger';
+import { networkMonitor } from './networkMonitor';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -105,10 +107,19 @@ export async function sendSOS(
   const contacts = await getEmergencyContacts();
 
   if (contacts.length === 0) {
+    debugLogger.log({
+      ts: Date.now(),
+      event: 'sos_triggered',
+      stage: 'sms_failed',
+      contact_count: 0,
+      error_message: 'No emergency contacts configured',
+      lat, lon: lng, accuracy_m: accuracy,
+    });
     return { success: false, error: 'No emergency contacts configured' };
   }
 
   const message = buildSOSMessage(lat, lng, accuracy);
+  const networkOnline = networkMonitor.isOnline();
 
   // Haptic alert pattern
   await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -127,14 +138,40 @@ export async function sendSOS(
       await Linking.openURL(smsUrl!);
       // Queue for server backup when online
       await queueSOSEvent(lat, lng, accuracy, contacts);
+      debugLogger.log({
+        ts: Date.now(),
+        event: 'sos_triggered',
+        stage: 'sms_sent',
+        contact_count: contacts.length,
+        network_state: networkOnline ? 'online' : 'offline',
+        lat, lon: lng, accuracy_m: accuracy,
+      });
       return { success: true };
     } else {
       // Fallback: queue for server send when online
       await queueSOSEvent(lat, lng, accuracy, contacts);
+      debugLogger.log({
+        ts: Date.now(),
+        event: 'sos_triggered',
+        stage: 'queued_offline',
+        contact_count: contacts.length,
+        network_state: networkOnline ? 'online' : 'offline',
+        lat, lon: lng, accuracy_m: accuracy,
+        error_message: 'SMS app unavailable — queued for server delivery',
+      });
       return { success: true, error: 'SMS app unavailable — queued for server delivery' };
     }
   } catch (error: any) {
     await queueSOSEvent(lat, lng, accuracy, contacts);
+    debugLogger.log({
+      ts: Date.now(),
+      event: 'sos_triggered',
+      stage: 'sms_failed',
+      contact_count: contacts.length,
+      network_state: networkOnline ? 'online' : 'offline',
+      lat, lon: lng, accuracy_m: accuracy,
+      error_message: error?.message || 'Failed to send SOS',
+    });
     return { success: false, error: error.message || 'Failed to send SOS' };
   }
 }

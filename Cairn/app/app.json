@@ -16,8 +16,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.cairn.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Cairn needs your location to track your route and show nearby markers.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Cairn needs background location access to track your route while running.",
+        "NSLocationWhenInUseUsageDescription": "Cairn needs your location to track your track and show nearby markers.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Cairn needs background location to keep recording your track when the screen is locked or you switch apps.",
         "UIBackgroundModes": [
           "location",
           "audio"
@@ -42,7 +42,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Cairn needs background location to track your route while running."
+          "locationAlwaysAndWhenInUsePermission": "Cairn needs background location to keep recording your track when the screen is locked."
         }
       ],
       "expo-secure-store",

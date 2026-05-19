@@ -8,6 +8,8 @@
  * Sprint 46 — STORY-00154
  */
 import * as Speech from 'expo-speech';
+import { AppState } from 'react-native';
+import { debugLogger } from './debugLogger';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -102,14 +104,21 @@ class BroadcastService {
 
     // If 3+ P0 in 60s, merge into area warning
     if (this.consecutiveP0Count >= 3) {
-      this.speak('Caution: sustained hazard area ahead. Stay alert.');
+      // Synthesize a merged item for logging
+      const merged: BroadcastItem = {
+        id: `merged-${now}`,
+        priority: 'P0',
+        message: 'Caution: sustained hazard area ahead. Stay alert.',
+        createdAt: now,
+      };
+      this.speak(merged.message, merged);
       this.consecutiveP0Count = 0;
       this.p0WindowStart = now;
       return;
     }
 
     // Immediate broadcast (interrupts interval)
-    this.speak(item.message);
+    this.speak(item.message, item);
     this.lastBroadcastTime = now;
   }
 
@@ -167,7 +176,7 @@ class BroadcastService {
       this.queue = this.queue.filter(q => !mergedIds.has(q.id));
     }
 
-    this.speak(message);
+    this.speak(message, item, mergeable.length);
     this.lastBroadcastTime = now;
 
     // Schedule next if queue still has items
@@ -180,20 +189,74 @@ class BroadcastService {
    * Speak a message using expo-speech.
    * Audio ducking is handled by expo-speech on iOS (AVAudioSession.duckOthers).
    */
-  private speak(text: string): void {
+  private speak(text: string, sourceItem?: BroadcastItem, mergedCount = 0): void {
     if (this.isSpeaking) {
       Speech.stop();
     }
+
+    const playStart = Date.now();
+    const triggerToPlayLatencyMs = sourceItem ? playStart - sourceItem.createdAt : 0;
+    const appState = AppState.currentState;
+    const appStateNorm: 'active' | 'background' | 'inactive' =
+      appState === 'active' ? 'active' :
+      appState === 'background' ? 'background' : 'inactive';
 
     this.isSpeaking = true;
     Speech.speak(text, {
       language: this.config.language,
       rate: this.config.rate,
       pitch: this.config.pitch,
-      onDone: () => { this.isSpeaking = false; },
-      onError: () => { this.isSpeaking = false; },
+      onDone: () => {
+        this.isSpeaking = false;
+        if (sourceItem) {
+          debugLogger.log({
+            ts: Date.now(),
+            event: 'broadcast_played',
+            priority: sourceItem.priority,
+            category: this.classifyCategory(text),
+            message: text,
+            duration_ms: Date.now() - playStart,
+            trigger_to_play_latency_ms: triggerToPlayLatencyMs,
+            app_state: appStateNorm,
+          });
+        }
+      },
+      onError: () => {
+        this.isSpeaking = false;
+        if (sourceItem) {
+          debugLogger.log({
+            ts: Date.now(),
+            event: 'broadcast_played',
+            priority: sourceItem.priority,
+            category: this.classifyCategory(text),
+            message: text,
+            duration_ms: 0, // failed
+            trigger_to_play_latency_ms: triggerToPlayLatencyMs,
+            app_state: appStateNorm,
+          });
+        }
+      },
       // expo-speech on iOS uses AVAudioSession with ducking by default
     });
+
+    // Suppress unused-var warning for mergedCount (kept for future use)
+    void mergedCount;
+  }
+
+  /**
+   * Best-effort category guess from message text.
+   * Used only for debug logger labelling.
+   */
+  private classifyCategory(text: string): string {
+    const t = text.toLowerCase();
+    if (t.includes('off route') || t.includes('deviation')) return 'deviation';
+    if (t.includes('waypoint') || t.includes('arrived')) return 'waypoint';
+    if (t.includes('danger')) return 'danger';
+    if (t.includes('weather') || t.includes('rain') || t.includes('wind')) return 'weather';
+    if (t.includes('water') || t.includes('supply')) return 'supply';
+    if (t.includes('junction')) return 'junction';
+    if (t.includes('scenic') || t.includes('view')) return 'scenic';
+    return 'other';
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
