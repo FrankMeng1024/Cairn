@@ -2,6 +2,10 @@ FROM node:20-bullseye-slim
 
 WORKDIR /app
 
+# Use Tsinghua Debian mirror for fast apt installs in CN deployments.
+# (Original deb.debian.org pulls at ~50KB/s from CN, killing first build.)
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; s|security.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list
+
 # System dependencies for native modules (bcrypt, mysql2)
 RUN apt-get update && apt-get install -y \
     python3 \
