@@ -17,6 +17,11 @@ const pool = require('./config/db');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust the first reverse proxy (nginx/caddy in production) so req.ip
+// reflects the real client and express-rate-limit isolates per-client.
+// Set TRUST_PROXY=false in dev to use direct connection IP.
+app.set('trust proxy', process.env.TRUST_PROXY === 'false' ? false : 1);
+
 // ── Security middleware ────────────────────────────────────────────────────
 app.use(helmet());
 
@@ -33,7 +38,22 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: '1mb' }));
+// Telemetry payloads can be large (full debug session JSONL); use 12MB ceiling there.
+// Other endpoints stay at 1MB.
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/telemetry')) {
+    express.json({ limit: '12mb' })(req, res, (err) => {
+      if (err) return next(err);
+      // Also accept raw JSONL text bodies for telemetry
+      if (req.headers['content-type']?.startsWith('application/x-ndjson')) {
+        return express.text({ limit: '12mb', type: 'application/x-ndjson' })(req, res, next);
+      }
+      next();
+    });
+  } else {
+    express.json({ limit: '1mb' })(req, res, next);
+  }
+});
 
 // ── Health check ───────────────────────────────────────────────────────────
 app.get('/health', async (req, res) => {
@@ -56,8 +76,10 @@ app.get('/health', async (req, res) => {
 // ── Routes ─────────────────────────────────────────────────────────────────
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/sessions', require('./routes/sessions'));
+app.use('/api/routes', require('./routes/routes'));
 app.use('/api/friends', require('./routes/friends'));
 app.use('/api/markers', require('./routes/markers'));
+app.use('/api/telemetry', require('./routes/telemetry'));
 
 // 404 fallback
 app.use((req, res) => {
