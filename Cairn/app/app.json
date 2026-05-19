@@ -32,7 +32,9 @@
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
+        "ACCESS_BACKGROUND_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -53,6 +55,12 @@
           "RNMapboxMapsImpl": "mapbox"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8c80a6aa-1c08-44a7-8f21-e331ae7548fb"
+      }
+    },
+    "owner": "frankmeng920313"
   }
 }

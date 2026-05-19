@@ -312,7 +312,7 @@ type AuthView = 'splash' | 'login' | 'register' | 'verify' | 'welcome';
 
 export function AuthScreen() {
   const nav = useNavigation<Nav>();
-  const { setLoggedIn, setUIMode, setUser, sessionExpired, setSessionExpired, hydrate } = useAppStore();
+  const { setLoggedIn, setUIMode, setUser, hydrate } = useAppStore();
   const [view, setView] = useState<AuthView>('splash');
   const [welcomeName, setWelcomeName] = useState('');
   const [verifyEmail, setVerifyEmail] = useState('');   // email to verify after register
@@ -321,7 +321,6 @@ export function AuthScreen() {
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0); // seconds remaining
   const [devCode, setDevCode] = useState('');            // dev-only: code returned by backend
-  const [expiredBanner, setExpiredBanner] = useState(sessionExpired);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -367,15 +366,6 @@ export function AuthScreen() {
       nav.replace('Home');
     });
   }, [googleResponse]);
-
-  // Show session-expired banner for 4s then dismiss
-  useEffect(() => {
-    if (!sessionExpired) return;
-    setExpiredBanner(true);
-    setSessionExpired(false);
-    const t = setTimeout(() => setExpiredBanner(false), 4000);
-    return () => clearTimeout(t);
-  }, [sessionExpired]);
 
   const splashFade = useRef(new Animated.Value(0)).current;
   const splashTranslate = useRef(new Animated.Value(8)).current;
@@ -547,13 +537,7 @@ export function AuthScreen() {
   if (view === 'splash') {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        {expiredBanner && (
-          <View style={styles.expiredBanner}>
-            <Icon name="TriangleAlert" size={14} color="#fff" strokeWidth={2} />
-            <Text style={styles.expiredBannerText}>Session expired. Please sign in again.</Text>
-          </View>
-        )}
-        <Animated.View style={[styles.splashInner, { opacity: splashFade, transform: [{ translateY: splashTranslate }] }]}>
+      <Animated.View style={[styles.splashInner, { opacity: splashFade, transform: [{ translateY: splashTranslate }] }]}>
           {/* Hero area */}
           <View style={styles.logoArea}>
             <View style={styles.logoGlowWrap} pointerEvents="none">
@@ -837,6 +821,10 @@ export function AuthScreen() {
           {/* Social login — Sign In only, not on Create Account */}
           {!isRegister && (
             <>
+              <Text style={formStyles.staySignedIn}>
+                You'll stay signed in for 30 days.
+              </Text>
+
               <View style={formStyles.divider}>
                 <View style={formStyles.divLine} />
                 <Text style={formStyles.divText}>or continue with</Text>
@@ -880,11 +868,6 @@ export function AuthScreen() {
 // ── Shared styles ──────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  expiredBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: Colors.danger, paddingHorizontal: Spacing.base, paddingVertical: 10,
-  },
-  expiredBannerText: { color: '#fff', fontSize: FontSize.small, fontWeight: '600', flex: 1 },
   splashInner: {
     flex: 1, justifyContent: 'space-between',
     paddingHorizontal: Spacing.xl, paddingBottom: Spacing.xxl,
@@ -984,6 +967,11 @@ const formStyles = StyleSheet.create({
   },
   privacyContent: { fontSize: FontSize.small, color: Colors.textSecondary, lineHeight: 18 },
   submitBtn: { marginTop: Spacing.lg },
+
+  staySignedIn: {
+    fontSize: FontSize.small, color: Colors.textMuted,
+    textAlign: 'center', marginTop: Spacing.sm,
+  },
 
   divider: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginVertical: Spacing.base },
   divLine: { flex: 1, height: 1, backgroundColor: Colors.border },

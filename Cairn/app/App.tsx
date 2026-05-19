@@ -169,7 +169,11 @@ function AppRoot() {
   // fonts errored. If they're loaded, body text will use Inter; if not,
   // it falls back to system default.
   if (!hydrated) return <View style={{ flex: 1 }} />;
-  if (!fontsLoaded && !fontError) return <View style={{ flex: 1 }} />;
+  // In Playwright bypass mode, skip the font-loading gate — fonts may never
+  // resolve in the sandboxed Chromium (no local file access), but the app
+  // should still render so UI tests can run.
+  const playwrightBypass = process.env.EXPO_PUBLIC_PLAYWRIGHT_BYPASS === 'true';
+  if (!playwrightBypass && !fontsLoaded && !fontError) return <View style={{ flex: 1 }} />;
 
   // Apply Inter as the default font family for every <Text> and <TextInput>
   // in the app — runs once after fonts confirmed loaded. Existing per-component

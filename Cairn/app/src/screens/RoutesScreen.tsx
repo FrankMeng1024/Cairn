@@ -23,6 +23,7 @@ import { PressBtn } from '../components/PressBtn';
 import { formatDistance, formatDuration, haversineM } from '../utils/geo';
 import { MARKER_META, type MarkerType } from '../data/mockData';
 import { shareGPX, sharePDF } from '../services/exportService'; // kept for future Export action
+import { EmptyRoutes, EmptyMarkers } from '../components/Illustrations';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Tab = 'routes' | 'activities' | 'flags';
@@ -62,12 +63,16 @@ function SegmentControl({ active, onChange }: { active: Tab; onChange: (t: Tab) 
 }
 
 // ── Empty State ──────────────────────────────────────────────────────────────
-function EmptyState({ icon, title, hint }: { icon: IconName; title: string; hint: string }) {
+function EmptyState({ icon, title, hint, illustration }: { icon: IconName; title: string; hint: string; illustration?: React.ReactNode }) {
   return (
     <View style={styles.empty}>
-      <View style={styles.emptyIconWrap}>
-        <Icon name={icon} size={36} color={Colors.textMuted} strokeWidth={1.5} />
-      </View>
+      {illustration ? (
+        <View style={{ marginBottom: Spacing.md }}>{illustration}</View>
+      ) : (
+        <View style={styles.emptyIconWrap}>
+          <Icon name={icon} size={36} color={Colors.textMuted} strokeWidth={1.5} />
+        </View>
+      )}
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptyHint}>{hint}</Text>
     </View>
@@ -339,7 +344,7 @@ function ActivitiesTab() {
   const [selectedSession, setSelectedSession] = useState<import('../store/useSessionStore').TrackingSession | null>(null);
 
   if (sessions.length === 0) {
-    return <EmptyState icon="Map" title="No tracks walked yet" hint="Start hiking or running. Your tracks will live here." />;
+    return <EmptyState icon="Map" title="No tracks walked yet" hint="Start hiking or running. Your tracks will live here." illustration={<EmptyRoutes size={160} />} />;
   }
 
   const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
@@ -593,7 +598,7 @@ function FlagsTab() {
   };
 
   if (markers.length === 0) {
-    return <EmptyState icon="Flag" title="No flags planted yet" hint="Leave your first mark when you find something worth noting." />;
+    return <EmptyState icon="Flag" title="No flags planted yet" hint="Leave your first mark when you find something worth noting." illustration={<EmptyMarkers size={160} />} />;
   }
 
   return (

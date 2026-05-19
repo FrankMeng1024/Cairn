@@ -93,6 +93,14 @@ export const useAppStore = create<AppState>((set) => ({
     if (saved === 'beginner' || saved === 'expert') {
       set({ uiMode: saved });
     }
+
+    // Playwright bypass: EXPO_PUBLIC_PLAYWRIGHT_BYPASS=true skips network auth
+    // so UI tests can reach HomeScreen without a live API connection.
+    if (process.env.EXPO_PUBLIC_PLAYWRIGHT_BYPASS === 'true') {
+      set({ isLoggedIn: true, user: { id: '0', name: 'Playwright', email: 'pw@cairn.nz' } as any, hydrated: true });
+      return;
+    }
+
     // Restore auth state from stored JWT
     try {
       const user = await getMe();

@@ -20,6 +20,7 @@ import { Icon } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
 import { PressBtn } from '../components/PressBtn';
 import { useFriendStore, sendFriendRequest, fetchFriendRequests, acceptFriendRequestAPI, rejectFriendRequestAPI } from '../store/useFriendStore';
+import { EmptyFriends } from '../components/Illustrations';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -247,9 +248,7 @@ function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
 function EmptyState({ onAddFriend }: { onAddFriend: () => void }) {
   return (
     <View style={emptyStyles.container}>
-      <View style={emptyStyles.iconWrap}>
-        <Icon name="Users" size={56} color={Colors.textMuted} strokeWidth={1.2} />
-      </View>
+      <EmptyFriends size={160} />
       <Text style={emptyStyles.heading}>Cairn is better with trail companions</Text>
       <Text style={emptyStyles.body}>Invite friends to share markers and stay connected on the track.</Text>
       <PressBtn style={emptyStyles.cta} onPress={onAddFriend} scaleTo={0.96}>
@@ -787,11 +786,6 @@ const emptyStyles = StyleSheet.create({
   container: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     padding: Spacing.xl, gap: Spacing.lg,
-  },
-  iconWrap: {
-    width: 96, height: 96, borderRadius: 48,
-    backgroundColor: Colors.border,
-    alignItems: 'center', justifyContent: 'center',
   },
   heading: {
     fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary,

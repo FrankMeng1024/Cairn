@@ -22,7 +22,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": ""
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.yiiling.cn"
       }
     },
     "preview": {
