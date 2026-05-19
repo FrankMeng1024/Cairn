@@ -40,6 +40,8 @@ services:
       - CAIRN_TELEMETRY_API_KEY=${CAIRN_TELEMETRY_API_KEY}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8082,http://localhost:19006}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - EMAIL_PASS=${EMAIL_PASS:-}
       - TRUST_PROXY=${TRUST_PROXY:-1}
     # On Linux, host.docker.internal needs to be mapped explicitly to the host
     # gateway so the backend container can reach the host's MySQL.
