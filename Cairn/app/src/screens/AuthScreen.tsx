@@ -21,7 +21,7 @@ import {
   KeyboardAvoidingView, Platform, Animated, ScrollView, Dimensions, Alert,
   ActivityIndicator,
 } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Ellipse, Line, G } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -31,6 +31,7 @@ import { useAppStore } from '../store/useAppStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { login, register, loginWithGoogle, verifyCode, resendCode } from '../services/authService';
+import { CairnLogo } from '../components/ActivityIcons/CairnLogo';
 import * as Google from 'expo-auth-session/providers/google';
 import { makeRedirectUri, Prompt } from 'expo-auth-session';
 
@@ -65,124 +66,164 @@ function TrailPath({ onComplete }: { onComplete?: () => void }) {
   );
 }
 
-// ── Animated Cairn Stack ───────────────────────────────────────────────────
-const STONES = [
-  { width: 52, color: Colors.primary },
-  { width: 70, color: '#7a9e5a' },
-  { width: 44, color: Colors.primary },
-  { width: 62, color: '#7a9e5a' },
-  { width: 78, color: '#4a6b38' },
-];
+// ── Animated Cairn Logo — 3-stone ellipse + waving triangle flag ──────────
+// Matches icon_logo_anim14.html: three stacked ellipses rising from base,
+// then flag drops and waves with traveling-wave physics (三角 中波★).
+// All animation via pure setInterval+setState — no Animated API on SVG paths.
 
-// ── Flag pennant with spring bounce ───────────────────────────────────────
-function AnimatedFlag({ visible }: { visible: boolean }) {
-  const scale = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (!visible) return;
-    Animated.spring(scale, {
-      toValue: 1, tension: 180, friction: 6, useNativeDriver: true,
-    }).start();
-  }, [visible]);
-  return (
-    <Animated.View style={[flagStyles.wrap, { transform: [{ scale }] }]}>
-      {/* Pole */}
-      <View style={flagStyles.pole} />
-      {/* Pennant triangle (16×12 primary green) */}
-      <Svg width={16} height={12} style={flagStyles.pennant}>
-        <Path d="M 0 0 L 16 6 L 0 12 Z" fill={Colors.primary} />
-      </Svg>
-    </Animated.View>
-  );
+// Stone rise: 3 stones animate up sequentially (s0=base, s1=mid, s2=top)
+// viewBox: 0 0 22 30 — same as HTML prototype
+const STONE_DEFS = [
+  // base stone
+  { cx: 11,   cy: 23.5, rx: 8.0,  ry: 3.0,  color: '#4a6b38', shadowOp: 0.20, delay: 0    },
+  // mid stone
+  { cx: 9.8,  cy: 16.5, rx: 4.95, ry: 1.98, color: '#5d7c46', shadowOp: 0.24, delay: 140  },
+  // top stone
+  { cx: 12.5, cy: 10.5, rx: 3.06, ry: 1.28, color: '#7a9e5a', shadowOp: 0.28, delay: 280  },
+];
+// Flag pole tip Y (top of top stone)
+const POLE_TIP_Y = 9.22;
+const POLE_X = 12.5;
+
+// Traveling wave config — 三角中波★
+const FLAG_CFG = { f1: 0.52, k1: 0.75, f2: 0.88, k2: 1.15, a2: 0.38, amp: 0.55, p2: 1.1 };
+
+function calcFlagPaths(t: number, fadeIn: number): { flagD: string; sheenD: string } {
+  // Triangle flag: pole at (12.5,1.5)–(12.5,5.5), tip converges to (20,3.5)
+  const X0 = POLE_X, Y_TOP = 1.5, Y_BOT = 5.5, Y_TIP = 3.5, X_TIP = 20, N = 8;
+  const cfg = FLAG_CFG;
+  const ptsTop: [number, number][] = [];
+  const ptsBot: [number, number][] = [];
+  for (let i = 0; i <= N; i++) {
+    const xNorm = i / N;
+    const x = X0 + (X_TIP - X0) * xNorm;
+    const env = xNorm * xNorm;
+    const w1 = Math.sin(2 * Math.PI * (cfg.f1 * t - cfg.k1 * xNorm));
+    const w2 = Math.sin(2 * Math.PI * (cfg.f2 * t - cfg.k2 * xNorm) + cfg.p2);
+    const off = env * cfg.amp * (w1 + cfg.a2 * w2) * fadeIn * 0.5;
+    ptsTop.push([x, Y_TOP + (Y_TIP - Y_TOP) * xNorm + off]);
+    ptsBot.push([x, Y_BOT + (Y_TIP - Y_BOT) * xNorm + off]);
+  }
+  const f = (v: number) => v.toFixed(3);
+  let d = `M ${f(ptsTop[0][0])} ${f(ptsTop[0][1])}`;
+  for (let i = 1; i <= N; i++) {
+    d += ` Q ${f((ptsTop[i-1][0]+ptsTop[i][0])/2)} ${f((ptsTop[i-1][1]+ptsTop[i][1])/2)} ${f(ptsTop[i][0])} ${f(ptsTop[i][1])}`;
+  }
+  for (let i = N - 1; i >= 0; i--) {
+    d += ` Q ${f((ptsBot[i][0]+ptsBot[i+1][0])/2)} ${f((ptsBot[i][1]+ptsBot[i+1][1])/2)} ${f(ptsBot[i][0])} ${f(ptsBot[i][1])}`;
+  }
+  // Sheen: top-half strip 0.7u thick
+  const half = Math.ceil(ptsTop.length / 2);
+  const topH = ptsTop.slice(0, half);
+  let s = `M ${f(topH[0][0])} ${f(topH[0][1])}`;
+  for (let i = 1; i < topH.length; i++) {
+    s += ` Q ${f((topH[i-1][0]+topH[i][0])/2)} ${f((topH[i-1][1]+topH[i][1])/2)} ${f(topH[i][0])} ${f(topH[i][1])}`;
+  }
+  for (let i = topH.length - 2; i >= 0; i--) {
+    const by = topH[i][1] + 0.7, by1 = topH[i+1][1] + 0.7;
+    s += ` Q ${f((topH[i][0]+topH[i+1][0])/2)} ${f((by+by1)/2)} ${f(topH[i][0])} ${f(by)}`;
+  }
+  return { flagD: d + ' Z', sheenD: s + ' Z' };
 }
-const flagStyles = StyleSheet.create({
-  wrap: { alignItems: 'flex-start', position: 'absolute', top: -22, left: '50%', marginLeft: -1 },
-  pole: { width: 2, height: 20, backgroundColor: Colors.textPrimary, opacity: 0.7 },
-  pennant: { position: 'absolute', top: 2, left: 2 },
-});
 
-// ── Particle dust ──────────────────────────────────────────────────────────
-const PARTICLE_OFFSETS = [
-  { dx: -18, dy: -12 }, { dx: 14, dy: -16 },
-  { dx: -22, dy: 4 },  { dx: 18, dy: 2 },
-  { dx: -8, dy: -20 },
-];
-function Particles({ visible }: { visible: boolean }) {
-  const anims = useRef(PARTICLE_OFFSETS.map(() => new Animated.Value(0))).current;
+// Full logo: stones rise sequentially, then flag drops + waves
+// size prop scales the whole SVG (used for small version in verify screen)
+function AnimatedCairn({ size = 4, noFlag = false, onComplete }: { size?: number; noFlag?: boolean; onComplete?: () => void }) {
+  // Stone visibility: 0=hidden → 1=risen
+  const [stoneY, setStoneY] = useState([6, 6, 6]); // translateY offsets — start slightly below, rise to 0
+  const [stoneOp, setStoneOp] = useState([0, 0, 0]);
+  const [showFlag, setShowFlag] = useState(false);
+  const [flagDropY, setFlagDropY] = useState(-26); // matches flagDrop keyframe in HTML
+  const [flagD, setFlagD] = useState('');
+  const [sheenD, setSheenD] = useState('');
+  const waveStartRef = useRef<number | null>(null);
+  const waveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
-    if (!visible) return;
-    Animated.stagger(40, anims.map((a) =>
-      Animated.timing(a, { toValue: 1, duration: 400, useNativeDriver: true })
-    )).start();
-  }, [visible]);
+    // Animate each stone rising in sequence
+    STONE_DEFS.forEach((_, idx) => {
+      setTimeout(() => {
+        // Rise over 320ms
+        const start = Date.now();
+        const timer = setInterval(() => {
+          const p = Math.min((Date.now() - start) / 320, 1);
+          // ease out cubic
+          const ease = 1 - Math.pow(1 - p, 3);
+          setStoneY(prev => { const n = [...prev]; n[idx] = 6 * (1 - ease); return n; });
+          setStoneOp(prev => { const n = [...prev]; n[idx] = ease; return n; });
+          if (p >= 1) {
+            clearInterval(timer);
+            // After top stone rises, show flag
+            if (idx === 2) {
+              onComplete?.();
+              if (!noFlag) setTimeout(() => setShowFlag(true), 50);
+            }
+          }
+        }, 16);
+      }, STONE_DEFS[idx].delay);
+    });
+    return () => { if (waveTimerRef.current) clearInterval(waveTimerRef.current); };
+  }, []);
+
+  // Once flag is shown, animate drop then wave
+  useEffect(() => {
+    if (!showFlag) return;
+    waveStartRef.current = null;
+    const dropStart = Date.now();
+    waveTimerRef.current = setInterval(() => {
+      const now = Date.now();
+      if (!waveStartRef.current) waveStartRef.current = now;
+      const t = (now - waveStartRef.current) / 1000;
+      const fadeIn = Math.min(t / 1.4, 1);
+      // Drop: -26 → 0 over 400ms (mirrors flagDrop CSS)
+      const dropElapsed = now - dropStart;
+      const dy = dropElapsed < 400 ? -26 + (26 * dropElapsed / 400) : 0;
+      setFlagDropY(dy);
+      const { flagD: fd, sheenD: sd } = calcFlagPaths(t, fadeIn);
+      setFlagD(fd);
+      setSheenD(sd);
+    }, 16);
+    return () => { if (waveTimerRef.current) clearInterval(waveTimerRef.current); };
+  }, [showFlag]);
+
+  const SVG_W = 22 * size, SVG_H = 30 * size;
+
   return (
-    <View style={{ position: 'absolute', top: -20 }} pointerEvents="none">
-      {PARTICLE_OFFSETS.map((p, i) => (
-        <Animated.View
-          key={i}
-          style={{
-            position: 'absolute',
-            width: 3, height: 3, borderRadius: 1.5,
-            backgroundColor: Colors.primary,
-            opacity: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0.8, 0] }),
-            transform: [
-              { translateX: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0, p.dx] }) },
-              { translateY: anims[i].interpolate({ inputRange: [0, 1], outputRange: [0, p.dy] }) },
-            ],
-          }}
-        />
-      ))}
+    <View style={{ width: SVG_W, height: SVG_H }}>
+      <Svg width={SVG_W} height={SVG_H} viewBox="0 0 22 30" fill="none">
+        {/* Shadow ellipse under base */}
+        <Ellipse cx="11" cy="28.5" rx="8.5" ry="1.0" fill="#4a6b38" opacity={0.10} />
+
+        {/* 3 stones — rise from bottom */}
+        {STONE_DEFS.map((s, i) => (
+          <G key={i} transform={`translate(0, ${stoneY[i]})`} opacity={stoneOp[i]}>
+            <Ellipse cx={s.cx} cy={s.cy} rx={s.rx} ry={s.ry} fill={s.color} />
+            <Path
+              d={`M ${s.cx - s.rx} ${s.cy} a ${s.rx} ${s.ry} 0 0 0 ${s.rx * 2} 0`}
+              fill="#2d4a20"
+              opacity={s.shadowOp}
+            />
+          </G>
+        ))}
+
+        {/* Flag pole + waving flag — drops after stones complete */}
+        {showFlag && (
+          <G transform={`translate(0, ${flagDropY})`}>
+            <Line
+              x1={POLE_X} y1="1.5" x2={POLE_X} y2={POLE_TIP_Y}
+              stroke="#3d5c30" strokeWidth="1.1" strokeLinecap="round"
+            />
+            {flagD ? <Path d={flagD} fill="#7a9e5a" /> : null}
+            {sheenD ? <Path d={sheenD} fill="white" opacity={0.22} /> : null}
+          </G>
+        )}
+      </Svg>
     </View>
   );
 }
 
-function AnimatedCairn({ size = 1, onComplete }: { size?: number; onComplete?: () => void }) {
-  const anims = useRef(STONES.map(() => new Animated.Value(0))).current;
-  const glow = useRef(new Animated.Value(0.6)).current;
-  const [showFlag, setShowFlag] = useState(false);
-
-  useEffect(() => {
-    Animated.stagger(90, STONES.map((_, i) =>
-      Animated.spring(anims[i], { toValue: 1, tension: 100, friction: 8, useNativeDriver: true })
-    )).start(() => {
-      setShowFlag(true);
-      onComplete?.();
-      Animated.sequence([
-        Animated.timing(glow, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.timing(glow, { toValue: 0.7, duration: 500, useNativeDriver: true }),
-        Animated.timing(glow, { toValue: 1, duration: 400, useNativeDriver: true }),
-      ]).start();
-    });
-  }, []);
-
-  return (
-    <Animated.View style={[cairnStyles.container, { opacity: glow, transform: [{ scale: size }] }]}>
-      {STONES.slice().reverse().map((stone, ri) => {
-        const i = STONES.length - 1 - ri;
-        return (
-          <Animated.View
-            key={i}
-            style={[
-              cairnStyles.stone,
-              {
-                width: stone.width,
-                backgroundColor: stone.color,
-                opacity: anims[i],
-                transform: [{ translateY: anims[i].interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
-              },
-            ]}
-          />
-        );
-      })}
-      {/* Flag appears on top of cairn after stones complete */}
-      <AnimatedFlag visible={showFlag} />
-      <Particles visible={showFlag} />
-    </Animated.View>
-  );
-}
-
 const cairnStyles = StyleSheet.create({
-  container: { alignItems: 'center', gap: 5 },
-  stone: { height: 14, borderRadius: 7 },
+  container: { alignItems: 'center' },
 });
 
 // ── Press-animated wrapper ─────────────────────────────────────────────────
@@ -486,7 +527,23 @@ export function AuthScreen() {
         nav.replace('Home');
       }
     } catch (e: any) {
-      setApiError(e?.message || 'Unable to connect. Please try again.');
+      const msg: string = e?.message || '';
+      // TypeError / "Failed to fetch" / "Network request failed" = network unreachable
+      if (
+        e?.name === 'TypeError' ||
+        msg.includes('Network request failed') ||
+        msg.includes('Failed to fetch') ||
+        msg.includes('NetworkError') ||
+        msg.includes('net::') ||
+        msg.includes('ECONNREFUSED') ||
+        msg.includes('ENOTFOUND')
+      ) {
+        setApiError('Cannot reach the server. Check your internet connection and try again.');
+      } else if (msg) {
+        setApiError(msg);
+      } else {
+        setApiError('Something went wrong. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -550,7 +607,6 @@ export function AuthScreen() {
             </View>
             {/* Trail path draws first, then cairn stacks up */}
             <View style={{ position: 'relative', alignItems: 'center' }}>
-              <TrailPath onComplete={() => setTrailComplete(true)} />
               <AnimatedCairn onComplete={animateWordmark} />
             </View>
             {/* Wordmark fades in after cairn completes */}
@@ -602,7 +658,7 @@ export function AuthScreen() {
             </TouchableOpacity>
 
             <View style={formStyles.titleRow}>
-              <AnimatedCairn size={0.5} />
+              <CairnLogo size={28} />
               <Text style={formStyles.title}>Check your email</Text>
             </View>
             <Text style={formStyles.sub}>
@@ -703,7 +759,7 @@ export function AuthScreen() {
 
           {/* Title row: small icon inline-left of title */}
           <View style={formStyles.titleRow}>
-            <AnimatedCairn size={0.5} />
+            <CairnLogo size={28} />
             <Text style={formStyles.title}>{isRegister ? 'Create Account' : 'Sign In'}</Text>
           </View>
           {isRegister && (

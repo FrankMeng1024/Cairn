@@ -1,11 +1,6 @@
 /**
- * HikingIcon — asymmetric mountain peak silhouette with a single
- * curved trail path crossing it. Premium outdoor app convention:
- * AllTrails / Garmin / Apple Watch all use mountain-as-hiking metaphor,
- * not a human figure. Filled silhouette approach.
- *
- * Geometry: peak offset left of center (~10,4), right shoulder notch at (16,12)
- * to feel like a real mountain, not an equilateral triangle.
+ * HikingIcon — NZ mountain silhouette.
+ * Two-peak mountain range with snow cap detail.
  */
 import React from 'react';
 import Svg, { Path } from 'react-native-svg';
@@ -18,22 +13,14 @@ interface Props {
 export function HikingIcon({ size = 48, color = '#5d7c46' }: Props) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      {/* Mountain silhouette — filled, asymmetric peak */}
-      <Path
-        d="M 2 20 L 10 4 L 14.5 10.5 L 16.5 8 L 22 20 Z"
-        fill={color}
-        fillOpacity="0.90"
-      />
-      {/* Trail path — single curved line over the mountain, white cutout feel */}
-      <Path
-        d="M 4 20 Q 9 14 10.5 11 Q 13 15 15.5 12 Q 18 16 20 20"
-        stroke="white"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-        strokeOpacity="0.55"
-      />
+      {/* Ground line */}
+      <Path d="M 1 20 L 23 20" stroke={color} strokeWidth="1.4" strokeLinecap="round" opacity={0.45}/>
+      {/* Left smaller peak */}
+      <Path d="M 1 20 L 7 9 L 11.5 15" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      {/* Right main peak */}
+      <Path d="M 8 20 L 15 4 L 23 20" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      {/* Snow cap */}
+      <Path d="M 15 4 L 12.5 8.5 L 17.5 8.5 Z" fill={color} opacity={0.35}/>
     </Svg>
   );
 }

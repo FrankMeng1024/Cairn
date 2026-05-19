@@ -1,9 +1,6 @@
 /**
- * RunningIcon — sport running shoe silhouette.
- * Uses lucide's SportShoe path data (ISC license) as the base,
- * rendered as a filled + stroked icon matching the app's design system.
- * Reference: Komoot uses shoe/boot metaphor for activity icons — reads
- * more premium than a human figure, scales better at small sizes.
+ * RunningIcon — Footprints (Filled).
+ * Lucide footprints shape, solid fill for maximum contrast at small sizes.
  */
 import React from 'react';
 import Svg, { Path } from 'react-native-svg';
@@ -15,29 +12,12 @@ interface Props {
 
 export function RunningIcon({ size = 48, color = '#3a7bbf' }: Props) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="m15 10.42 4.8-5.07"
-        stroke={color}
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M19 18h3"
-        stroke={color}
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M9.5 22 21.414 9.415A2 2 0 0 0 21.2 6.4l-5.61-4.208A1 1 0 0 0 14 3v2a2 2 0 0 1-1.394 1.906L8.677 8.053A1 1 0 0 0 8 9c-.155 6.393-2.082 9-4 9a2 2 0 0 0 0 4h14"
-        stroke={color}
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <Path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" />
+      <Path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" />
+      {/* toe detail lines in negative space */}
+      <Path d="M16 17h4" stroke="white" strokeWidth={1.5} strokeLinecap="round" fill="none" />
+      <Path d="M4 13h4" stroke="white" strokeWidth={1.5} strokeLinecap="round" fill="none" />
     </Svg>
   );
 }
