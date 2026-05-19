@@ -2,6 +2,7 @@
  * Design tokens — mirrors UI_SPEC.md exactly.
  * Single import for all components.
  */
+import { Easing } from 'react-native';
 export const Colors = {
   primary: '#5d7c46',
   primaryLight: 'rgba(93,124,70,0.15)',
@@ -33,6 +34,18 @@ export const Colors = {
   infoBg: '#dce8f4',
   success: '#2e8c3a',
   successBg: '#dcf4de',
+  // ── PRD3 E-016: NZ severity ladder (MetService / DOC / NZAA standard) ──
+  // Use these for safety-grade UI: weather warnings, deviation alerts, hazards.
+  // Migrate from `warning` → `severityWarning` over time so true DOC orange
+  // is reserved for safety markers (the on-track triangle waymarker).
+  severityNotice:  '#3D7A4B',   // safe / open  — green
+  severityCaution: '#F0C419',   // notice       — yellow (MetService Watch)
+  severityWarning: '#F26522',   // warning      — DOC step orange (#F26522)
+  severityDanger:  '#D52B1E',   // severe       — red (MetService Severe)
+  severityExtreme: '#1A1A1A',   // extreme      — black (avalanche level 5)
+  // Aliases for the most-used colors above
+  docOrange:       '#F26522',   // alias of severityWarning — for DOC waymarker pin
+  alertRed:        '#D52B1E',   // alias of severityDanger — for SOS / extreme
   night: '#5a4fcf',               // night/sleep mode icon color
   // Gradient stops — pre-computed for activity cards and running route badges
   runningGrad: 'rgba(61,122,181,0.24)',  // running blue deep gradient stop
@@ -42,7 +55,10 @@ export const Colors = {
   mapBg: '#e8f0e0',               // topo map background (sage green)
   trail: '#b5823d',               // route trail line color (warm brown)
   // UI utility tokens
-  overlayDark: 'rgba(0,0,0,0.4)',  // modal/bottom-sheet dark scrim
+  // Modal/bottom-sheet backdrop. Soft cream tint, NOT a black scrim, so
+  // sheets feel like part of the same surface rather than a foreign overlay.
+  // Renamed from "overlayDark" — the old name lied about what it does.
+  overlayDark: 'rgba(250,247,242,0.55)',
   switchTrack: '#E0E0E0',          // toggle switch inactive track
 } as const;
 
@@ -161,4 +177,13 @@ export const Timing = {
   fast: 150,
   normal: 250,
   slow: 400,
+} as const;
+
+// ── Animation Presets (for bottom sheets and screen transitions) ─────────────
+// open: cubic easeOut — starts fast, decelerates gently into final position
+// close: quad easeIn — starts slow, accelerates away — feels like being pulled
+export const AnimationPreset = {
+  sheetOpen:  { duration: 280, easing: Easing.out(Easing.cubic) },
+  sheetClose: { duration: 220, easing: Easing.in(Easing.quad) },
+  fadeIn:     { duration: 200, easing: Easing.out(Easing.ease) },
 } as const;

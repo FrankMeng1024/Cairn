@@ -6,7 +6,7 @@
 import React from 'react';
 import {
   Mountain, PersonStanding, Map, Users, Settings2,
-  ChevronRight, ChevronLeft, ChevronDown, Play, Square, Flag,
+  ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Play, Square, Flag,
   TriangleAlert, Star, Navigation, Lock, Unlock,
   Target, Timer, Heart, Zap, MapPin, Route,
   // Sprint 8
@@ -30,12 +30,14 @@ import {
   PlayCircle,
   // Sprint 42+ (Phase 1-2)
   Pause, Pencil, Undo2, TrendingUp, Phone, Signal, MessageCircle,
+  // Sprint 54
+  Search, Plus, Edit3,
 } from 'lucide-react-native';
 import { IconSize } from './tokens';
 
 const ICON_MAP = {
   Mountain, PersonStanding, Map, Users, Settings2,
-  ChevronRight, ChevronLeft, ChevronDown, Play, Square, Flag,
+  ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Play, Square, Flag,
   TriangleAlert, Star, Navigation, Lock, Unlock,
   Target, Timer, Heart, Zap, MapPin, Route,
   Droplets, X, Trash2, Navigation2, GitBranch,
@@ -49,6 +51,7 @@ const ICON_MAP = {
   RotateCcw, Download,
   PlayCircle,
   Pause, Pencil, Undo2, TrendingUp, Phone, Signal, MessageCircle,
+  Search, Plus, Edit3,
 } as const;
 
 export type IconName = keyof typeof ICON_MAP;

@@ -11,7 +11,7 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Share,
+  View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Easing, Share, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -67,8 +67,12 @@ function StatItem({ value, label }: { value: string; label: string }) {
 export function RunningScreen() {
   const nav = useNavigation<Nav>();
   const routes = useRouteStore(s => s.routes);
+  const loadRoutes = useRouteStore(s => s.loadRoutes);
   const [runState, setRunState] = useState<RunState>('pre');
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
+  const [showRoutePicker, setShowRoutePicker] = useState(false);
+  const routePickerSlide = useRef(new Animated.Value(300)).current;
+  const routePickerOpacity = useRef(new Animated.Value(0)).current;
   const [isLocked, setIsLocked] = useState(true);
   const [tapCount, setTapCount] = useState(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,6 +88,28 @@ export function RunningScreen() {
 
   // Keep screen awake when running
   useRunKeepAwake();
+
+  useEffect(() => { loadRoutes(); }, []);
+
+  const openRoutePicker = () => {
+    setShowRoutePicker(true);
+    Animated.parallel([
+      Animated.timing(routePickerSlide, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(routePickerOpacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    ]).start();
+  };
+  const closeRoutePicker = () => {
+    Animated.parallel([
+      Animated.timing(routePickerSlide, { toValue: 300, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(routePickerOpacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => setShowRoutePicker(false));
+  };
+  const pickRoute = (id: string | null) => {
+    setSelectedRoute(id);
+    closeRoutePicker();
+  };
+
+  const selectedRouteName = routes.find(r => r.id === selectedRoute)?.name ?? 'Free Run';
 
   // Animated values
   const startBtnScale = useRef(new Animated.Value(1)).current;
@@ -132,7 +158,7 @@ export function RunningScreen() {
     setRunState('stopped');
   }
 
-  const selectedRouteName = routes.find(r => r.id === selectedRoute)?.name;
+  const activeRouteName = routes.find(r => r.id === selectedRoute)?.name;
 
   // Format display values
   const distDisplay = locationAvailable ? formatDistance(distanceM, 'km', 2) : '--';
@@ -209,95 +235,122 @@ export function RunningScreen() {
   // ── Pre-start ─────────────────────────────────────────────────────────────
   if (runState === 'pre') {
     return (
-      <SafeAreaView style={preStyles.container} edges={['top', 'bottom']}>
-        {/* Header */}
-        <View style={preStyles.header}>
-          <View style={preStyles.topBar}>
-            <BackButton variant="inline" />
-            <Text style={preStyles.title}>Running Mode</Text>
-            <View style={{ width: 60 }} />
-          </View>
-          <Text style={preStyles.subtitle}>Select a route (optional)</Text>
+      <View style={{ flex: 1, backgroundColor: Colors.primaryBg }}>
+        {/* Map placeholder (same as Hiking fallback) */}
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md }}>
+          <Icon name="Map" size={48} color={Colors.primaryMuted} />
+          <Text style={{ fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary }}>
+            Real Map (EAS Build)
+          </Text>
+          <Text style={{ fontSize: FontSize.body, color: Colors.textSecondary, textAlign: 'center' }}>
+            Build with EAS to enable live tracking map
+          </Text>
         </View>
 
-        {/* Route list */}
-        <View style={preStyles.routeList}>
-          {/* Free run */}
-          <TouchableOpacity
-            style={[preStyles.routeCard, selectedRoute === null && preStyles.routeCardSelectedGreen]}
-            onPress={() => setSelectedRoute(null)}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={[Colors.primaryLight, Colors.primaryDeep]}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={preStyles.routeIconBadge}
-            >
-              <Icon name="Target" size={IconSize.md} color={Colors.primary} strokeWidth={1.8} />
-            </LinearGradient>
-            <View style={{ flex: 1 }}>
-              <Text style={preStyles.routeName}>Free Run</Text>
-              <Text style={preStyles.routeMeta}>GPS tracking · Any route</Text>
+        {/* Top overlay: back + GPS chip */}
+        <SafeAreaView style={preStyles.topOverlay} edges={['top']} pointerEvents="box-none">
+          <View style={preStyles.topRow}>
+            <BackButton variant="pill" onPress={() => nav.goBack()} />
+            <View style={preStyles.gpsChip}>
+              <View style={[preStyles.gpsDot, { backgroundColor: Colors.warning }]} />
+              <Text style={preStyles.gpsText}>Enable GPS</Text>
             </View>
-            {selectedRoute === null && (
-              <View style={[preStyles.checkBadge, { backgroundColor: Colors.primary }]}>
-                <Icon name="Check" size={14} color="#fff" strokeWidth={3} />
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {routes.map(r => (
-            <TouchableOpacity
-              key={r.id}
-              style={[preStyles.routeCard, selectedRoute === r.id && preStyles.routeCardSelected]}
-              onPress={() => setSelectedRoute(r.id)}
-              activeOpacity={0.85}
-            >
-              <LinearGradient
-                colors={[Colors.runningLight, Colors.runningGrad]}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={preStyles.routeIconBadge}
-              >
-                <Icon name="Route" size={IconSize.md} color={Colors.running} strokeWidth={1.8} />
-              </LinearGradient>
-              <View style={{ flex: 1 }}>
-                <Text style={preStyles.routeName}>{r.name}</Text>
-                <Text style={preStyles.routeMeta}>{(r.distanceM / 1000).toFixed(1)} km</Text>
-              </View>
-              {selectedRoute === r.id && (
-                <View style={[preStyles.checkBadge, { backgroundColor: Colors.running }]}>
-                  <Icon name="Check" size={14} color="#fff" strokeWidth={3} />
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Start footer */}
-        <View style={preStyles.footer}>
-          <Animated.View style={{ transform: [{ scale: startBtnScale }] }}>
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={handleStart}
-              onPressIn={onStartPressIn}
-              onPressOut={onStartPressOut}
-            >
-              <LinearGradient
-                colors={[Colors.primary, Colors.primaryDark]}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={preStyles.startBtn}
-              >
-                <Icon name="Play" size={IconSize.md} color="#fff" strokeWidth={2} />
-                <Text style={preStyles.startBtnText}>Start Running</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </Animated.View>
-          <View style={preStyles.lockHintRow}>
-            <Icon name="Lock" size={16} color={Colors.textMuted} strokeWidth={2} />
-            <Text style={preStyles.lockHint}>Double-tap to unlock</Text>
           </View>
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+
+        {/* Bottom: route pill + start button */}
+        <SafeAreaView style={preStyles.bottomOverlay} edges={['bottom']} pointerEvents="box-none">
+          <View style={preStyles.bottomPanel}>
+            {/* Route selector pill — card style */}
+            <TouchableOpacity style={preStyles.routePill} onPress={openRoutePicker} activeOpacity={0.85}>
+              <View style={preStyles.routePillIcon}>
+                <Icon name={selectedRoute ? 'Route' : 'Target'} size={20} color={Colors.running} strokeWidth={1.8} />
+              </View>
+              <View style={preStyles.routePillTextGroup}>
+                <Text style={preStyles.routePillText} numberOfLines={1}>{selectedRouteName}</Text>
+                <Text style={preStyles.routePillHint}>Tap to change route</Text>
+              </View>
+              <Icon name="ChevronUp" size={16} color={Colors.running} strokeWidth={2.5} />
+            </TouchableOpacity>
+
+            {/* Start button row */}
+            <View style={preStyles.bottomRow}>
+              <Animated.View style={[{ flex: 1, height: 56 }, { transform: [{ scale: startBtnScale }] }]}>
+                <TouchableOpacity
+                  activeOpacity={1}
+                  onPress={handleStart}
+                  onPressIn={onStartPressIn}
+                  onPressOut={onStartPressOut}
+                >
+                  <LinearGradient
+                    colors={[Colors.primary, Colors.primaryDark]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                    style={preStyles.startBtn}
+                  >
+                    <Icon name="Play" size={IconSize.sm} color="#fff" strokeWidth={2.5} />
+                    <Text style={preStyles.startBtnText}>Start Running</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+            <View style={preStyles.lockHintRow}>
+              <Icon name="Lock" size={14} color={Colors.textMuted} strokeWidth={2} />
+              <Text style={preStyles.lockHint}>Screen locks automatically</Text>
+            </View>
+          </View>
+        </SafeAreaView>
+
+        {/* Route picker sheet */}
+        {showRoutePicker && (
+          <Animated.View style={[preStyles.routePickerBackdrop, { opacity: routePickerOpacity }]}>
+            <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={closeRoutePicker} activeOpacity={1} />
+            <Animated.View style={[preStyles.routePickerSheet, { transform: [{ translateY: routePickerSlide }] }]}>
+              <View style={preStyles.routePickerHandle} />
+              <Text style={preStyles.routePickerTitle}>Choose a route</Text>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 280 }} contentContainerStyle={{ gap: Spacing.sm }}>
+                {/* Free Run */}
+                <TouchableOpacity
+                  style={[preStyles.routePickerRow, selectedRoute === null && preStyles.routePickerRowSelected]}
+                  onPress={() => pickRoute(null)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[preStyles.routePickerBadge, { backgroundColor: Colors.runningLight }]}>
+                    <Icon name="Target" size={16} color={Colors.running} strokeWidth={2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={preStyles.routePickerName}>Free Run</Text>
+                    <Text style={preStyles.routePickerMeta}>No route · explore freely</Text>
+                  </View>
+                  {selectedRoute === null && <Icon name="Check" size={16} color={Colors.running} strokeWidth={2.5} />}
+                </TouchableOpacity>
+
+                {/* Saved routes */}
+                {routes.map(r => (
+                  <TouchableOpacity
+                    key={r.id}
+                    style={[preStyles.routePickerRow, selectedRoute === r.id && preStyles.routePickerRowSelected]}
+                    onPress={() => pickRoute(r.id)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[preStyles.routePickerBadge, { backgroundColor: Colors.runningLight }]}>
+                      <Icon name="Route" size={16} color={Colors.running} strokeWidth={2} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={preStyles.routePickerName}>{r.name}</Text>
+                      <Text style={preStyles.routePickerMeta}>
+                        {(r.distanceM / 1000).toFixed(1)} km
+                        {r.elevationGainM > 0 ? ` · ↑${Math.round(r.elevationGainM)}m` : ''}
+                        {r.runCount > 0 ? ` · ${r.runCount}× done` : ''}
+                      </Text>
+                    </View>
+                    {selectedRoute === r.id && <Icon name="Check" size={16} color={Colors.running} strokeWidth={2.5} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </Animated.View>
+          </Animated.View>
+        )}
+      </View>
     );
   }
 
@@ -329,8 +382,8 @@ export function RunningScreen() {
               <Icon name="Navigation" size={72} color={Colors.primary} strokeWidth={1.5} />
               <Text style={runStyles.compassDir}>Keep going</Text>
             </View>
-            {selectedRouteName && (
-              <Text style={runStyles.routeLabel}>{selectedRouteName}</Text>
+            {activeRouteName && (
+              <Text style={runStyles.routeLabel}>{activeRouteName}</Text>
             )}
           </View>
 
@@ -408,7 +461,8 @@ const preStyles = StyleSheet.create({
   },
   subtitle: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 4 },
 
-  routeList: { flex: 1, paddingHorizontal: Spacing.base, gap: Spacing.sm },
+  routeList: { paddingHorizontal: Spacing.base, gap: Spacing.sm, marginBottom: Spacing.md },
+  selectLabel: { fontSize: FontSize.small, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 },
   routeCard: {
     backgroundColor: Colors.surface, borderRadius: Radius.card,
     flexDirection: 'row', alignItems: 'center',
@@ -430,13 +484,67 @@ const preStyles = StyleSheet.create({
     backgroundColor: Colors.running, alignItems: 'center', justifyContent: 'center',
   },
 
+  // New compact layout
+  bottomPanel: { paddingHorizontal: Spacing.base, paddingBottom: Spacing.xs, gap: Spacing.sm },
+  routePill: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.97)', borderRadius: Radius.card,
+    padding: Spacing.md,
+    borderWidth: 1.5, borderColor: Colors.running + '40',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10, shadowRadius: 14, elevation: 5,
+  },
+  routePillIcon: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: Colors.runningLight, alignItems: 'center', justifyContent: 'center',
+  },
+  routePillTextGroup: { flex: 1, gap: 1 },
+  routePillText: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  routePillHint: { fontSize: FontSize.small, color: Colors.running, fontWeight: '500' },
+  routePillChevron: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: Colors.runningLight, alignItems: 'center', justifyContent: 'center',
+  },
+
+  routePickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+  },
+  routePickerSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.sm, paddingBottom: Spacing.xxl,
+    gap: Spacing.sm,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 20, elevation: 12,
+  },
+  routePickerHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: Colors.border, alignSelf: 'center', marginBottom: Spacing.xs,
+  },
+  routePickerTitle: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 },
+  routePickerRow: {
+    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: Radius.card,
+    flexDirection: 'row', alignItems: 'center',
+    padding: Spacing.base, gap: Spacing.md,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    borderLeftWidth: 3, borderLeftColor: 'transparent',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
+  },
+  routePickerRowSelected: { borderLeftColor: Colors.running, backgroundColor: Colors.runningCardBg, borderColor: Colors.runningBorder },
+  routePickerBadge: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: Colors.runningLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  routePickerName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  routePickerMeta: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+
   footer: { padding: Spacing.xl, gap: Spacing.sm },
   startBtn: {
-    borderRadius: Radius.button,
-    paddingVertical: Spacing.lg, alignItems: 'center',
+    borderRadius: Radius.pill,
+    height: 60, alignItems: 'center',
     flexDirection: 'row', gap: Spacing.sm, justifyContent: 'center',
   },
-  startBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.h3 },
+  startBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
   lockHintRow: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center' },
   lockHint: { fontSize: FontSize.small, color: Colors.textMuted, textAlign: 'center' },
   shareBtn: {
@@ -462,11 +570,32 @@ const preStyles = StyleSheet.create({
   },
   summaryStatLbl: { fontSize: FontSize.small, color: Colors.textSecondary },
   summaryDivider: { width: 1, height: 36, backgroundColor: Colors.border },
+
+  // Hiking-style overlay layout
+  topOverlay: { position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'box-none' },
+  topRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.lg, gap: Spacing.sm,
+  },
+  gpsChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.warningBg, borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md, paddingVertical: 7,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
+  },
+  gpsDot: { width: 8, height: 8, borderRadius: 4 },
+  gpsText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.warning },
+  bottomOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, pointerEvents: 'box-none' },
+  bottomRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: Spacing.base, gap: Spacing.sm,
+  },
 });
 
 // ── Styles: running ─────────────────────────────────────────────────────────
 const runStyles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: Colors.runningBg },
   bg: { flex: 1, backgroundColor: Colors.runningBg },
 
   statsBar: {

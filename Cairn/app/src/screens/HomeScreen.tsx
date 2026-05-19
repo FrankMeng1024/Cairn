@@ -29,7 +29,9 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 function getGreeting(mode: 'beginner' | 'expert') {
   const h = new Date().getHours();
   const label = mode === 'expert' ? 'Navigator' : 'Explorer';
-  if (h >= 5 && h < 12) return `Good morning, ${label}`;
+  // PRD3 E-014: occasional Te Reo touch — Kia ora as morning variant
+  // (registered translator review pending — Kia ora is a well-established greeting)
+  if (h >= 5 && h < 12) return `Kia ora, ${label}`;
   if (h >= 12 && h < 18) return `Good afternoon, ${label}`;
   return `Good evening, ${label}`;
 }
@@ -222,7 +224,7 @@ export function HomeScreen() {
           <ActivityCard
             iconName="Mountain"
             title="Hiking"
-            subtitle="Navigate trails · Plant flags · Explore"
+            subtitle="Navigate tracks · Leave cairns · Explore at your pace"
             accentColor={Colors.primary}
             lightBg={Colors.primaryLight}
             cardBg="#eef4e8"

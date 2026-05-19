@@ -166,8 +166,13 @@ export function SettingsScreen() {
     shareAfterAdd, nightMode, broadcastEnabled, locationShare,
     tripSharing, voiceBroadcasts, dangerAlerts, routeDeviation,
     hapticFeedback, soundEffects, edgeWarningGlow,
+    debugMode,
     updateSetting,
   } = settings;
+
+  // 5-tap version → toggle debug mode
+  const versionTapCount = useRef(0);
+  const versionTapTime = useRef(0);
 
   // ── Change Password ─────────────────────────────────────────────────────
   const [showChangePw, setShowChangePw] = useState(false);
@@ -538,6 +543,41 @@ export function SettingsScreen() {
           />
         </View>
 
+        {/* Debug section — only visible when debug mode enabled (5-tap version to toggle) */}
+        {debugMode && (
+          <View style={{ marginTop: Spacing.xl }}>
+            <Text style={styles.sectionHeader}>DEBUG</Text>
+            <TouchableOpacity
+              style={{
+                marginHorizontal: Spacing.base,
+                backgroundColor: '#fff',
+                padding: Spacing.base,
+                borderRadius: Radius.card,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+              onPress={() => nav.navigate('Debug' as never)}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Icon name="Settings2" size={20} color={Colors.primary} />
+                <Text style={{ marginLeft: 12, color: Colors.textPrimary, fontSize: FontSize.body }}>
+                  Open Debug screen
+                </Text>
+              </View>
+              <Icon name="ChevronRight" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+            <Text style={{
+              marginHorizontal: Spacing.base,
+              marginTop: 6,
+              fontSize: 11,
+              color: Colors.textMuted,
+            }}>
+              Tracks debug sessions and uploads them to your backend. Tap version below 5 times to disable.
+            </Text>
+          </View>
+        )}
+
         {/* Save button (bottom) with shimmer when active */}
         <PressBtn
           style={[styles.saveBtnBottom, hasChanges && styles.saveBtnBottomActive]}
@@ -562,7 +602,42 @@ export function SettingsScreen() {
           )}
         </PressBtn>
 
-        <Text style={styles.version}>Cairn v0.1.0</Text>
+        {/* Te Reo acknowledgment — PRD3 E-014 */}
+        <Text style={{
+          textAlign: 'center',
+          marginHorizontal: Spacing.base,
+          marginTop: Spacing.base,
+          color: Colors.textMuted,
+          fontSize: 12,
+        }}>
+          Ngā mihi nui — thanks for using Cairn.
+        </Text>
+
+        <TouchableOpacity
+          activeOpacity={0.6}
+          onPress={() => {
+            const now = Date.now();
+            if (now - versionTapTime.current > 1500) {
+              // Reset if tapping too slow
+              versionTapCount.current = 0;
+            }
+            versionTapTime.current = now;
+            versionTapCount.current += 1;
+            if (versionTapCount.current >= 5) {
+              versionTapCount.current = 0;
+              const next = !debugMode;
+              updateSetting('debugMode', next);
+              Alert.alert(
+                next ? 'Debug Mode ON' : 'Debug Mode OFF',
+                next
+                  ? 'Tracking sessions will record detailed logs. Open Debug screen via Settings → Debug section.'
+                  : 'Logs will not be recorded for new sessions.',
+              );
+            }
+          }}
+        >
+          <Text style={styles.version}>Cairn v0.1.0{debugMode ? ' · Debug ON' : ''}</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
     </View>

@@ -19,11 +19,20 @@ import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../componen
 import { Icon } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
 import { PressBtn } from '../components/PressBtn';
-import { useFriendStore, sendFriendRequest } from '../store/useFriendStore';
-import { MOCK_FRIENDS } from '../data/mockData';
+import { useFriendStore, sendFriendRequest, fetchFriendRequests, acceptFriendRequestAPI, rejectFriendRequestAPI } from '../store/useFriendStore';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type Friend = typeof MOCK_FRIENDS[0] & { sharing: boolean };
+
+interface Friend {
+  id: string;
+  name: string;
+  email: string;
+  initials: string;
+  online: boolean;
+  lastSeen: string;
+  sharedMarkers: number;
+  sharing: boolean;
+}
 
 const OWN_EMAIL = 'me@cairn.app';
 
@@ -68,6 +77,9 @@ function FriendCard({ friend, onToggleShare }: {
   friend: Friend;
   onToggleShare: () => void;
 }) {
+  // Backend doesn't (yet) return online status / last seen — surface those
+  // only when we have real data. Sentinel value 'N/A' means "unknown".
+  const hasStatus = friend.online || (friend.lastSeen && friend.lastSeen !== 'N/A');
   const statusColor = getStatusDotColor(friend.online, friend.lastSeen);
   const avatarGradStart = Colors.primaryLight;
   const avatarGradEnd = Colors.primaryDeep;
@@ -84,17 +96,21 @@ function FriendCard({ friend, onToggleShare }: {
             {friend.initials}
           </Text>
         </LinearGradient>
-        <View style={[cardStyles.onlineDot, { backgroundColor: statusColor }]} />
+        {hasStatus && (
+          <View style={[cardStyles.onlineDot, { backgroundColor: statusColor }]} />
+        )}
       </View>
       <View style={cardStyles.info}>
         <Text style={cardStyles.name}>{friend.name}</Text>
         <View style={cardStyles.metaRow}>
-          <Text style={cardStyles.meta}>
-            {friend.online ? 'Online' : friend.lastSeen}
-          </Text>
+          {hasStatus && (
+            <Text style={cardStyles.meta}>
+              {friend.online ? 'Online' : friend.lastSeen}
+            </Text>
+          )}
           {friend.sharedMarkers > 0 && (
             <>
-              <Text style={cardStyles.metaDot}> · </Text>
+              {hasStatus && <Text style={cardStyles.metaDot}> · </Text>}
               <Icon name="Flag" size={12} color={Colors.flag} strokeWidth={2} />
               <Text style={cardStyles.meta}> {friend.sharedMarkers} shared flags</Text>
             </>
@@ -153,6 +169,12 @@ function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
 
   return (
     <View style={sheetStyles.backdrop}>
+      {/* Tap outside the sheet to dismiss — matches iOS modal convention */}
+      <TouchableOpacity
+        style={sheetStyles.backdropTouch}
+        activeOpacity={1}
+        onPress={onDismiss}
+      />
       <View style={sheetStyles.sheet}>
         {/* Drag handle */}
         <View style={sheetStyles.handle} />
@@ -162,7 +184,7 @@ function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
             <View style={sheetStyles.successIcon}>
               <Icon name="CircleCheck" size={40} color={Colors.success} strokeWidth={1.5} />
             </View>
-            <Text style={sheetStyles.successTitle}>Invite sent!</Text>
+            <Text style={sheetStyles.successTitle}>Friend request sent</Text>
             <Text style={sheetStyles.successEmail}>{successEmail.current}</Text>
           </View>
         ) : (
@@ -173,16 +195,16 @@ function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
               </View>
               <Text style={sheetStyles.illustrationTitle}>Add a Friend</Text>
               <Text style={sheetStyles.illustrationSub}>
-                They'll receive an email invitation
+                Send them a friend request inside Cairn — they accept it next time they open the app.
               </Text>
             </View>
 
-            <Text style={sheetStyles.fieldLabel}>Friend's email</Text>
+            <Text style={sheetStyles.fieldLabel}>Their Cairn email</Text>
             <View style={[sheetStyles.inputWrap, validationError ? sheetStyles.inputError : null]}>
               <Icon name="Mail" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
               <TextInput
                 style={sheetStyles.input}
-                placeholder="Email they use for Cairn"
+                placeholder="The email they signed up with"
                 placeholderTextColor={Colors.textMuted}
                 value={email}
                 onChangeText={(t) => { setEmail(t); if (validationError) setValidationError(''); }}
@@ -206,7 +228,7 @@ function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
               ) : (
                 <>
                   <Icon name="Send" size={IconSize.sm} color="#fff" strokeWidth={2} />
-                  <Text style={sheetStyles.sendBtnText}>Send Invite</Text>
+                  <Text style={sheetStyles.sendBtnText}>Send Request</Text>
                 </>
               )}
             </PressBtn>
@@ -228,8 +250,8 @@ function EmptyState({ onAddFriend }: { onAddFriend: () => void }) {
       <View style={emptyStyles.iconWrap}>
         <Icon name="Users" size={56} color={Colors.textMuted} strokeWidth={1.2} />
       </View>
-      <Text style={emptyStyles.heading}>No friends yet</Text>
-      <Text style={emptyStyles.body}>Add friends to share flags and stay connected</Text>
+      <Text style={emptyStyles.heading}>Cairn is better with trail companions</Text>
+      <Text style={emptyStyles.body}>Invite friends to share markers and stay connected on the track.</Text>
       <PressBtn style={emptyStyles.cta} onPress={onAddFriend} scaleTo={0.96}>
         <Icon name="UserPlus" size={IconSize.sm} color="#fff" strokeWidth={2} />
         <Text style={emptyStyles.ctaText}>Add a Friend</Text>
@@ -243,51 +265,91 @@ export function FriendsScreen() {
   const nav = useNavigation<Nav>();
   const [showAdd, setShowAdd] = useState(false);
 
-  // Use real store friends if available, fallback to mock
+  // Real friends only — no mock fallback. Empty list = empty state UI.
+  // (Previously fallback'd to MOCK_FRIENDS which leaked Sam/Alex into every
+  // user's view, regardless of who they were logged in as.)
   const storeFriends = useFriendStore(s => s.friends);
   const loadFriendsFromBackend = useFriendStore(s => s.loadFriendsFromBackend);
+
+  const mapStoreFriend = (f: typeof storeFriends[0]): Friend => ({
+    id: f.id,
+    name: f.name,
+    email: f.email,
+    initials: f.name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
+    online: false,
+    lastSeen: 'N/A',
+    sharedMarkers: 0,
+    sharing: f.shareMarkers,
+  });
+
   const [friends, setFriends] = useState<Friend[]>(
-    storeFriends.length > 0
-      ? storeFriends.map(f => ({
-          id: f.id,
-          name: f.name,
-          email: f.email,
-          initials: f.name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
-          online: false,
-          lastSeen: 'N/A',
-          sharedMarkers: 0,
-          sharing: f.shareMarkers,
-        }))
-      : MOCK_FRIENDS.map(f => ({ ...f, sharing: true }))
+    storeFriends.map(mapStoreFriend),
   );
 
-  // Refresh from backend on mount; update local list when store changes
+  // Incoming friend requests (raw from backend — snake_case shape).
+  // We map to a small local type to avoid coupling to the store interface.
+  type IncomingRequest = {
+    id: string | number;
+    from_name: string;
+    from_email: string;
+    sent_at: string | number;
+  };
+  const [incomingRequests, setIncomingRequests] = useState<IncomingRequest[]>([]);
+  const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
+  const [requestsExpanded, setRequestsExpanded] = useState(false);
+
+  const loadRequests = async () => {
+    const reqs = await fetchFriendRequests();
+    console.log('[FriendsScreen] loadRequests got:', reqs);
+    // fetchFriendRequests returns whatever backend gives — backend uses snake_case.
+    // Normalize types and stash on state.
+    setIncomingRequests(
+      (reqs as unknown as IncomingRequest[]).map((r) => ({
+        id: r.id,
+        from_name: r.from_name,
+        from_email: r.from_email,
+        sent_at: r.sent_at,
+      })),
+    );
+  };
+
+  // Refresh from backend on mount
   useEffect(() => {
     loadFriendsFromBackend();
+    loadRequests();
   }, []);
 
+  // Sync local list with store — including when store goes empty (logout/clear).
   useEffect(() => {
-    if (storeFriends.length > 0) {
-      setFriends(storeFriends.map(f => ({
-        id: f.id,
-        name: f.name,
-        email: f.email,
-        initials: f.name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2),
-        online: false,
-        lastSeen: 'N/A',
-        sharedMarkers: 0,
-        sharing: f.shareMarkers,
-      })));
-    }
+    setFriends(storeFriends.map(mapStoreFriend));
   }, [storeFriends]);
+
+  async function handleAccept(id: string | number) {
+    setBusyRequestId(String(id));
+    const ok = await acceptFriendRequestAPI(String(id));
+    setBusyRequestId(null);
+    if (ok) {
+      // Reload both lists
+      await Promise.all([loadFriendsFromBackend(), loadRequests()]);
+    }
+  }
+
+  async function handleReject(id: string | number) {
+    setBusyRequestId(String(id));
+    const ok = await rejectFriendRequestAPI(String(id));
+    setBusyRequestId(null);
+    if (ok) await loadRequests();
+  }
 
   // STORY-00109: staggered entrance animations
   const screenOpacity = useRef(new Animated.Value(0)).current;
   const bannerOpacity = useRef(new Animated.Value(0)).current;
   const bannerTransY = useRef(new Animated.Value(12)).current;
-  // 4 friend cards + 1 add card = 5 card anims
+  // STORY-00109: staggered entrance animations.
+  // Slot count: 1 (request section, if any) + N friends + 1 add card.
+  // We keep a generous pool of 12 to cover up to ~10 friends without realloc.
   const cardAnims = useRef(
-    Array.from({ length: 5 }, () => ({
+    Array.from({ length: 12 }, () => ({
       opacity: new Animated.Value(0),
       transY: new Animated.Value(16),
     }))
@@ -333,9 +395,10 @@ export function FriendsScreen() {
         </PressBtn>
       </View>
 
-      {hasFriends ? (
+      {hasFriends || incomingRequests.length > 0 ? (
         <>
-          {/* Share summary banner */}
+          {/* Share summary banner — only when there are actual friends */}
+          {hasFriends && (
           <Animated.View style={{ opacity: bannerOpacity, transform: [{ translateY: bannerTransY }] }}>
           <View style={styles.shareBannerRow}>
             <View style={styles.sharePill}>
@@ -347,12 +410,107 @@ export function FriendsScreen() {
             <Text style={styles.shareBannerSub}>Toggle sharing individually per friend</Text>
           </View>
           </Animated.View>
+          )}
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            {/* Pending incoming requests — at top so users see them first.
+                Single request: render the full card.
+                Multiple: render a collapsed summary row that expands on tap. */}
+            {incomingRequests.length > 0 && (
+              <Animated.View
+                style={{
+                  opacity: cardAnims[0]?.opacity ?? 1,
+                  transform: [{ translateY: cardAnims[0]?.transY ?? 0 }],
+                }}
+              >
+                <View style={styles.requestSection}>
+                  {incomingRequests.length > 1 && !requestsExpanded ? (
+                    // Collapsed summary — single tappable row
+                    <PressBtn
+                      style={styles.requestSummaryRow}
+                      onPress={() => setRequestsExpanded(true)}
+                      scaleTo={0.98}
+                    >
+                      <View style={styles.requestSummaryAvatar}>
+                        <Icon name="UserPlus" size={IconSize.sm} color={Colors.primary} strokeWidth={2} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.requestSummaryTitle}>
+                          {incomingRequests.length} friend requests
+                        </Text>
+                        <Text style={styles.requestSummarySub}>
+                          From {incomingRequests.slice(0, 2).map((r) => r.from_name).join(', ')}
+                          {incomingRequests.length > 2 ? ` and ${incomingRequests.length - 2} more` : ''}
+                        </Text>
+                      </View>
+                      <Icon name="ChevronDown" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2} />
+                    </PressBtn>
+                  ) : (
+                    <>
+                      <View style={styles.requestSectionHeader}>
+                        <Text style={styles.sectionLabel}>
+                          {incomingRequests.length === 1
+                            ? '1 friend request'
+                            : `${incomingRequests.length} friend requests`}
+                        </Text>
+                        {incomingRequests.length > 1 && (
+                          <PressBtn
+                            onPress={() => setRequestsExpanded(false)}
+                            scaleTo={0.94}
+                            style={styles.collapseBtn}
+                          >
+                            <Icon name="ChevronUp" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2} />
+                          </PressBtn>
+                        )}
+                      </View>
+                      {incomingRequests.map((req) => (
+                        <View key={req.id} style={styles.requestCard}>
+                          <View style={styles.requestAvatar}>
+                            <Text style={styles.requestInitials}>
+                              {req.from_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.requestName}>{req.from_name}</Text>
+                            <Text style={styles.requestEmail}>{req.from_email}</Text>
+                          </View>
+                          <View style={styles.requestActions}>
+                            <PressBtn
+                              style={[styles.requestBtn, styles.requestAccept]}
+                              onPress={() => handleAccept(req.id)}
+                              scaleTo={0.94}
+                              disabled={busyRequestId === String(req.id)}
+                            >
+                              {busyRequestId === String(req.id) ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                              ) : (
+                                <Icon name="Check" size={IconSize.sm} color="#fff" strokeWidth={2.4} />
+                              )}
+                            </PressBtn>
+                            <PressBtn
+                              style={[styles.requestBtn, styles.requestReject]}
+                              onPress={() => handleReject(req.id)}
+                              scaleTo={0.94}
+                              disabled={busyRequestId === String(req.id)}
+                            >
+                              <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.4} />
+                            </PressBtn>
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  )}
+                </View>
+              </Animated.View>
+            )}
+
             {friends.map((friend, i) => (
               <Animated.View
                 key={friend.id}
-                style={{ opacity: cardAnims[i]?.opacity ?? 1, transform: [{ translateY: cardAnims[i]?.transY ?? 0 }] }}
+                style={{
+                  opacity: cardAnims[i + (incomingRequests.length > 0 ? 1 : 0)]?.opacity ?? 1,
+                  transform: [{ translateY: cardAnims[i + (incomingRequests.length > 0 ? 1 : 0)]?.transY ?? 0 }],
+                }}
               >
                 <FriendCard
                   friend={friend}
@@ -362,7 +520,11 @@ export function FriendsScreen() {
             ))}
 
             {/* Add friend card */}
-            <Animated.View style={{ opacity: cardAnims[friends.length]?.opacity ?? 1, transform: [{ translateY: cardAnims[friends.length]?.transY ?? 0 }], marginTop: Spacing.xs }}>
+            <Animated.View style={{
+              opacity: cardAnims[friends.length + (incomingRequests.length > 0 ? 1 : 0)]?.opacity ?? 1,
+              transform: [{ translateY: cardAnims[friends.length + (incomingRequests.length > 0 ? 1 : 0)]?.transY ?? 0 }],
+              marginTop: Spacing.xs,
+            }}>
             <PressCard onPress={() => setShowAdd(true)}>
               <View style={styles.addCard}>
                 <View style={styles.addCardIconWrap}>
@@ -370,7 +532,7 @@ export function FriendsScreen() {
                 </View>
                 <View>
                   <Text style={styles.addCardLabel}>Add a friend</Text>
-                  <Text style={styles.addCardHint}>Invite by email</Text>
+                  <Text style={styles.addCardHint}>By their Cairn email</Text>
                 </View>
               </View>
             </PressCard>
@@ -440,6 +602,60 @@ const styles = StyleSheet.create({
 
   scrollContent: { padding: Spacing.base, gap: Spacing.sm, paddingBottom: Spacing.xxl },
 
+  // Incoming friend requests section — shown at the top of the list
+  requestSection: { gap: Spacing.xs, marginBottom: Spacing.sm },
+  requestSectionHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 4, paddingBottom: 4,
+  },
+  collapseBtn: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
+  // Collapsed summary row (when N>1 requests, shown as single tap-to-expand row)
+  requestSummaryRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.surface, borderRadius: Radius.card,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.base,
+    borderWidth: 1, borderColor: Colors.primaryBg,
+  },
+  requestSummaryAvatar: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  requestSummaryTitle: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  requestSummarySub: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+  sectionLabel: {
+    fontSize: FontSize.small, fontWeight: '700', color: Colors.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.8,
+    paddingHorizontal: 4, paddingBottom: 4,
+  },
+  requestCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.surface, borderRadius: Radius.card,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.base,
+    borderWidth: 1, borderColor: Colors.primaryBg,
+  },
+  requestAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  requestInitials: {
+    fontSize: FontSize.body, fontWeight: '700', color: Colors.primary,
+  },
+  requestName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
+  requestEmail: { fontSize: FontSize.small, color: Colors.textSecondary, marginTop: 2 },
+  requestActions: { flexDirection: 'row', gap: 6 },
+  requestBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  requestAccept: { backgroundColor: Colors.primary },
+  requestReject: { backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border },
+
   addCard: {
     backgroundColor: Colors.primaryLight, borderRadius: Radius.card,
     padding: Spacing.base, flexDirection: 'row', alignItems: 'center',
@@ -504,8 +720,13 @@ const cardStyles = StyleSheet.create({
 const sheetStyles = StyleSheet.create({
   backdrop: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    // Cream tint backdrop (Colors.overlayDark — name kept for compat;
+    // value is no longer dark). Sheet still reads as elevated via shadow.
     backgroundColor: Colors.overlayDark,
     justifyContent: 'flex-end',
+  },
+  backdropTouch: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
   },
   sheet: {
     backgroundColor: Colors.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,

@@ -276,12 +276,12 @@ Effective date: May 2026
 1. What we collect
 • Account data: name, email address, hashed password (never stored in plain text)
 • Location data: GPS coordinates, only while you actively start a tracking session
-• Activity data: trail routes, distance, duration, planted flags — associated with your account
+• Activity data: track routes, distance, duration, planted markers — associated with your account
 • Device info: OS type, app version (for crash reporting only)
 
 2. Why we collect it
-• Location: to record your trail, calculate distance, and enable safety features
-• Account data: to identify you and protect your personal trail history
+• Location: to record your track, calculate distance, and enable safety features
+• Account data: to identify you and protect your personal track history
 • We never collect your location in the background without an active session
 
 3. How we protect it
@@ -292,13 +292,13 @@ Effective date: May 2026
 
 4. Sharing
 • We do not sell your data to third parties — ever
-• Location and trail data shared only with friends you explicitly add
+• Location and track data shared only with friends you explicitly add
 • We may use aggregated, anonymised statistics to improve the product
 
 5. Your rights
 • Access: request a copy of your data at any time
 • Deletion: delete your account and all data via Settings → Account → Delete Account
-• Portability: export your trail history as GPX at any time
+• Portability: export your track history as GPX at any time
 • Correction: update your profile information at any time
 
 6. Applicable law
@@ -312,7 +312,7 @@ type AuthView = 'splash' | 'login' | 'register' | 'verify' | 'welcome';
 
 export function AuthScreen() {
   const nav = useNavigation<Nav>();
-  const { setLoggedIn, setUIMode, setUser, sessionExpired, setSessionExpired } = useAppStore();
+  const { setLoggedIn, setUIMode, setUser, sessionExpired, setSessionExpired, hydrate } = useAppStore();
   const [view, setView] = useState<AuthView>('splash');
   const [welcomeName, setWelcomeName] = useState('');
   const [verifyEmail, setVerifyEmail] = useState('');   // email to verify after register
@@ -357,12 +357,13 @@ export function AuthScreen() {
     }
     setLoading(true);
     setApiError('');
-    loginWithGoogle(idToken).then((result) => {
+    loginWithGoogle(idToken).then(async (result) => {
       setLoading(false);
       setGoogleLoading(false);
       if (result.error) { setApiError(result.error); return; }
       setLoggedIn(true);
       if (result.user) setUser(result.user);
+      await hydrate();
       nav.replace('Home');
     });
   }, [googleResponse]);
@@ -484,6 +485,8 @@ export function AuthScreen() {
 
       setLoggedIn(true);
       if (result.user) setUser(result.user);
+      // Re-hydrate stores with new user's data (sessions, markers)
+      await hydrate();
       if (isRegister) {
         setUIMode('beginner');
         setWelcomeName(result.user?.name || name.trim() || 'Explorer');
@@ -525,6 +528,7 @@ export function AuthScreen() {
     if (result.error) { setVerifyError(result.error); return; }
     setLoggedIn(true);
     if (result.user) setUser(result.user);
+    await hydrate();
     setUIMode('beginner');
     setWelcomeName(result.user?.name || 'Explorer');
     setView('welcome');
@@ -694,7 +698,8 @@ export function AuthScreen() {
       <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]} edges={['top', 'bottom']}>
         <Icon name="CircleCheck" size={56} color={Colors.primary} strokeWidth={1.5} />
         <Text style={[styles.appName, { marginTop: 16, marginBottom: 8 }]}>Welcome, {welcomeName}!</Text>
-        <Text style={[styles.tagline, { textAlign: 'center', color: Colors.textSecondary }]}>Your trail starts now.</Text>
+        <Text style={[styles.tagline, { textAlign: 'center', color: Colors.textSecondary, marginBottom: 4 }]}>Nau mai, haere mai</Text>
+        <Text style={[styles.tagline, { textAlign: 'center', color: Colors.textSecondary }]}>Your track starts now.</Text>
       </SafeAreaView>
     );
   }
