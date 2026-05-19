@@ -1,11 +1,12 @@
 /**
- * RunningIcon — forward-lean runner silhouette, filled shapes only.
- * Design reference: Strava, Google Fit, Apple Watch Activity.
- * Key: strong forward lean, one arm driving forward, one leg extended back.
- * Reduced to 5 filled shapes — head, torso, front arm, front leg, back leg.
+ * RunningIcon — sport running shoe silhouette.
+ * Uses lucide's SportShoe path data (ISC license) as the base,
+ * rendered as a filled + stroked icon matching the app's design system.
+ * Reference: Komoot uses shoe/boot metaphor for activity icons — reads
+ * more premium than a human figure, scales better at small sizes.
  */
 import React from 'react';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 
 interface Props {
   size?: number;
@@ -15,37 +16,27 @@ interface Props {
 export function RunningIcon({ size = 48, color = '#3a7bbf' }: Props) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      {/* Head — positioned forward (right) of body center */}
-      <Circle cx="16" cy="4" r="2.0" fill={color} />
-
-      {/* Torso — strong diagonal lean forward, wider at shoulders */}
       <Path
-        d="M 15 5.8 L 10 13 L 12.5 13.5 L 17 6.5 Z"
-        fill={color}
+        d="m15 10.42 4.8-5.07"
+        stroke={color}
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
-
-      {/* Forward arm — punching ahead */}
       <Path
-        d="M 13.5 8 L 8.5 6.5 L 8 8 L 13 9.5 Z"
-        fill={color}
+        d="M19 18h3"
+        stroke={color}
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
-
-      {/* Back arm — sweeping behind body */}
       <Path
-        d="M 16 8.5 L 19.5 11 L 20 9.8 L 16.5 7.5 Z"
-        fill={color}
-      />
-
-      {/* Front leg — knee lifted, driving forward */}
-      <Path
-        d="M 11 13 L 8.5 18 L 10 20 L 12 20 L 10 17.5 L 13 13.5 Z"
-        fill={color}
-      />
-
-      {/* Back leg — pushing off, extending behind */}
-      <Path
-        d="M 12.5 13.5 L 14.5 18 L 17.5 17 L 17 15.5 L 15 16 L 13.5 13 Z"
-        fill={color}
+        d="M9.5 22 21.414 9.415A2 2 0 0 0 21.2 6.4l-5.61-4.208A1 1 0 0 0 14 3v2a2 2 0 0 1-1.394 1.906L8.677 8.053A1 1 0 0 0 8 9c-.155 6.393-2.082 9-4 9a2 2 0 0 0 0 4h14"
+        stroke={color}
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
       />
     </Svg>
   );

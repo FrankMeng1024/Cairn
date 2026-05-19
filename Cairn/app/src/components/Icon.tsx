@@ -32,6 +32,8 @@ import {
   Pause, Pencil, Undo2, TrendingUp, Phone, Signal, MessageCircle,
   // Sprint 54
   Search, Plus, Edit3,
+  // Sprint 56 — activity icons
+  Footprints, SportShoe,
 } from 'lucide-react-native';
 import { IconSize } from './tokens';
 
@@ -52,6 +54,7 @@ const ICON_MAP = {
   PlayCircle,
   Pause, Pencil, Undo2, TrendingUp, Phone, Signal, MessageCircle,
   Search, Plus, Edit3,
+  Footprints, SportShoe,
 } as const;
 
 export type IconName = keyof typeof ICON_MAP;
