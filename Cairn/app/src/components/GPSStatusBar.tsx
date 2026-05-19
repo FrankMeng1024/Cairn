@@ -22,8 +22,8 @@ export function GPSStatusBar({ accuracy, visible = true }: Props) {
   if (accuracy !== null && accuracy <= 20) return null;
 
   const isNoGPS = accuracy === null;
-  const color = isNoGPS ? Colors.danger : Colors.warning;
-  const bgColor = isNoGPS ? Colors.dangerBg : Colors.warningBg;
+  const color = isNoGPS ? Colors.danger : Colors.severityWarning;
+  const bgColor = isNoGPS ? Colors.dangerBg : Colors.severityWarningBg;
   const message = isNoGPS ? 'GPS unavailable' : 'GPS signal weak';
   const icon = isNoGPS ? 'MapPin' as const : 'Signal' as const;
 

@@ -40,7 +40,7 @@ const FLAG_TYPES: { id: MarkerType; icon: IconName; label: string; color: string
   { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: Colors.danger,   bg: Colors.dangerBg  },
   { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: Colors.info,     bg: Colors.infoBg    },
   { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: Colors.success,  bg: Colors.successBg },
-  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg },
+  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.docOrange,  bg: Colors.severityWarningBg },
 ];
 
 // ── Segment Control ──────────────────────────────────────────────────────────
@@ -307,7 +307,7 @@ function RoutesTab() {
         }
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: 40 }}>
-            <Text style={styles.emptyHint}>No saved routes yet. Create one or import from Activities.</Text>
+            <Text style={styles.emptyHint}>Plan your next track. Save routes for offline use.</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -339,7 +339,7 @@ function ActivitiesTab() {
   const [selectedSession, setSelectedSession] = useState<import('../store/useSessionStore').TrackingSession | null>(null);
 
   if (sessions.length === 0) {
-    return <EmptyState icon="Map" title="No activities yet" hint="Start hiking or running to see your history here." />;
+    return <EmptyState icon="Map" title="No tracks walked yet" hint="Start hiking or running. Your tracks will live here." />;
   }
 
   const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
@@ -519,7 +519,7 @@ function FlagEditSheet({
             <View style={sheetStyles.noteFooterRow}>
               <Text style={sheetStyles.noteMaxLabel}>Max 50 characters</Text>
               {(textFocused || text.length > 0) && (
-                <Text style={[sheetStyles.charCount, text.length >= 50 ? { color: Colors.danger } : text.length >= 40 ? { color: Colors.warning } : null]}>
+                <Text style={[sheetStyles.charCount, text.length >= 50 ? { color: Colors.danger } : text.length >= 40 ? { color: Colors.severityCaution } : null]}>
                   {text.length}/50
                 </Text>
               )}
@@ -593,7 +593,7 @@ function FlagsTab() {
   };
 
   if (markers.length === 0) {
-    return <EmptyState icon="Flag" title="No flags planted yet" hint="Use AR to plant your first flag!" />;
+    return <EmptyState icon="Flag" title="No flags planted yet" hint="Leave your first mark when you find something worth noting." />;
   }
 
   return (
@@ -727,7 +727,7 @@ const styles = StyleSheet.create({
   permToggleGroup: { flexDirection: 'row', gap: 2, backgroundColor: Colors.surface, borderRadius: Radius.pill, borderWidth: 1, borderColor: Colors.border, padding: 2 },
   permToggle: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   permToggleActive: { backgroundColor: Colors.primaryBg },
-  approxChip: { width: 16, height: 16, borderRadius: 8, backgroundColor: Colors.warning, alignItems: 'center', justifyContent: 'center' },
+  approxChip: { width: 16, height: 16, borderRadius: 8, backgroundColor: Colors.severityCaution, alignItems: 'center', justifyContent: 'center' },
   approxChipText: { fontSize: 10, fontWeight: '800', color: '#fff' },
   empty: { flex: 1, alignItems: 'center', paddingTop: 80 },
   emptyIconWrap: { width: 72, height: 72, borderRadius: 36, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.md, ...Shadow.card },
@@ -824,7 +824,7 @@ const routeSheetStyles = StyleSheet.create({
   },
   statItem: { flex: 1, alignItems: 'center', gap: 4 },
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
-  statValue: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary },
+  statValue: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
   lastRun: { fontSize: FontSize.caption, color: Colors.textMuted, textAlign: 'center', marginTop: -Spacing.xs },
 });
 

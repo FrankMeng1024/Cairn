@@ -252,7 +252,7 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
             <Text style={cardStyles.expandedStatVal}>{durationStr}</Text>
             <Text style={cardStyles.expandedStatLbl}>time</Text>
           </View>
-          <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.warning }]}>
+          <View style={[cardStyles.expandedCapsule, { borderLeftColor: Colors.severityCaution }]}>
             <Text style={cardStyles.expandedStatVal}>+{session.elevationGainM ?? 0}m</Text>
             <Text style={cardStyles.expandedStatLbl}>elev</Text>
           </View>

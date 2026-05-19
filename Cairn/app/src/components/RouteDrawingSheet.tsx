@@ -154,7 +154,7 @@ export function RouteDrawingSheet({
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionBtn} onPress={handleAddWaypoint} disabled={points.length === 0}>
-          <Icon name="MapPin" size={16} color={points.length > 0 ? Colors.warning : Colors.textMuted} />
+          <Icon name="MapPin" size={16} color={points.length > 0 ? Colors.docOrange : Colors.textMuted} />
           <Text style={styles.actionBtnText}>Waypoint</Text>
         </TouchableOpacity>
       </View>

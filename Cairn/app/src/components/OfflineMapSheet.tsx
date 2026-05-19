@@ -108,7 +108,7 @@ export function OfflineMapSheet({ visible, onClose }: Props) {
               style={styles.pauseBtn}
               onPress={() => { pausePack(item.id); setDownloadingId(null); }}
             >
-              <Icon name="Pause" size={18} color={Colors.warning} />
+              <Icon name="Pause" size={18} color={Colors.severityCaution} />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
   },
   pauseBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.warningBg, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.severityCautionBg, alignItems: 'center', justifyContent: 'center',
   },
   deleteBtn: {
     width: 40, height: 40, borderRadius: 20,

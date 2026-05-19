@@ -6,7 +6,7 @@ const TEST_PHRASES = [
   { label: 'Short alert', text: 'Caution. Slippery surface ahead.' },
   { label: 'Direction', text: 'Turn left at the next junction.' },
   { label: 'Friend marker', text: 'Friend marker: Alex noted water source 200 meters ahead.' },
-  { label: 'Off route', text: 'You are off route. Return to trail on your right.' },
+  { label: 'Off route', text: 'You are off route. Return to track on your right.' },
 ];
 
 export function SpeechSpike() {

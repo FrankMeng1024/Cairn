@@ -62,7 +62,7 @@ const FLAG_TYPES: {
   { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: Colors.danger,   bg: Colors.dangerBg  },
   { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: Colors.info,     bg: Colors.infoBg    },
   { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: Colors.success,  bg: Colors.successBg },
-  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg },
+  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.docOrange,  bg: Colors.severityWarningBg },
 ];
 
 // ── Pressable map marker with scale feedback ─────────────────────────────────
@@ -275,7 +275,7 @@ function CreateMarkerSheet({
               {(textFocused || charCount > 0) && (
                 <Text style={[
                   styles.charCount,
-                  charCount >= 50 ? { color: Colors.danger } : charCount >= 40 ? { color: Colors.warning } : null,
+                  charCount >= 50 ? { color: Colors.danger } : charCount >= 40 ? { color: Colors.severityCaution } : null,
                 ]}>{charCount}/50</Text>
               )}
             </View>
@@ -431,7 +431,7 @@ function EditMarkerSheet({
               {(textFocused || text.length > 0) && (
                 <Text style={[
                   styles.charCount,
-                  text.length >= 50 ? { color: Colors.danger } : text.length >= 40 ? { color: Colors.warning } : null,
+                  text.length >= 50 ? { color: Colors.danger } : text.length >= 40 ? { color: Colors.severityCaution } : null,
                 ]}>{text.length}/50</Text>
               )}
             </View>
@@ -696,7 +696,7 @@ export function MapScreen() {
             <Text style={styles.backChipText}>Back</Text>
           </TouchableOpacity>
           <View style={[styles.gpsChip, !isTracking && styles.gpsChipAmber]}>
-            <View style={[styles.gpsDot, { backgroundColor: isTracking ? Colors.success : Colors.warning }]} />
+            <View style={[styles.gpsDot, { backgroundColor: isTracking ? Colors.success : Colors.severityWarning }]} />
             <Text style={[styles.chipText, !isTracking && styles.chipTextAmber]}>
               {isTracking ? 'GPS Connected ±5m' : 'Enable GPS'}
             </Text>
@@ -988,8 +988,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
-  gpsChipAmber: { backgroundColor: 'rgba(255,243,224,0.9)', borderColor: Colors.warning },
-  chipTextAmber: { color: Colors.warning },
+  gpsChipAmber: { backgroundColor: Colors.severityWarningBg, borderColor: Colors.severityWarning },
+  chipTextAmber: { color: Colors.severityWarning },
   gpsDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.success },
   modeChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -1012,8 +1012,8 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: Colors.primary,
   },
   trackingStatItem: { alignItems: 'center', flex: 1 },
-  trackingValueLg: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary },
-  trackingValue: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary },
+  trackingValueLg: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
+  trackingValue: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
   trackingUnit: { fontSize: FontSize.tiny, color: Colors.textSecondary, marginTop: 1 },
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
   stopBtn: {

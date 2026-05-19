@@ -53,7 +53,7 @@ const FLAG_TYPES: {
   { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: Colors.danger,   bg: Colors.dangerBg  },
   { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: Colors.info,     bg: Colors.infoBg    },
   { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: Colors.success,  bg: Colors.successBg },
-  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.warning,  bg: Colors.warningBg },
+  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: Colors.docOrange,  bg: Colors.severityWarningBg },
 ];
 
 // ── Marker pin on map ─────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ function FlagPlantSheet({ onClose, onSave }: {
           <View style={sheetStyles.noteFooterRow}>
             <Text style={sheetStyles.noteMaxLabel}>Max 50 characters</Text>
             {(noteFocused || charCount > 0) && (
-              <Text style={[sheetStyles.charCount, charCount >= 50 ? { color: Colors.danger } : charCount >= 40 ? { color: Colors.warning } : null]}>{charCount}/50</Text>
+              <Text style={[sheetStyles.charCount, charCount >= 50 ? { color: Colors.danger } : charCount >= 40 ? { color: Colors.severityCaution } : null]}>{charCount}/50</Text>
             )}
           </View>
         </View>
@@ -428,9 +428,9 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
           <Text style={detailStyles.meta}>{distStr}</Text>
         </View>
         {marker.approximate && (
-          <View style={[detailStyles.metaRow, { backgroundColor: Colors.warningBg, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }]}>
-            <Icon name="Info" size={IconSize.sm} color={Colors.warning} strokeWidth={1.8} />
-            <Text style={[detailStyles.meta, { color: Colors.warning }]}>
+          <View style={[detailStyles.metaRow, { backgroundColor: Colors.severityCautionBg, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }]}>
+            <Icon name="Info" size={IconSize.sm} color={Colors.severityCaution} strokeWidth={1.8} />
+            <Text style={[detailStyles.meta, { color: Colors.severityCaution }]}>
               Approximate position{marker.gpsAgeS != null && marker.gpsAgeS > 0
                 ? ` (GPS was ${marker.gpsAgeS < 60 ? `${marker.gpsAgeS}s` : `${Math.round(marker.gpsAgeS / 60)}min`} old)`
                 : ''}
@@ -567,7 +567,7 @@ export function HikingScreen() {
           <View style={styles.topRow}>
             <BackButton variant="pill" onPress={() => nav.goBack()} />
             <View style={[styles.gpsChip, styles.gpsChipAmber]}>
-              <View style={[styles.gpsDot, { backgroundColor: Colors.warning }]} />
+              <View style={[styles.gpsDot, { backgroundColor: Colors.severityWarning }]} />
               <Text style={[styles.gpsText, styles.gpsTextAmber]}>Enable GPS</Text>
             </View>
           </View>
@@ -696,7 +696,7 @@ export function HikingScreen() {
             <View style={[styles.gpsDot, {
               backgroundColor: locationAvailable
                 ? Colors.success
-                : status === 'idle' ? Colors.warning : Colors.danger,
+                : status === 'idle' ? Colors.severityCaution : Colors.danger,
             }]} />
             <Text style={[
               styles.gpsText,
@@ -890,7 +890,7 @@ const styles = StyleSheet.create({
   approxBadge: {
     position: 'absolute', top: -4, right: -4,
     width: 14, height: 14, borderRadius: 7,
-    backgroundColor: Colors.warning, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.severityCaution, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: '#fff',
   },
   approxBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
@@ -990,12 +990,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dangerBg,
   },
   gpsChipAmber: {
-    backgroundColor: Colors.warningBg,
+    backgroundColor: Colors.severityWarningBg,
   },
   gpsDot: { width: 8, height: 8, borderRadius: 4 },
   gpsText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary },
   gpsTextOffline: { color: Colors.danger },
-  gpsTextAmber: { color: Colors.warning },
+  gpsTextAmber: { color: Colors.severityWarning },
   backChip: {
     flexDirection: 'row', alignItems: 'center', gap: 2,
     backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: Radius.pill,
@@ -1014,8 +1014,8 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: Colors.primary,
   },
   trackingStat: { alignItems: 'center', flex: 1 },
-  trackingValueLg: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary },
-  trackingValue: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary },
+  trackingValueLg: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
+  trackingValue: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
   trackingUnit: { fontSize: FontSize.tiny, color: Colors.textSecondary, marginTop: 1 },
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
   routeSwitchBtn: {

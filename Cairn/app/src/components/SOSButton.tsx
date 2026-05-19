@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.success,
   },
   buttonFailed: {
-    backgroundColor: Colors.warning,
+    backgroundColor: Colors.severityWarning,
   },
   idleText: {
     fontSize: FontSize.body,

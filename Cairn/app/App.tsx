@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { View, Platform, AppState } from 'react-native';
+import { View, Platform, AppState, Text as RNText, TextInput as RNTextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
+import { useFonts } from 'expo-font';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { useAppStore } from './src/store/useAppStore';
 import { useSettingsStore } from './src/store/useSettingsStore';
@@ -75,6 +76,46 @@ if (Platform.OS === 'web') {
   } else {
     document.addEventListener('DOMContentLoaded', startObserver);
   }
+
+  // ── PRD3 E-012: force Inter on every text element ─────────────────────────
+  // react-native-web emits atomic CSS classes (r-fontSize-*, r-color-*, ...)
+  // but Text.defaultProps.style does NOT cascade through to those classes.
+  // Inject a global CSS rule so EVERY rendered text element uses Inter,
+  // unless an explicit fontFamily is set inline (which always wins).
+  // Per-weight overrides ensure 600/700 use the right Inter file.
+  const injectFontCSS = () => {
+    if (document.getElementById('cairn-inter-css')) return;
+    const style = document.createElement('style');
+    style.id = 'cairn-inter-css';
+    style.textContent = `
+      /* Default: Inter Regular for all text-rendered elements */
+      div[class*="css-text-"], input, textarea, button {
+        font-family: 'Inter_400Regular', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        font-feature-settings: 'tnum' 1, 'cv11' 1;
+      }
+      /* SemiBold (weight 500-600) — RNW atomic classes observed:
+         r-fontWeight-1kfrs79 = 600, r-fontWeight-vw2c0b = 500 */
+      div[class*="r-fontWeight-1kfrs79"],
+      div[class*="r-fontWeight-vw2c0b"] {
+        font-family: 'Inter_600SemiBold', -apple-system, BlinkMacSystemFont, sans-serif !important;
+      }
+      /* Bold (weight 700-900) — RNW atomic classes observed:
+         r-fontWeight-1vr29t4 = 800, r-fontWeight-ovu0ai = 900,
+         r-fontWeight-1xnzce8 = 700 */
+      div[class*="r-fontWeight-1vr29t4"],
+      div[class*="r-fontWeight-ovu0ai"],
+      div[class*="r-fontWeight-1xnzce8"],
+      div[class*="r-fontWeight-1ydn0z2"] {
+        font-family: 'Inter_700Bold', -apple-system, BlinkMacSystemFont, sans-serif !important;
+      }
+    `;
+    document.head.appendChild(style);
+  };
+  if (document.head) {
+    injectFontCSS();
+  } else {
+    document.addEventListener('DOMContentLoaded', injectFontCSS);
+  }
 }
 
 function AppRoot() {
@@ -82,6 +123,15 @@ function AppRoot() {
   const hydrated = useAppStore(s => s.hydrated);
   const hydrateSettings = useSettingsStore(s => s.hydrate);
   const lastAppState = useRef<string>(AppState.currentState);
+
+  // PRD3 E-012: load Inter font family. fontsLoaded === true once all weights
+  // are ready. If loading fails (no network on first run, etc), fontError is
+  // set and we fall back to system fonts — no blocking.
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular: require('./assets/fonts/Inter_400Regular.ttf'),
+    Inter_600SemiBold: require('./assets/fonts/Inter_600SemiBold.ttf'),
+    Inter_700Bold: require('./assets/fonts/Inter_700Bold.ttf'),
+  });
 
   useEffect(() => {
     hydrateSettings();
@@ -114,7 +164,31 @@ function AppRoot() {
     });
     return () => sub.remove();
   }, []);
+
+  // Don't block forever on font loading — show app once hydrated even if
+  // fonts errored. If they're loaded, body text will use Inter; if not,
+  // it falls back to system default.
   if (!hydrated) return <View style={{ flex: 1 }} />;
+  if (!fontsLoaded && !fontError) return <View style={{ flex: 1 }} />;
+
+  // Apply Inter as the default font family for every <Text> and <TextInput>
+  // in the app — runs once after fonts confirmed loaded. Existing per-component
+  // styles still win (defaultProps.style is the lowest layer in the cascade).
+  if (fontsLoaded && !((RNText as any)._cairnFontPatched)) {
+    const defaultFontStyle = { fontFamily: 'Inter_400Regular' };
+    (RNText as any).defaultProps = (RNText as any).defaultProps || {};
+    (RNText as any).defaultProps.style = [
+      (RNText as any).defaultProps.style,
+      defaultFontStyle,
+    ];
+    (RNTextInput as any).defaultProps = (RNTextInput as any).defaultProps || {};
+    (RNTextInput as any).defaultProps.style = [
+      (RNTextInput as any).defaultProps.style,
+      defaultFontStyle,
+    ];
+    (RNText as any)._cairnFontPatched = true;
+  }
+
   return <RootNavigator />;
 }
 

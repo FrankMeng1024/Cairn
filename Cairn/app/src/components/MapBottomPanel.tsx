@@ -40,7 +40,7 @@ const MARKER_ICONS: Record<string, { icon: IconName; color: string; bg: string }
   danger:   { icon: 'TriangleAlert', color: Colors.danger,  bg: Colors.dangerBg },
   scenic:   { icon: 'Star',          color: Colors.info,    bg: Colors.infoBg },
   supply:   { icon: 'Droplets',      color: Colors.success, bg: Colors.successBg },
-  junction: { icon: 'Navigation2',   color: Colors.warning, bg: Colors.warningBg },
+  junction: { icon: 'Navigation2',   color: Colors.docOrange, bg: Colors.severityWarningBg },
   free:     { icon: 'MessageCircle', color: Colors.textSecondary, bg: Colors.surface },
 };
 

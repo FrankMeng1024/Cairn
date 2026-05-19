@@ -458,8 +458,8 @@ export function SettingsScreen() {
           <View style={styles.divider} />
           <ToggleRow
             iconName="Navigation2"
-            iconColor={Colors.warning}
-            iconBg={Colors.warningBg}
+            iconColor={Colors.severityWarning}
+            iconBg={Colors.severityWarningBg}
             label="Trip Sharing"
             hint="Notify contacts if you don't check in"
             value={tripSharing}
@@ -492,8 +492,8 @@ export function SettingsScreen() {
           <View style={styles.divider} />
           <ToggleRow
             iconName="Navigation2"
-            iconColor={Colors.warning}
-            iconBg={Colors.warningBg}
+            iconColor={Colors.severityWarning}
+            iconBg={Colors.severityWarningBg}
             label="Route Deviation"
             hint="Alert when off planned route"
             value={routeDeviation}

@@ -13,21 +13,25 @@ export const MOCK_ROUTES = [
   { id: '3', name: 'Routeburn Flats', date: '2026-04-28', distanceKm: 8.1, durationMin: 142, markerCount: 1, activityMode: 'hiking' },
 ];
 
-export type MarkerType = 'danger' | 'scenic' | 'supply' | 'junction' | 'free';
+// MarkerType moved to src/config/markerTypes.ts (PRD3 E-015 — single source).
+// Re-exported here to keep existing imports working.
+export type { MarkerType } from '../config/markerTypes';
+import type { MarkerType } from '../config/markerTypes';
 
 export const MARKER_META: Record<MarkerType, { label: string; icon: string; iconName: string; color: string; bg: string }> = {
   danger:   { label: 'Danger',   icon: '!',  iconName: 'TriangleAlert', color: '#c53d2e', bg: '#f4e0dc' },
   scenic:   { label: 'Scenic',   icon: '★',  iconName: 'Star',          color: '#2e6cc5', bg: '#dce8f4' },
   supply:   { label: 'Water',    icon: '+',  iconName: 'Droplets',      color: '#2e8c3a', bg: '#dcf4de' },
-  junction: { label: 'Junction', icon: '→',  iconName: 'Navigation2',   color: '#b36b00', bg: '#fff3e0' },
-  free:     { label: 'Free',     icon: '○',  iconName: 'MapPin',        color: '#8c7e72', bg: '#ffffff' },
+  junction: { label: 'Junction', icon: '→',  iconName: 'Navigation2',   color: '#F26522', bg: 'rgba(242,101,34,0.13)' },
+  cairn:    { label: 'Cairn',    icon: '⛰',  iconName: 'Mountain',      color: '#b5823d', bg: 'rgba(181,130,61,0.10)' },
+  free:     { label: 'Note',     icon: '○',  iconName: 'MapPin',        color: '#8c7e72', bg: '#ffffff' },
 };
 
 export const MOCK_MARKERS = [
   {
     id: '1', type: 'danger' as MarkerType,
     text: 'Wet surface, watch your step', author: 'Sam', minutesAgo: 45, x: 0.3, y: 0.4,
-    title: 'Safety Warning', note: 'Slippery trail, slow down', distanceM: 340, timeAgo: '45m ago',
+    title: 'Safety Warning', note: 'Slippery track, slow down', distanceM: 340, timeAgo: '45m ago',
   },
   {
     id: '2', type: 'scenic' as MarkerType,

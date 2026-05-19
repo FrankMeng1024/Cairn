@@ -43,6 +43,11 @@ export const Colors = {
   severityWarning: '#F26522',   // warning      — DOC step orange (#F26522)
   severityDanger:  '#D52B1E',   // severe       — red (MetService Severe)
   severityExtreme: '#1A1A1A',   // extreme      — black (avalanche level 5)
+  // Soft background tints for severity ladder — use for banner/chip/icon-bg
+  severityNoticeBg:  'rgba(61,122,75,0.12)',
+  severityCautionBg: 'rgba(240,196,25,0.14)',
+  severityWarningBg: 'rgba(242,101,34,0.13)',
+  severityDangerBg:  'rgba(213,43,30,0.13)',
   // Aliases for the most-used colors above
   docOrange:       '#F26522',   // alias of severityWarning — for DOC waymarker pin
   alertRed:        '#D52B1E',   // alias of severityDanger — for SOS / extreme

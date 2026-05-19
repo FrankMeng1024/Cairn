@@ -33,6 +33,10 @@ export interface Marker {
   alt?: number;
   approximate?: boolean;   // true if placed with stale/no GPS signal
   gpsAgeS?: number;        // seconds since last GPS fix when placed
+  // PRD3 E-019 — user-attached photos. v1 has no upload UI, but the field
+  // exists so backend rows and types are forward-compatible. Photos are
+  // displayed inline in the marker detail sheet when present.
+  photoUrls?: string[];
 }
 
 const STORAGE_KEY_PREFIX = 'cairn_markers';

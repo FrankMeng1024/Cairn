@@ -252,7 +252,7 @@ export function RunningScreen() {
           <View style={preStyles.topRow}>
             <BackButton variant="pill" onPress={() => nav.goBack()} />
             <View style={preStyles.gpsChip}>
-              <View style={[preStyles.gpsDot, { backgroundColor: Colors.warning }]} />
+              <View style={[preStyles.gpsDot, { backgroundColor: Colors.severityWarning }]} />
               <Text style={preStyles.gpsText}>Enable GPS</Text>
             </View>
           </View>
@@ -579,13 +579,13 @@ const preStyles = StyleSheet.create({
   },
   gpsChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: Colors.warningBg, borderRadius: Radius.pill,
+    backgroundColor: Colors.severityWarningBg, borderRadius: Radius.pill,
     paddingHorizontal: Spacing.md, paddingVertical: 7,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
   gpsDot: { width: 8, height: 8, borderRadius: 4 },
-  gpsText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.warning },
+  gpsText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.severityWarning },
   bottomOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, pointerEvents: 'box-none' },
   bottomRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -605,7 +605,7 @@ const runStyles = StyleSheet.create({
     gap: Spacing.base,
   },
   statItem: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: FontSize.h2, fontWeight: '800', color: Colors.runningText, letterSpacing: -0.5 },
+  statValue: { fontSize: FontSize.h2, fontWeight: '800', color: Colors.runningText, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
   statLabel: { fontSize: FontSize.tiny, color: 'rgba(255,255,255,0.4)', marginTop: 2, letterSpacing: 0.5 },
   gpsIndicator: { width: 8, height: 8, borderRadius: 4, marginBottom: 2 },
 
