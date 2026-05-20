@@ -15,12 +15,11 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.yiiling.cairn",
+      "buildNumber": "2",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Cairn needs your location to track your track and show nearby markers.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Cairn needs background location to keep recording your track when the screen is locked or you switch apps.",
         "UIBackgroundModes": [
-          "location",
-          "audio",
           "location",
           "audio"
         ],
@@ -36,12 +35,7 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {

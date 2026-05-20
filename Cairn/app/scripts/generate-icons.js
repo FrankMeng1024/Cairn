@@ -106,26 +106,31 @@ async function ensureAssetsDir() {
 async function main() {
   await ensureAssetsDir();
 
-  // 1. icon.png — full square with green background
+  // Apple App Store rejects icons with alpha channel — flatten onto solid green.
+  const flatten = (svg) => sharp(Buffer.from(svg))
+    .flatten({ background: BG_DARK })
+    .png({ compressionLevel: 9 });
+
+  // 1. icon.png — full square with green background (NO alpha for App Store)
   const iconSvg = buildSvg(1024);
-  await sharp(Buffer.from(iconSvg)).png().toFile(path.join(ASSETS, 'icon.png'));
-  console.log('✓ icon.png (1024×1024)');
+  await flatten(iconSvg).toFile(path.join(ASSETS, 'icon.png'));
+  console.log('✓ icon.png (1024×1024, no alpha)');
 
   // 2. adaptive-icon.png — Android adaptive foreground; smaller stones to
   //    fit the central safe zone (40% of canvas), background is the green tile
   const adaptiveSvg = buildSvg(1024, { background: true, scale: 0.40 });
-  await sharp(Buffer.from(adaptiveSvg)).png().toFile(path.join(ASSETS, 'adaptive-icon.png'));
-  console.log('✓ adaptive-icon.png (1024×1024, safe-zone scale)');
+  await flatten(adaptiveSvg).toFile(path.join(ASSETS, 'adaptive-icon.png'));
+  console.log('✓ adaptive-icon.png (1024×1024, no alpha)');
 
-  // 3. splash-icon.png — transparent background, larger stones for splash screen
+  // 3. splash-icon.png — keep transparent (splash overlays bg color from app.json)
   const splashSvg = buildSvg(1024, { background: false, scale: 0.50 });
   await sharp(Buffer.from(splashSvg)).png().toFile(path.join(ASSETS, 'splash-icon.png'));
   console.log('✓ splash-icon.png (1024×1024, transparent)');
 
   // 4. favicon.png — 48×48 small icon for web
   const faviconSvg = buildSvg(48);
-  await sharp(Buffer.from(faviconSvg)).png().toFile(path.join(ASSETS, 'favicon.png'));
-  console.log('✓ favicon.png (48×48)');
+  await flatten(faviconSvg).toFile(path.join(ASSETS, 'favicon.png'));
+  console.log('✓ favicon.png (48×48, no alpha)');
 }
 
 main().catch((err) => {
