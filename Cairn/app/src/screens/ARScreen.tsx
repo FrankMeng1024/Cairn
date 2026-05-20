@@ -320,13 +320,21 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   const [userHeading, setUserHeading] = useState<number | null>(null);
 
   // Subscribe to magnetic heading on mount; expo-location is already a dep.
-  // No new build required. Falls back gracefully if unavailable (web, simulator).
+  // Requests permission first — without it, watchHeadingAsync silently
+  // returns no events on iOS. Falls back gracefully if denied or unavailable.
   useEffect(() => {
     let cancelled = false;
     let sub: { remove: () => void } | null = null;
     (async () => {
       try {
         const Location = await import('expo-location');
+        // Ensure foreground location is granted; heading API depends on it.
+        const perm = await Location.requestForegroundPermissionsAsync();
+        if (cancelled) return;
+        if (perm.status !== 'granted') {
+          // Heading stays null → CompassDial shows "Heading unavailable" hint.
+          return;
+        }
         sub = await Location.watchHeadingAsync((h) => {
           if (cancelled) return;
           // trueHeading is most accurate but may be -1 on simulator;

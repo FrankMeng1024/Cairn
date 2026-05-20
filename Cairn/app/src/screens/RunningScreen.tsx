@@ -95,6 +95,10 @@ export function RunningScreen() {
   const [runState, setRunState] = useState<RunState>('pre');
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [showRoutePicker, setShowRoutePicker] = useState(false);
+  // foregroundGranted gates UserLocation rendering on the pre-start map.
+  // Without this, Mapbox UserLocation silently fails (no blue dot) and the
+  // map shows the default region instead of the user's location.
+  const [foregroundGranted, setForegroundGranted] = useState(false);
   const routePickerSlide = useRef(new Animated.Value(300)).current;
   const routePickerOpacity = useRef(new Animated.Value(0)).current;
   const [isLocked, setIsLocked] = useState(true);
@@ -114,6 +118,26 @@ export function RunningScreen() {
   useRunKeepAwake();
 
   useEffect(() => { loadRoutes(); }, []);
+
+  // Request foreground location permission on mount so the pre-start map's
+  // UserLocation dot can render. If denied, dot is hidden but map still shows.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const Location = await import('expo-location');
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (cancelled) return;
+        if (perm.status === 'granted') {
+          setForegroundGranted(true);
+        } else if (perm.canAskAgain) {
+          const ask = await Location.requestForegroundPermissionsAsync();
+          if (!cancelled && ask.status === 'granted') setForegroundGranted(true);
+        }
+      } catch { /* permission unavailable — dot stays hidden */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const openRoutePicker = () => {
     setShowRoutePicker(true);
@@ -268,13 +292,13 @@ export function RunningScreen() {
           >
             {CameraComponent && (
               <CameraComponent
-                followUserLocation
+                followUserLocation={foregroundGranted}
                 followZoomLevel={15}
                 animationMode="flyTo"
                 animationDuration={500}
               />
             )}
-            {UserLocationComponent && (
+            {UserLocationComponent && foregroundGranted && (
               <UserLocationComponent visible androidRenderMode="normal" />
             )}
           </MapView>
