@@ -1,15 +1,18 @@
 /**
- * generate-icons.js — generate icon.png/adaptive-icon.png/splash-icon.png
- * from a CairnLogo-style SVG (3 stones) with NZ-flavored deep forest green
- * background.
+ * generate-icons.js — generate icon.png/adaptive-icon.png/splash-icon.png.
+ *
+ * MATCHES CairnLogo.tsx exactly:
+ *   - White background (App Store icon spec)
+ *   - Sage green stones (#5d7c46) — same colour as the in-app small logo
+ *   - Asymmetric stone offsets (base right, mid left, top right) — same as
+ *     the on-screen CairnLogo for visual consistency
+ *   - Shadow arcs with same opacities (.18 / .22 / .26)
+ *
+ * No alpha on icon.png / adaptive-icon.png / favicon.png (App Store rejects
+ * alpha-channel icons). Splash kept transparent so app.json's
+ * splash.backgroundColor controls the rim.
  *
  * Run: node scripts/generate-icons.js
- *
- * Output:
- *   assets/icon.png            — 1024×1024 (iOS app icon)
- *   assets/adaptive-icon.png   — 1024×1024 (Android adaptive foreground, safe-zone aware)
- *   assets/splash-icon.png     — 1024×1024 (splash screen, transparent bg)
- *   assets/favicon.png         — 48×48 (web favicon)
  */
 const sharp = require('sharp');
 const path = require('path');
@@ -17,119 +20,81 @@ const fs = require('fs');
 
 const ASSETS = path.join(__dirname, '..', 'assets');
 
-// NZ forest greens (sage/moss palette, NOT neon)
-const BG_DARK = '#3d5a2e'; // deep moss
-const BG_LIGHT = '#5d7c46'; // sage highlight (subtle gradient top)
-const STONE_LIGHT = '#f5f1e6'; // warm cream (NZ tussock-grass tone)
-const STONE_SHADOW = '#2d4a20'; // darker green for stone underside
-
-// Gradient: top slightly lighter → bottom darker (natural lighting)
-function bgSvg(size) {
-  return `
-    <defs>
-      <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${BG_LIGHT}" stop-opacity="1"/>
-        <stop offset="100%" stop-color="${BG_DARK}" stop-opacity="1"/>
-      </linearGradient>
-      <radialGradient id="vignette" cx="0.5" cy="0.5" r="0.7">
-        <stop offset="0%" stop-color="${BG_DARK}" stop-opacity="0"/>
-        <stop offset="100%" stop-color="${BG_DARK}" stop-opacity="0.35"/>
-      </radialGradient>
-    </defs>
-    <rect width="${size}" height="${size}" fill="url(#bgGrad)"/>
-    <rect width="${size}" height="${size}" fill="url(#vignette)"/>
-  `;
-}
+const BG_LIGHT = '#ffffff'; // pure white background, matches in-app HomeScreen header
+const STONE = '#5d7c46';    // sage green — Colors.primary, identical to CairnLogo default
 
 /**
- * 3-stone cairn (matches CairnLogo.tsx geometry, scaled to fill 1024 viewBox).
- * Centered, occupies ~60% of the canvas leaving generous breathing room
- * for iOS's automatic squircle mask.
+ * 3-stone cairn matching CairnLogo.tsx geometry.
+ * Reference viewBox 18×24, asymmetric offsets:
+ *   base   cx=9.5  cy=21   rx=7.5 ry=2.4
+ *   middle cx=8.5  cy=15   rx=5.5 ry=2.0
+ *   top    cx=11   cy=9.5  rx=3.4 ry=1.7
+ * shadow opacities: .18 / .22 / .26 — same as CairnLogo
  */
-function cairnSvg(size, scale = 0.55) {
+function cairnSvgInner(size, scale = 0.55) {
   const cx = size / 2;
   const cy = size / 2;
-  // Reference geometry from CairnLogo.tsx (viewBox 22×30):
-  //   base   stone: cx=9.5  cy=22  rx=7.5  ry=2.4
-  //   middle stone: cx=8.5  cy=17  rx=5.5  ry=2.0
-  //   top    stone: cx=11   cy=12.5 rx=3.4 ry=1.7
-  // We scale by `scale * size / 22` and re-center.
-  const u = (scale * size) / 22;
+  // Source viewBox is 18×24; scaled-up ratio across canvas
+  const u = (scale * size) / 18;
 
-  // Map original coordinates onto canvas centered at (cx, cy).
-  // Original logo geometry spans x:[2..17], y:[10.8..24.4] in the 22×30 viewBox.
-  // True visual center: (10, 17.5). Anchor cairn slightly above geometric
-  // center so the bottom shadow has space — final visual center settles at
-  // (10, 16.5) which then maps to canvas center.
-  const ox = 10;
-  const oy = 16.5;
-  const project = (px, py) => ({
-    x: cx + (px - ox) * u,
-    y: cy + (py - oy) * u,
-  });
+  // Original visual centre is roughly (9.3, 15.5) — base stone widest at the
+  // bottom dominates visual mass; bias slightly upward to centre on canvas.
+  const ox = 9.3;
+  const oy = 15.5;
+  const project = (px, py) => ({ x: cx + (px - ox) * u, y: cy + (py - oy) * u });
 
-  const base = { p: project(10, 22), rx: 7.5 * u, ry: 2.4 * u };
-  const mid = { p: project(10, 17), rx: 5.5 * u, ry: 2.0 * u };
-  const top = { p: project(10, 12.5), rx: 3.4 * u, ry: 1.7 * u };
+  const stones = [
+    { p: project(9.5, 21),  rx: 7.5 * u, ry: 2.4 * u, shadowOp: 0.18 },
+    { p: project(8.5, 15),  rx: 5.5 * u, ry: 2.0 * u, shadowOp: 0.22 },
+    { p: project(11,  9.5), rx: 3.4 * u, ry: 1.7 * u, shadowOp: 0.26 },
+  ];
 
-  const stone = (s, shadowOp) => `
-    <ellipse cx="${s.p.x}" cy="${s.p.y}" rx="${s.rx}" ry="${s.ry}" fill="${STONE_LIGHT}"/>
-    <path d="M ${s.p.x - s.rx} ${s.p.y} a ${s.rx} ${s.ry} 0 0 0 ${s.rx * 2} 0" fill="${STONE_SHADOW}" opacity="${shadowOp}"/>
-  `;
-
-  // Soft drop-shadow under the cairn for grounding
-  const shadowY = base.p.y + base.ry * 0.85;
-  const shadowRx = base.rx * 1.1;
-
-  return `
-    <ellipse cx="${cx}" cy="${shadowY}" rx="${shadowRx}" ry="${base.ry * 0.5}" fill="#000" opacity="0.18"/>
-    ${stone(base, 0.25)}
-    ${stone(mid, 0.22)}
-    ${stone(top, 0.18)}
-  `;
+  return stones.map((s) => `
+    <ellipse cx="${s.p.x}" cy="${s.p.y}" rx="${s.rx}" ry="${s.ry}" fill="${STONE}"/>
+    <path d="M ${s.p.x - s.rx} ${s.p.y} a ${s.rx} ${s.ry} 0 0 0 ${s.rx * 2} 0" fill="${STONE}" opacity="${s.shadowOp}"/>
+  `).join('');
 }
 
-function buildSvg(size, opts = { background: true }) {
+function buildSvg(size, opts = { background: true, scale: 0.55 }) {
+  const bg = opts.background ? `<rect width="${size}" height="${size}" fill="${BG_LIGHT}"/>` : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-  ${opts.background ? bgSvg(size) : ''}
-  ${cairnSvg(size, opts.scale ?? 0.55)}
+  ${bg}
+  ${cairnSvgInner(size, opts.scale ?? 0.55)}
 </svg>`;
 }
 
 async function ensureAssetsDir() {
-  if (!fs.existsSync(ASSETS)) {
-    fs.mkdirSync(ASSETS, { recursive: true });
-  }
+  if (!fs.existsSync(ASSETS)) fs.mkdirSync(ASSETS, { recursive: true });
 }
 
 async function main() {
   await ensureAssetsDir();
 
-  // Apple App Store rejects icons with alpha channel — flatten onto solid green.
+  // Apple App Store rejects icons with alpha channel — flatten onto white.
   const flatten = (svg) => sharp(Buffer.from(svg))
-    .flatten({ background: BG_DARK })
+    .flatten({ background: BG_LIGHT })
     .png({ compressionLevel: 9 });
 
-  // 1. icon.png — full square with green background (NO alpha for App Store)
-  const iconSvg = buildSvg(1024);
-  await flatten(iconSvg).toFile(path.join(ASSETS, 'icon.png'));
+  // 1. icon.png — white square + sage stones (NO alpha)
+  await flatten(buildSvg(1024, { background: true, scale: 0.55 }))
+    .toFile(path.join(ASSETS, 'icon.png'));
   console.log('✓ icon.png (1024×1024, no alpha)');
 
-  // 2. adaptive-icon.png — Android adaptive foreground; smaller stones to
-  //    fit the central safe zone (40% of canvas), background is the green tile
-  const adaptiveSvg = buildSvg(1024, { background: true, scale: 0.40 });
-  await flatten(adaptiveSvg).toFile(path.join(ASSETS, 'adaptive-icon.png'));
+  // 2. adaptive-icon.png — Android foreground; smaller scale for safe zone
+  await flatten(buildSvg(1024, { background: true, scale: 0.40 }))
+    .toFile(path.join(ASSETS, 'adaptive-icon.png'));
   console.log('✓ adaptive-icon.png (1024×1024, no alpha)');
 
   // 3. splash-icon.png — keep transparent (splash overlays bg color from app.json)
-  const splashSvg = buildSvg(1024, { background: false, scale: 0.50 });
-  await sharp(Buffer.from(splashSvg)).png().toFile(path.join(ASSETS, 'splash-icon.png'));
+  await sharp(Buffer.from(buildSvg(1024, { background: false, scale: 0.50 })))
+    .png()
+    .toFile(path.join(ASSETS, 'splash-icon.png'));
   console.log('✓ splash-icon.png (1024×1024, transparent)');
 
-  // 4. favicon.png — 48×48 small icon for web
-  const faviconSvg = buildSvg(48);
-  await flatten(faviconSvg).toFile(path.join(ASSETS, 'favicon.png'));
+  // 4. favicon.png — 48×48 web favicon
+  await flatten(buildSvg(48, { background: true, scale: 0.55 }))
+    .toFile(path.join(ASSETS, 'favicon.png'));
   console.log('✓ favicon.png (48×48, no alpha)');
 }
 
