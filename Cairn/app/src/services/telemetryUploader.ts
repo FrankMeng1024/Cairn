@@ -227,10 +227,15 @@ class TelemetryUploader {
 
   private getBackendUrl(): string {
     const settings = useSettingsStore.getState();
+    // 1. User-overridden URL (DebugScreen) wins
     if (settings.telemetryBackendUrl) return settings.telemetryBackendUrl;
-    // Fall back to env (set via app.json or .env at build time)
-    const env = (process.env.EXPO_PUBLIC_BACKEND_URL ?? '').trim();
-    return env;
+    // 2. Fall back to dedicated telemetry backend env (rare — usually unset)
+    const tel = (process.env.EXPO_PUBLIC_BACKEND_URL ?? '').trim();
+    if (tel) return tel;
+    // 3. Default to the same backend the app talks to for everything else.
+    //    Telemetry shares /api/telemetry/sessions on the main backend.
+    const api = (process.env.EXPO_PUBLIC_API_BASE_URL ?? '').trim();
+    return api;
   }
 
   private requireWifi(): boolean {

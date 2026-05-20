@@ -209,21 +209,13 @@ export function DebugScreen() {
               style={styles.input}
               value={telemetryBackendUrl}
               onChangeText={(t) => updateSetting('telemetryBackendUrl', t)}
-              placeholder="https://your.server"
+              placeholder={(process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://your.server') + '  (default)'}
               autoCapitalize="none"
               autoCorrect={false}
             />
-
-            <Text style={styles.fieldLabel}>API Key</Text>
-            <TextInput
-              style={styles.input}
-              value={telemetryApiKey}
-              onChangeText={(t) => updateSetting('telemetryApiKey', t)}
-              placeholder="X-API-Key value"
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-            />
+            <Text style={styles.fieldHint}>
+              Leave blank to use the app&apos;s default backend.
+            </Text>
 
             <TouchableOpacity style={styles.actionBtn} onPress={handleRetryAll}>
               <Icon name="ArrowUp" size={16} color={Colors.primary} />
@@ -404,6 +396,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: Spacing.sm,
     marginBottom: 4,
+  },
+  fieldHint: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    marginTop: 4,
+    marginBottom: Spacing.sm,
+    fontStyle: 'italic',
   },
   input: {
     backgroundColor: '#fff',
