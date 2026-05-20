@@ -21,7 +21,8 @@
         "UIBackgroundModes": [
           "location",
           "audio"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
