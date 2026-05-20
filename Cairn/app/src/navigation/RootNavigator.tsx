@@ -4,8 +4,8 @@
  * Flow: Auth → Home → (Hiking | Running | MapHistory | Friends | Settings)
  * NO bottom tabs. All navigation from Home page.
  */
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useRef } from 'react';
+import { NavigationContainer, type NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { AuthScreen } from '../screens/AuthScreen';
@@ -21,6 +21,7 @@ import { ARScreen } from '../screens/ARScreen';
 import { RouteEditorScreen } from '../screens/RouteEditorScreen';
 import { DebugScreen } from '../screens/DebugScreen';
 import { useAppStore } from '../store/useAppStore';
+import { crashLogger } from '../services/crashLogger';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -41,9 +42,25 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
   const { isLoggedIn } = useAppStore();
+  const navRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
+  const lastRouteName = useRef<string | undefined>(undefined);
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={navRef}
+      onReady={() => {
+        const route = navRef.current?.getCurrentRoute();
+        lastRouteName.current = route?.name;
+        crashLogger.breadcrumb(`nav_ready:${route?.name ?? 'unknown'}`);
+      }}
+      onStateChange={() => {
+        const route = navRef.current?.getCurrentRoute();
+        if (route?.name && route.name !== lastRouteName.current) {
+          crashLogger.breadcrumb(`nav:${lastRouteName.current ?? '?'}->${route.name}`);
+          lastRouteName.current = route.name;
+        }
+      }}
+    >
       <Stack.Navigator
         screenOptions={{
           headerShown: false,

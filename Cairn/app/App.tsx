@@ -13,6 +13,7 @@ import { registerBackgroundTask } from './src/services/backgroundLocationTask';
 import { telemetryUploader } from './src/services/telemetryUploader';
 import { networkMonitor } from './src/services/networkMonitor';
 import { isPlaywrightBypass } from './src/utils/devFlags';
+import { crashLogger } from './src/services/crashLogger';
 
 // Must run at app entry — handles Google OAuth popup redirect on web
 WebBrowser.maybeCompleteAuthSession();
@@ -134,6 +135,28 @@ function AppRoot() {
   });
 
   useEffect(() => {
+    // Install global crash handler FIRST so any error during boot is captured.
+    crashLogger.install();
+    crashLogger.breadcrumb('app_boot');
+
+    // If a previous launch crashed, ship the report to the telemetry pipeline
+    // so it auto-uploads next time the app is online.
+    crashLogger.drainLastCrash().then((report) => {
+      if (!report) return;
+      // eslint-disable-next-line no-console
+      console.warn('[crash] previous launch crashed:', report.message);
+      try {
+        debugLogger.log({
+          ts: report.ts,
+          event: 'error' as const,
+          source: 'previous_launch_crash',
+          message: report.message,
+          stack: report.stack,
+          fatal: report.isFatal ?? true,
+        } as any);
+      } catch { /* logger may be off */ }
+    }).catch(() => {});
+
     hydrateSettings();
     // hydrate() handles auth restore, per-user session fetch from backend,
     // and marker isolation. Do NOT call hydrateMarkers/hydrateSessions in

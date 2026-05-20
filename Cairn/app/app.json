@@ -16,7 +16,6 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.yiiling.cairn",
       "buildNumber": "3",
-      "deploymentTarget": "15.1",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Cairn needs your location to track your track and show nearby markers.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Cairn needs background location to keep recording your track when the screen is locked or you switch apps.",
@@ -57,7 +56,15 @@
           "RNMapboxMapsImpl": "mapbox"
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
