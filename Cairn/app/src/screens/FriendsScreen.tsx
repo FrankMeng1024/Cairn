@@ -9,6 +9,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Switch, Animated, ActivityIndicator,
+  KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -176,9 +177,16 @@ function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
         activeOpacity={1}
         onPress={onDismiss}
       />
-      <View style={sheetStyles.sheet}>
-        {/* Drag handle */}
-        <View style={sheetStyles.handle} />
+      {/* KeyboardAvoidingView lifts the sheet above the on-screen keyboard so
+          the email input and Send button remain visible while typing. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={sheetStyles.kbWrap}
+        pointerEvents="box-none"
+      >
+        <View style={sheetStyles.sheet}>
+          {/* Drag handle */}
+          <View style={sheetStyles.handle} />
 
         {addState === 'success' ? (
           <View style={sheetStyles.successState}>
@@ -239,7 +247,8 @@ function AddFriendSheet({ onDismiss }: { onDismiss: () => void }) {
             </PressBtn>
           </>
         )}
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -726,6 +735,11 @@ const sheetStyles = StyleSheet.create({
   },
   backdropTouch: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+  },
+  kbWrap: {
+    width: '100%',
+    // Anchored to bottom of backdrop; KeyboardAvoidingView pushes upward when
+    // keyboard appears so input + buttons remain visible.
   },
   sheet: {
     backgroundColor: Colors.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,

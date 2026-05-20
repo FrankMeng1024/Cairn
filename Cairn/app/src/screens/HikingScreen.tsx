@@ -161,6 +161,11 @@ function HikingMap({ markers, trackPoints, onMarkerPress }: {
         logoEnabled={false}
         attributionEnabled={false}
         compassEnabled={true}
+        // Pin compass to the bottom-right corner so it cannot overlap the
+        // GPS status chip in the top-right of the overlay.
+        // compassViewPosition: 0=TopLeft, 1=TopRight (default), 2=BottomLeft, 3=BottomRight
+        compassViewPosition={3}
+        compassViewMargins={{ x: 16, y: 80 }}
         scaleBarEnabled={false}
       >
         <CameraComponent
@@ -479,7 +484,12 @@ export function HikingScreen() {
   const [ui, setUi] = useState<UIState>('map');
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
   const [showSavedToast, setShowSavedToast] = useState(false);
-  const [phase, setPhase] = useState<'select' | 'tracking'>('select');
+  // Initialize phase from current tracking status — if user has an active hike
+  // and re-enters this screen (Home → Hiking again), jump straight to the
+  // tracking UI instead of forcing the route picker.
+  const [phase, setPhase] = useState<'select' | 'tracking'>(() =>
+    useTrackingStore.getState().status === 'tracking' ? 'tracking' : 'select',
+  );
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
 
   const routes = useRouteStore(s => s.routes);
@@ -487,6 +497,18 @@ export function HikingScreen() {
   const isTracking = status === 'tracking';
 
   useEffect(() => { loadRoutes(); }, []);
+
+  // Sync phase with tracking status: if a hike is in progress (e.g. user
+  // navigated away with the hike still running), show tracking UI; otherwise
+  // show the route picker.
+  useEffect(() => {
+    if (status === 'tracking' && phase !== 'tracking') {
+      setPhase('tracking');
+    } else if (status === 'idle' && phase === 'tracking') {
+      // Session ended (stopTracking); revert to selection screen for next hike.
+      setPhase('select');
+    }
+  }, [status, phase]);
 
   // Spring press scales
   const trackBtnScale = useRef(new Animated.Value(1)).current;

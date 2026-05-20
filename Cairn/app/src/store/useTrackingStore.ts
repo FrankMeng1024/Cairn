@@ -4,13 +4,19 @@
  * Architecture:
  *   - foreground: watchPositionAsync gives instant updates while app is active
  *   - background: startLocationUpdatesAsync + TaskManager keeps tracking on lock screen
- *   - dedupe: timestamps prevent double-counting when both fire at the same time
+ *   - Single-source guarantee: at any given instant ONLY ONE source feeds addTrackPoint —
+ *     foreground watcher when AppState is 'active', background drain when 'background'.
+ *     This eliminates the 1.7× duplicate-fix logging seen in Sprint 41 telemetry.
+ *   - Timestamp-based dedupe: addTrackPoint uses position.timestamp; if a fix with the
+ *     same timestamp has already been recorded, we skip it. Fallback: same-timestamp
+ *     fixes >5m apart are kept (GPS may reuse timestamps but real movement still wins).
  *   - dynamic sampling: every 60s checks battery + movement, restarts background task
  *     if interval should change
  *
  * Web fallback: timer works, GPS values show '--'.
  */
 import { create } from 'zustand';
+import { AppState, type AppStateStatus } from 'react-native';
 import { haversineM, calculateElevationGain, generateId, getSamplingInterval, classifyMovement } from '../utils/geo';
 import { getCurrentRegion } from '../config/regions';
 import { useSessionStore } from './useSessionStore';
@@ -34,8 +40,10 @@ let locationSubscription: { remove: () => void } | null = null;
 let durationInterval: ReturnType<typeof setInterval> | null = null;
 let drainInterval: ReturnType<typeof setInterval> | null = null;
 let dynamicSamplingInterval: ReturnType<typeof setInterval> | null = null;
+let appStateSubscription: { remove: () => void } | null = null;
 let lastSamplingIntervalMs = 3000;
 let backgroundTaskActive = false;
+let backgroundGrantedCached = false;
 
 async function getLocation() {
   if (!Location) {
@@ -60,9 +68,11 @@ interface TrackingState {
   elevationGainM: number;
   trackPoints: TrackPoint[];
   markerIds: string[];         // markers planted during this session
+  pausePins: Coordinate[];     // locations where user paused (rendered as flag pins)
   locationAvailable: boolean;  // false on web/simulator
   lastCoordinate: Coordinate | null;
   lastCoordinateTime: number | null;  // unix ms of last GPS fix
+  lastFixTimestamp: number | null;    // GPS-fix timestamp (for dedupe)
   altitudeHistory: (number | null)[];
 
   // Actions
@@ -71,7 +81,7 @@ interface TrackingState {
   stopTracking: () => void;
   pauseTracking: () => void;
   resumeTracking: () => void;
-  addTrackPoint: (coord: Coordinate) => void;
+  addTrackPoint: (coord: Coordinate, timestamp?: number) => void;
   linkMarker: (markerId: string) => void;
   reset: () => void;
 }
@@ -86,9 +96,11 @@ const initialState = {
   elevationGainM: 0,
   trackPoints: [],
   markerIds: [],
+  pausePins: [] as Coordinate[],
   locationAvailable: false,
   lastCoordinate: null,
   lastCoordinateTime: null,
+  lastFixTimestamp: null,
   altitudeHistory: [] as (number | null)[],
 };
 
@@ -114,6 +126,27 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     batteryMonitor.start().catch(() => {});
     networkMonitor.start().catch(() => {});
 
+    // Defensive: clear any stale intervals before starting new ones.
+    // Prevents leaks if startTracking is called twice without stopTracking
+    // (crash recovery, double-tap, etc.) which would otherwise leave
+    // multiple drain loops + multiple sampling timers running, defeating
+    // the single-source guarantee.
+    if (durationInterval) {
+      clearInterval(durationInterval);
+      durationInterval = null;
+    }
+    if (drainInterval) {
+      clearInterval(drainInterval);
+      drainInterval = null;
+    }
+    if (dynamicSamplingInterval) {
+      clearInterval(dynamicSamplingInterval);
+      dynamicSamplingInterval = null;
+    }
+    if (appStateSubscription) {
+      try { appStateSubscription.remove(); } catch { /* no-op */ }
+      appStateSubscription = null;
+    }
     // Start real-time duration counter
     durationInterval = setInterval(() => {
       if (get().status === 'tracking') {
@@ -132,110 +165,98 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
       // Foreground permission for normal use
       const fg = await loc.requestForegroundPermissionsAsync();
       if (fg.status !== 'granted') {
+        // Close orphan debug session so telemetry doesn't accumulate stale entries.
+        debugLogger.endSession().catch(() => {});
         set({ status: 'tracking', locationAvailable: false });
         return;
       }
 
       // Background permission for lock-screen tracking — best effort, app keeps
       // working even if user denies (just no background updates).
-      let backgroundGranted = false;
       try {
         const bg = await loc.requestBackgroundPermissionsAsync();
-        backgroundGranted = bg.status === 'granted';
+        backgroundGrantedCached = bg.status === 'granted';
       } catch {
         // Background permission not available on this build (e.g. web, simulator).
+        backgroundGrantedCached = false;
       }
 
       set({ status: 'tracking', locationAvailable: true });
 
-      // ── Foreground subscription (instant updates while app is active) ──
-      locationSubscription = await loc.watchPositionAsync(
-        {
-          accuracy: loc.Accuracy.BestForNavigation,
-          timeInterval: lastSamplingIntervalMs,
-          distanceInterval: 5,
-        },
-        (position) => {
-          debugLogger.log({
-            // Use GPS-fix timestamp when available — gives correct ordering
-            // even if the JS event loop delayed the callback.
-            ts: position.timestamp || Date.now(),
-            event: 'gps_fix',
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-            accuracy_m: position.coords.accuracy ?? null,
-            altitude_m: position.coords.altitude ?? null,
-            altitude_accuracy_m: position.coords.altitudeAccuracy ?? null,
-            speed_mps: position.coords.speed ?? null,
-            heading_deg: position.coords.heading ?? null,
-            raw_or_filtered: 'raw',
-            source: 'foreground',
+      // Pre-register the background task so we can quickly start/stop it
+      // when AppState changes — but DON'T start it yet; foreground watcher
+      // is the active source while app is in foreground.
+      if (backgroundGrantedCached) {
+        await registerBackgroundTask();
+      }
+
+      // Activate whichever source matches CURRENT app state FIRST, before
+      // wiring up the AppState listener. This avoids a race where the
+      // listener fires mid-await of the initial activation and both paths
+      // run concurrently.
+      const startState = AppState.currentState;
+      if (startState === 'background' || startState === 'inactive') {
+        if (backgroundGrantedCached) await activateBackgroundSource();
+      } else {
+        // 'active' or 'unknown' → foreground watcher
+        await activateForegroundSource();
+      }
+
+      // Subscribe AppState ONCE to flip sources foreground ↔ background.
+      // Single-source guarantee eliminates the duplicate-fix logging bug.
+      // Each handler awaits via the activation queue to prevent TOCTOU races
+      // between hasStartedLocationUpdatesAsync and startLocationUpdatesAsync.
+      appStateSubscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+        if (get().status !== 'tracking') return;
+        if (nextState === 'active') {
+          enqueueActivation(async () => {
+            await activateForegroundSource();
+            deactivateBackgroundSource();
           });
+        } else if (nextState === 'background' || nextState === 'inactive') {
+          enqueueActivation(async () => {
+            deactivateForegroundSource();
+            await activateBackgroundSource();
+          });
+        }
+      });
 
-          const coord: Coordinate = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            alt: position.coords.altitude,
-            accuracy: position.coords.accuracy ?? null,
-          };
-          get().addTrackPoint(coord);
-        },
-        (error) => {
-          debugLogger.logError(error, 'watchPositionAsync:foreground');
-        },
-      );
-
-      // ── Background TaskManager (lock-screen continuity) ──
-      if (backgroundGranted) {
-        const taskRegistered = await registerBackgroundTask();
-        if (taskRegistered) {
-          try {
-            const already = await loc.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-            if (already) {
-              await loc.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-            }
-            await loc.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-              accuracy: loc.Accuracy.BestForNavigation,
-              timeInterval: lastSamplingIntervalMs,
-              distanceInterval: 5,
-              showsBackgroundLocationIndicator: true,
-              foregroundService: {
-                notificationTitle: 'Cairn is tracking',
-                notificationBody: 'Recording your route in the background.',
-                notificationColor: '#5d7c46',
-              },
-            });
-            backgroundTaskActive = true;
-          } catch (err) {
-            debugLogger.logError(err, 'startTracking:startBackground');
-          }
+      // Re-check AppState AFTER listener registered: if state changed during
+      // the brief window between initial activation and addEventListener,
+      // the listener missed it — correct course now.
+      const postListenerState = AppState.currentState;
+      if (postListenerState !== startState) {
+        if (postListenerState === 'background' || postListenerState === 'inactive') {
+          enqueueActivation(async () => {
+            deactivateForegroundSource();
+            await activateBackgroundSource();
+          });
+        } else {
+          enqueueActivation(async () => {
+            await activateForegroundSource();
+            deactivateBackgroundSource();
+          });
         }
       }
 
       // ── Background drain loop (poll task queue every 1s) ──
+      // Drains buffered fixes from the background task into the store.
+      // The drain only runs while background source is active; status check
+      // protects against firing during foreground-only windows.
       drainInterval = setInterval(() => {
         if (get().status !== 'tracking') return;
+        if (!backgroundTaskActive) return;
         const drained = drainBackgroundLocations();
         for (const c of drained) {
-          // Dedupe: skip if coords are essentially the same as the last point.
-          // Compare lat/lng to ~1e-6 deg ≈ 0.1m. Foreground updates put a fix
-          // into the store every few seconds; if background fires the same
-          // coords (e.g. iOS replays a stale fix) we drop it.
-          const last = get().lastCoordinate;
-          if (
-            last &&
-            Math.abs(c.latitude - last.lat) < 1e-6 &&
-            Math.abs(c.longitude - last.lng) < 1e-6
-          ) {
-            continue;
-          }
-
-          get().addTrackPoint({
-            lat: c.latitude,
-            lng: c.longitude,
-            alt: c.altitude,
-            accuracy: c.accuracy ?? null,
-          });
+          get().addTrackPoint(
+            {
+              lat: c.latitude,
+              lng: c.longitude,
+              alt: c.altitude,
+              accuracy: c.accuracy ?? null,
+            },
+            c.timestamp,
+          );
         }
       }, 1000);
 
@@ -252,61 +273,17 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
         if (Math.abs(desiredMs - lastSamplingIntervalMs) >= 500) {
           lastSamplingIntervalMs = desiredMs;
 
-          // Restart foreground subscription with new interval
-          if (locationSubscription && Location) {
-            try {
-              locationSubscription.remove();
-              locationSubscription = await Location.watchPositionAsync(
-                {
-                  accuracy: Location.Accuracy.BestForNavigation,
-                  timeInterval: desiredMs,
-                  distanceInterval: 5,
-                },
-                (position) => {
-                  debugLogger.log({
-                    ts: position.timestamp || Date.now(),
-                    event: 'gps_fix',
-                    lat: position.coords.latitude,
-                    lon: position.coords.longitude,
-                    accuracy_m: position.coords.accuracy ?? null,
-                    altitude_m: position.coords.altitude ?? null,
-                    altitude_accuracy_m: position.coords.altitudeAccuracy ?? null,
-                    speed_mps: position.coords.speed ?? null,
-                    heading_deg: position.coords.heading ?? null,
-                    raw_or_filtered: 'raw',
-                    source: 'foreground',
-                  });
-                  get().addTrackPoint({
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude,
-                    alt: position.coords.altitude,
-                    accuracy: position.coords.accuracy ?? null,
-                  });
-                },
-              );
-            } catch (err) {
-              debugLogger.logError(err, 'dynamicSampling:fgRestart');
+          // Restart whichever source is currently active with the new interval.
+          // Goes through the activation queue to avoid racing with AppState
+          // listener-driven flips.
+          const currentAppState = AppState.currentState;
+          if (currentAppState === 'background' || currentAppState === 'inactive') {
+            if (backgroundTaskActive) {
+              enqueueActivation(activateBackgroundSource);
             }
-          }
-
-          // Restart background TaskManager
-          if (backgroundTaskActive && Location) {
-            try {
-              await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-              await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-                accuracy: Location.Accuracy.BestForNavigation,
-                timeInterval: desiredMs,
-                distanceInterval: 5,
-                showsBackgroundLocationIndicator: true,
-                foregroundService: {
-                  notificationTitle: 'Cairn is tracking',
-                  notificationBody: 'Recording your route in the background.',
-                  notificationColor: '#5d7c46',
-                },
-              });
-            } catch (err) {
-              debugLogger.logError(err, 'dynamicSampling:restart');
-            }
+          } else {
+            // 'active' or 'unknown'
+            enqueueActivation(activateForegroundSource);
           }
         }
       }, 60_000);
@@ -317,6 +294,10 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   },
 
   stopTracking: () => {
+    // App-state subscription
+    try { appStateSubscription?.remove(); } catch { /* no-op */ }
+    appStateSubscription = null;
+
     // Foreground subscription
     try { locationSubscription?.remove(); } catch { /* web: no-op */ }
     locationSubscription = null;
@@ -371,6 +352,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
         elevationGainM: s.elevationGainM,
         trackPoints: s.trackPoints,
         markerIds: s.markerIds,
+        pausePins: s.pausePins.length > 0 ? s.pausePins : undefined,
       });
     }
 
@@ -378,49 +360,50 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   },
 
   pauseTracking: () => {
-    try { locationSubscription?.remove(); } catch { /* web: no-op */ }
-    locationSubscription = null;
-    if (backgroundTaskActive && Location) {
-      Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK).catch(() => {});
-      backgroundTaskActive = false;
+    // Drop a flag pin at the current location so the user can see WHERE they paused.
+    const cur = get().lastCoordinate;
+    if (cur) {
+      set((s) => ({ pausePins: [...s.pausePins, cur] }));
     }
-    set({ status: 'paused' });
+    deactivateForegroundSource();
+    deactivateBackgroundSource();
+    // Clear lastCoordinate so the >200m glitch filter does not zero out
+    // legitimate distance after a resume far from the pause point.
+    set({ status: 'paused', lastCoordinate: null, lastFixTimestamp: null });
   },
 
   resumeTracking: async () => {
-    // Re-subscribe to location
-    const loc = await getLocation();
-    if (loc && get().locationAvailable) {
-      locationSubscription = await loc.watchPositionAsync(
-        { accuracy: loc.Accuracy.BestForNavigation, timeInterval: 3000, distanceInterval: 5 },
-        (position) => {
-          debugLogger.log({
-            ts: position.timestamp || Date.now(),
-            event: 'gps_fix',
-            lat: position.coords.latitude,
-            lon: position.coords.longitude,
-            accuracy_m: position.coords.accuracy ?? null,
-            altitude_m: position.coords.altitude ?? null,
-            altitude_accuracy_m: position.coords.altitudeAccuracy ?? null,
-            speed_mps: position.coords.speed ?? null,
-            heading_deg: position.coords.heading ?? null,
-            raw_or_filtered: 'raw',
-            source: 'foreground',
-          });
-          get().addTrackPoint({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            alt: position.coords.altitude,
-            accuracy: position.coords.accuracy ?? null,
-          });
-        },
-      );
-    }
     set({ status: 'tracking' });
+    // Resume whichever source matches current AppState (treat 'unknown' as active)
+    const currentAppState = AppState.currentState;
+    if (currentAppState === 'background' || currentAppState === 'inactive') {
+      if (backgroundGrantedCached) await activateBackgroundSource();
+    } else {
+      // 'active' or 'unknown' → foreground watcher
+      await activateForegroundSource();
+    }
   },
 
-  addTrackPoint: (coord) => {
+  addTrackPoint: (coord, timestamp) => {
     set((s) => {
+      // Timestamp-based dedupe: skip if a fix with this exact timestamp was
+      // just recorded UNLESS the coords moved >5m (real movement at the
+      // same wall-clock instant — keep the new point).
+      if (
+        timestamp !== undefined &&
+        s.lastFixTimestamp !== null &&
+        timestamp === s.lastFixTimestamp
+      ) {
+        if (s.lastCoordinate) {
+          const movement = haversineM(s.lastCoordinate, coord);
+          if (movement <= 5) {
+            return s; // duplicate fix from a parallel source — ignore
+          }
+        } else {
+          return s;
+        }
+      }
+
       const point: TrackPoint = { ...coord, t: Date.now() };
       const newPoints = [...s.trackPoints, point];
 
@@ -440,6 +423,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
         trackPoints: newPoints,
         lastCoordinate: coord,
         lastCoordinateTime: Date.now(),
+        lastFixTimestamp: timestamp ?? s.lastFixTimestamp,
         distanceM: s.distanceM + addedDistance,
         elevationGainM,
         altitudeHistory: newAltHistory,
@@ -452,6 +436,8 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   },
 
   reset: () => {
+    try { appStateSubscription?.remove(); } catch { /* no-op */ }
+    appStateSubscription = null;
     locationSubscription?.remove();
     locationSubscription = null;
     if (backgroundTaskActive && Location) {
@@ -479,9 +465,125 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     persistBackgroundContext(null, false).catch(() => {});
 
     lastSamplingIntervalMs = 3000;
+    backgroundGrantedCached = false;
     set({ ...initialState });
   },
 }));
+
+// ── Source activation helpers (single-source guarantee) ────────────────────
+
+/**
+ * Serializes source activations to prevent TOCTOU races where two activations
+ * concurrently observe `hasStartedLocationUpdatesAsync = false` and both call
+ * `startLocationUpdatesAsync`, causing the second to throw.
+ *
+ * Each task is bounded by a 5s timeout so a stalled expo-location call (e.g.
+ * during OS suspend) cannot block the whole queue indefinitely.
+ */
+let activationChain: Promise<void> = Promise.resolve();
+function enqueueActivation(task: () => Promise<void>): Promise<void> {
+  activationChain = activationChain.then(() =>
+    Promise.race([
+      task(),
+      new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+    ]),
+  ).catch((err) => {
+    debugLogger.logError(err, 'enqueueActivation');
+  });
+  return activationChain;
+}
+
+/**
+ * Start the foreground watcher, replacing any existing one.
+ * Called when AppState transitions to 'active'.
+ */
+async function activateForegroundSource(): Promise<void> {
+  if (!Location) return;
+  // Tear down any existing foreground sub first
+  try { locationSubscription?.remove(); } catch { /* no-op */ }
+  locationSubscription = null;
+
+  try {
+    locationSubscription = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.BestForNavigation,
+        timeInterval: lastSamplingIntervalMs,
+        distanceInterval: 5,
+      },
+      (position) => {
+        const ts = position.timestamp || Date.now();
+        debugLogger.log({
+          ts,
+          event: 'gps_fix',
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          accuracy_m: position.coords.accuracy ?? null,
+          altitude_m: position.coords.altitude ?? null,
+          altitude_accuracy_m: position.coords.altitudeAccuracy ?? null,
+          speed_mps: position.coords.speed ?? null,
+          heading_deg: position.coords.heading ?? null,
+          raw_or_filtered: 'raw',
+          source: 'foreground',
+        });
+        useTrackingStore.getState().addTrackPoint(
+          {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            alt: position.coords.altitude,
+            accuracy: position.coords.accuracy ?? null,
+          },
+          ts,
+        );
+      },
+      (error) => {
+        debugLogger.logError(error, 'watchPositionAsync:foreground');
+      },
+    );
+  } catch (err) {
+    debugLogger.logError(err, 'activateForegroundSource');
+  }
+}
+
+function deactivateForegroundSource(): void {
+  try { locationSubscription?.remove(); } catch { /* no-op */ }
+  locationSubscription = null;
+}
+
+/**
+ * Start the background TaskManager updates if permission was granted.
+ * Idempotent — safe to call repeatedly.
+ */
+async function activateBackgroundSource(): Promise<void> {
+  if (!Location || !backgroundGrantedCached) return;
+  try {
+    const already = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+    if (already) {
+      await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+    }
+    await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+      accuracy: Location.Accuracy.BestForNavigation,
+      timeInterval: lastSamplingIntervalMs,
+      distanceInterval: 5,
+      showsBackgroundLocationIndicator: true,
+      foregroundService: {
+        notificationTitle: 'Cairn is tracking',
+        notificationBody: 'Recording your route in the background.',
+        notificationColor: '#5d7c46',
+      },
+    });
+    backgroundTaskActive = true;
+  } catch (err) {
+    debugLogger.logError(err, 'activateBackgroundSource');
+  }
+}
+
+function deactivateBackgroundSource(): void {
+  if (!Location) return;
+  if (backgroundTaskActive) {
+    Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK).catch(() => {});
+    backgroundTaskActive = false;
+  }
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

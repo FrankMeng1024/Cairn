@@ -15,7 +15,7 @@
  *
  * Web fallback: no-op.
  */
-import { Platform } from 'react-native';
+import { Platform, AppState, type AppStateStatus } from 'react-native';
 import * as Application from 'expo-application';
 import { debugLogger } from './debugLogger';
 import { networkMonitor } from './networkMonitor';
@@ -29,15 +29,26 @@ export type UploadResult =
 class TelemetryUploader {
   private uploadInProgress = new Set<string>();
   private networkUnsub: (() => void) | null = null;
+  private appStateSub: { remove: () => void } | null = null;
 
   /**
-   * Initialize: subscribe to network online to auto-retry.
+   * Initialize: subscribe to network online + app foreground to auto-retry.
    * Call once at app start.
    */
   init(): void {
     if (this.networkUnsub) return;
     this.networkUnsub = networkMonitor.onChange((state) => {
       if (state.state === 'online' && (!this.requireWifi() || state.type === 'wifi')) {
+        this.retryAll().catch(() => {});
+      }
+    });
+    // Foreground trigger: when user returns to the app, flush any pending
+    // uploads that accumulated while backgrounded. This catches sessions
+    // that ended while the network listener was inactive (e.g. iOS suspend).
+    this.appStateSub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active' &&
+          networkMonitor.isOnline() &&
+          (!this.requireWifi() || networkMonitor.isWifi())) {
         this.retryAll().catch(() => {});
       }
     });
@@ -54,6 +65,10 @@ class TelemetryUploader {
     if (this.networkUnsub) {
       this.networkUnsub();
       this.networkUnsub = null;
+    }
+    if (this.appStateSub) {
+      try { this.appStateSub.remove(); } catch { /* no-op */ }
+      this.appStateSub = null;
     }
   }
 

@@ -138,7 +138,7 @@ function ToolBtn({ iconName, label, onPress }: { iconName: IconName; label: stri
         <View style={toolStyles.iconWrap}>
           <Icon name={iconName} size={20} color={Colors.primary} strokeWidth={1.8} />
         </View>
-        <Text style={toolStyles.label}>{label}</Text>
+        <Text style={toolStyles.label} numberOfLines={1}>{label}</Text>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -167,7 +167,7 @@ export function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoRow}>
-            <CairnLogo size={22} color={Colors.primary} />
+            <CairnLogo size={26} color={Colors.primary} />
             <Text style={styles.logo}>Cairn</Text>
           </View>
           <Text style={styles.greeting}>{getGreeting(uiMode)}</Text>
@@ -238,8 +238,11 @@ const styles = StyleSheet.create({
   },
 
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logo: { fontSize: FontSize.h1, fontWeight: '900', color: Colors.textPrimary, letterSpacing: -1 },
+  logoRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  logo: {
+    fontSize: FontSize.h1, fontWeight: '900', color: Colors.textPrimary,
+    letterSpacing: -1, lineHeight: 32, includeFontPadding: false,
+  },
   greeting: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textSecondary },
 
   statsRow: { flexDirection: 'row', gap: Spacing.sm },
@@ -327,11 +330,13 @@ const recentStyles = StyleSheet.create({
 const toolStyles = StyleSheet.create({
   btn: {
     flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.card,
-    alignItems: 'center', paddingVertical: Spacing.md, gap: 4,
+    alignItems: 'center', justifyContent: 'flex-start',
+    paddingVertical: Spacing.md, gap: 6,
+    minHeight: 86,
     borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
   },
   iconWrap: {
-    width: 36, height: 36, borderRadius: 10,
+    width: 36, height: 36, borderRadius: 18, // perfect circle for visual consistency
     backgroundColor: Colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
   },

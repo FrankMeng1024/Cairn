@@ -121,7 +121,7 @@ afterEach(async () => {
 });
 
 describe('telemetryUploader — upload behavior', () => {
-  it('uploads a session to backend with X-API-Key', async () => {
+  it('uploads a session to backend with correct content type', async () => {
     let capturedHeaders: any = null;
     let capturedBody: any = null;
     global.fetch = jest.fn(async (_url, opts: any) => {
@@ -140,8 +140,9 @@ describe('telemetryUploader — upload behavior', () => {
 
     const r = await telemetryUploader.upload(id);
     expect(r.ok).toBe(true);
-    expect(capturedHeaders['X-API-Key']).toBe('test-key-123');
     expect(capturedHeaders['Content-Type']).toBe('application/x-ndjson');
+    // S2 removed X-API-Key auth; header should not be sent.
+    expect(capturedHeaders['X-API-Key']).toBeUndefined();
     expect(typeof capturedBody).toBe('string');
     expect(capturedBody.length).toBeGreaterThan(0);
   });

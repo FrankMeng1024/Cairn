@@ -90,21 +90,36 @@ export async function login(email: string, password: string): Promise<AuthResult
 /**
  * Called on app launch to verify stored JWT and get current user profile.
  * Returns null if no token or token is invalid/expired.
+ *
+ * Uses an 8-second timeout via AbortController so a captive-portal or slow
+ * network never blocks app boot indefinitely. On timeout, returns null and
+ * the caller falls through to the offline / Sign In path.
  */
 export async function getMe(): Promise<UserProfile | null> {
   try {
     const token = await getToken();
     if (!token) return null;
-    const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      await clearToken();
-      return null;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        // Only clear token on 401/403 (auth failure), not on transient 5xx
+        if (res.status === 401 || res.status === 403) {
+          await clearToken();
+        }
+        return null;
+      }
+      const data = await res.json();
+      return data.user ?? null;
+    } finally {
+      clearTimeout(timeoutId);
     }
-    const data = await res.json();
-    return data.user ?? null;
   } catch {
+    // AbortError (timeout) or network error — keep token, retry next launch
     return null;
   }
 }

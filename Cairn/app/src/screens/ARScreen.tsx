@@ -11,8 +11,8 @@
  *
  * Sprint 51 — STORY-00173 (E-003: AR插旗)
  */
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, Animated } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, FontSize, Radius } from '../components/tokens';
@@ -162,6 +162,144 @@ const FLAG_TYPES: { id: 'danger' | 'scenic' | 'supply' | 'junction'; icon: strin
  * - Has stale GPS (> 30s) or lost signal → degraded placement with toast
  * - Never had GPS → blocked
  */
+// ── 2D Compass Dial — replacement for the camera placeholder ──────────────
+function CompassDial({
+  userHeading,
+  markers,
+  userPos,
+}: {
+  userHeading: number | null;
+  markers: Marker[];
+  userPos: { lat: number; lng: number } | null;
+}) {
+  // Heading drives the dial rotation: dial rotates opposite to heading so
+  // the cardinal mark (N) always points to true north.
+  const rotateDeg = userHeading != null ? -userHeading : 0;
+
+  // Compute each marker's bearing-relative-to-heading for arrow placement.
+  const arrows = useMemo(() => {
+    if (!userPos) return [];
+    return markers.map((m) => {
+      const bearing = bearingTo(userPos, { lat: m.lat, lng: m.lng });
+      const relative = userHeading != null
+        ? (bearing - userHeading + 360) % 360
+        : bearing;
+      const dist = Math.round(haversineM(userPos, { lat: m.lat, lng: m.lng }));
+      return { marker: m, relative, dist };
+    });
+  }, [markers, userPos, userHeading]);
+
+  return (
+    <View style={dialStyles.wrap}>
+      {/* Dial face — rotates so N stays pointing to true north */}
+      <View style={[dialStyles.dial, { transform: [{ rotate: `${rotateDeg}deg` }] }]}>
+        {/* Cardinal direction marks */}
+        <Text style={[dialStyles.cardinal, { top: 8 }]}>N</Text>
+        <Text style={[dialStyles.cardinal, { right: 8 }]}>E</Text>
+        <Text style={[dialStyles.cardinal, { bottom: 8 }]}>S</Text>
+        <Text style={[dialStyles.cardinal, { left: 8 }]}>W</Text>
+
+        {/* Outer ring */}
+        <View style={dialStyles.ring} />
+
+        {/* Marker arrows — positioned around the dial at their bearing */}
+        {arrows.map(({ marker, relative, dist }) => {
+          const config = getAR3DConfig(marker.type);
+          const angleRad = (relative * Math.PI) / 180;
+          // Place the arrow at radius=92 from dial center
+          const x = Math.sin(angleRad) * 92;
+          const y = -Math.cos(angleRad) * 92;
+          return (
+            <View
+              key={marker.id}
+              style={[
+                dialStyles.arrowAnchor,
+                { transform: [{ translateX: x }, { translateY: y }, { rotate: `${relative}deg` }] },
+              ]}
+            >
+              <View style={[dialStyles.arrowChevron, { borderBottomColor: config.color }]} />
+              <Text style={[dialStyles.arrowDist, { color: config.color }]}>{dist}m</Text>
+            </View>
+          );
+        })}
+
+        {/* Center pip */}
+        <View style={dialStyles.centerPip} />
+      </View>
+
+      {userHeading == null && (
+        <Text style={dialStyles.headingHint}>
+          Heading unavailable — calibrate phone or grant location.
+        </Text>
+      )}
+    </View>
+  );
+}
+
+const dialStyles = StyleSheet.create({
+  wrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+  },
+  dial: {
+    width: 240,
+    height: 240,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ring: {
+    position: 'absolute',
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  cardinal: {
+    position: 'absolute',
+    fontSize: 16,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.6)',
+  },
+  arrowAnchor: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 36,
+    height: 36,
+  },
+  arrowChevron: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderBottomWidth: 12,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  arrowDist: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  centerPip: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  headingHint: {
+    position: 'absolute',
+    bottom: 24,
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.lg,
+  },
+});
+
 export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   const nav = useNavigation();
   const markers = useMarkerStore(s => s.markers);
@@ -177,6 +315,34 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   const [isApproximate, setIsApproximate] = useState(false);
   const [gpsAgeS, setGpsAgeS] = useState(0);
   const [degradedToast, setDegradedToast] = useState<string | null>(null);
+  // Live compass heading from expo-location (0=N, 90=E, etc).
+  // null until first heading update or if heading unavailable.
+  const [userHeading, setUserHeading] = useState<number | null>(null);
+
+  // Subscribe to magnetic heading on mount; expo-location is already a dep.
+  // No new build required. Falls back gracefully if unavailable (web, simulator).
+  useEffect(() => {
+    let cancelled = false;
+    let sub: { remove: () => void } | null = null;
+    (async () => {
+      try {
+        const Location = await import('expo-location');
+        sub = await Location.watchHeadingAsync((h) => {
+          if (cancelled) return;
+          // trueHeading is most accurate but may be -1 on simulator;
+          // fall back to magHeading.
+          const heading = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+          if (heading >= 0) setUserHeading(heading);
+        });
+      } catch {
+        // Heading unavailable — UI shows static dial
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try { sub?.remove(); } catch { /* no-op */ }
+    };
+  }, []);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [savedToast, setSavedToast] = useState(false);
@@ -281,15 +447,14 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
 
   return (
     <View style={styles.container}>
-      {/* AR camera placeholder */}
-      <View style={styles.cameraPlaceholder}>
-        <Icon name="Target" size={48} color="rgba(255,255,255,0.5)" />
-        <Text style={styles.placeholderText}>AR Camera View</Text>
-        <Text style={styles.placeholderSubtext}>
-          Full 3D AR requires native build.{'\n'}
-          Showing directional indicators.
-        </Text>
-      </View>
+      {/* Compass dial — directional indicators replace static AR placeholder.
+          Each visible nearby marker shows a chevron arrow at its bearing
+          relative to current device heading. */}
+      <CompassDial
+        userHeading={userHeading}
+        markers={nearbyMarkers.slice(0, 5)}
+        userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng } : null}
+      />
 
       {/* Nearby markers directional list */}
       <GlassPanel intensity={16} tint="dark" style={styles.markerPanel} borderRadius={16}>

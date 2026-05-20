@@ -1,0 +1,19 @@
+# EAS ignore file - excludes files unnecessary for build
+
+# HTML preview/prototype files
+*.html
+
+# Screenshots and QA evidence
+docs/
+../docs/
+
+# Dev scripts
+pw_screenshot.js
+pw_shot.js
+
+# Node modules (auto-excluded but explicit)
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db

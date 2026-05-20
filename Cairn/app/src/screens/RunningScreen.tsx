@@ -9,9 +9,10 @@
  * Uses useTrackingStore (real GPS via expo-location, graceful web fallback).
  * activityMode set to 'running' before startTracking.
  */
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Easing, Share, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Easing, ScrollView,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -30,6 +31,29 @@ import { BackButton } from '../components/BackButton';
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 type RunState = 'pre' | 'running' | 'stopped';
+
+// ── Mapbox conditional import ────────────────────────────────────────────
+// Lazily loaded once per app session — same pattern as HikingScreen.
+// On web Mapbox modules are absent; falls back to a static placeholder.
+let MapView: any = null;
+let CameraComponent: any = null;
+let PointAnnotation: any = null;
+let UserLocationComponent: any = null;
+let LineLayer: any = null;
+let ShapeSource: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    const Mapbox = require('@rnmapbox/maps');
+    MapView = Mapbox.MapView;
+    CameraComponent = Mapbox.Camera;
+    PointAnnotation = Mapbox.PointAnnotation;
+    UserLocationComponent = Mapbox.UserLocation;
+    LineLayer = Mapbox.LineLayer;
+    ShapeSource = Mapbox.ShapeSource;
+  } catch {
+    // @rnmapbox/maps not installed in this build (Expo Go) — fallback used.
+  }
+}
 
 // ── Keep-awake guard ────────────────────────────────────────────────────────
 function useRunKeepAwake() {
@@ -175,17 +199,18 @@ export function RunningScreen() {
   // ── Stopped state ──────────────────────────────────────────────────────────
   if (runState === 'stopped') {
     const distKm = formatDistance(distanceM, 'km', 2);
-    const handleShare = async () => {
-      try {
-        await Share.share({ message: `I completed a ${distKm} km run on Cairn!` });
-      } catch (_) { /* sharing unavailable */ }
-    };
 
     return (
       <SafeAreaView style={preStyles.container} edges={['top', 'bottom']}>
         <View style={preStyles.header}>
           <View style={preStyles.topBar}>
-            <View style={{ width: 60 }} />
+            <BackButton
+              variant="inline"
+              onPress={() => {
+                if (nav.canGoBack()) nav.goBack();
+                else nav.navigate('Home' as never);
+              }}
+            />
             <Text style={preStyles.title}>Run Complete</Text>
             <View style={{ width: 60 }} />
           </View>
@@ -211,10 +236,6 @@ export function RunningScreen() {
               </View>
             </View>
           </View>
-          <TouchableOpacity style={preStyles.shareBtn} onPress={handleShare}>
-            <Icon name="Send" size={16} color={Colors.primary} strokeWidth={2} />
-            <Text style={preStyles.shareBtnText}>Share</Text>
-          </TouchableOpacity>
         </View>
         <View style={preStyles.footer}>
           <TouchableOpacity onPress={() => { setRunState('pre'); }}>
@@ -236,21 +257,46 @@ export function RunningScreen() {
   if (runState === 'pre') {
     return (
       <View style={{ flex: 1, backgroundColor: Colors.primaryBg }}>
-        {/* Map placeholder (same as Hiking fallback) */}
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md }}>
-          <Icon name="Map" size={48} color={Colors.primaryMuted} />
-          <Text style={{ fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary }}>
-            Real Map (EAS Build)
-          </Text>
-          <Text style={{ fontSize: FontSize.body, color: Colors.textSecondary, textAlign: 'center' }}>
-            Build with EAS to enable live tracking map
-          </Text>
-        </View>
+        {/* Real Mapbox basemap (or fallback if Mapbox unavailable) */}
+        {MapView ? (
+          <MapView
+            style={StyleSheet.absoluteFillObject}
+            styleURL="mapbox://styles/mapbox/outdoors-v12"
+            logoEnabled={false}
+            attributionEnabled={false}
+            compassEnabled={false}
+          >
+            {CameraComponent && (
+              <CameraComponent
+                followUserLocation
+                followZoomLevel={15}
+                animationMode="flyTo"
+                animationDuration={500}
+              />
+            )}
+            {UserLocationComponent && (
+              <UserLocationComponent visible androidRenderMode="normal" />
+            )}
+          </MapView>
+        ) : (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md }}>
+            <Icon name="Map" size={48} color={Colors.primaryMuted} />
+            <Text style={{ fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary }}>
+              Map preview unavailable
+            </Text>
+            <Text style={{ fontSize: FontSize.body, color: Colors.textSecondary, textAlign: 'center' }}>
+              Real-time map appears in the production build.
+            </Text>
+          </View>
+        )}
 
         {/* Top overlay: back + GPS chip */}
         <SafeAreaView style={preStyles.topOverlay} edges={['top']} pointerEvents="box-none">
           <View style={preStyles.topRow}>
-            <BackButton variant="pill" onPress={() => nav.goBack()} />
+            <BackButton variant="pill" onPress={() => {
+              if (nav.canGoBack()) nav.goBack();
+              else nav.navigate('Home' as never);
+            }} />
             <View style={preStyles.gpsChip}>
               <View style={[preStyles.gpsDot, { backgroundColor: Colors.severityWarning }]} />
               <Text style={preStyles.gpsText}>Enable GPS</Text>
@@ -447,7 +493,7 @@ const preStyles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   topBar: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: Spacing.sm,
   },
   backBtn: {
@@ -456,6 +502,7 @@ const preStyles = StyleSheet.create({
   },
   backText: { fontSize: FontSize.caption, color: Colors.primary, fontWeight: '600' },
   title: {
+    flex: 1, textAlign: 'center',
     fontSize: FontSize.h3, fontWeight: '700',
     color: Colors.textPrimary,
   },

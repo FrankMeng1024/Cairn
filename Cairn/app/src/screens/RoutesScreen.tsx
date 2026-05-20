@@ -1,7 +1,7 @@
 /**
  * RoutesScreen — Three-tab layout: Routes | Activities | Flags
  */
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity, Alert, TextInput,
   KeyboardAvoidingView, Platform, Animated, Easing,
@@ -25,6 +25,24 @@ import { formatDistance, formatDuration, haversineM } from '../utils/geo';
 import { MARKER_META, type MarkerType } from '../data/mockData';
 import { shareGPX, sharePDF } from '../services/exportService'; // kept for future Export action
 import { EmptyRoutes, EmptyMarkers } from '../components/Illustrations';
+
+// ── Mapbox conditional import (for RouteSheet preview) ────────────────────
+// Native-only — on web fallback to a static placeholder.
+let MapView: any = null;
+let CameraComponent: any = null;
+let LineLayer: any = null;
+let ShapeSource: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    const Mapbox = require('@rnmapbox/maps');
+    MapView = Mapbox.MapView;
+    CameraComponent = Mapbox.Camera;
+    LineLayer = Mapbox.LineLayer;
+    ShapeSource = Mapbox.ShapeSource;
+  } catch {
+    // @rnmapbox/maps not installed in this build (Expo Go) — fallback used.
+  }
+}
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Tab = 'routes' | 'activities' | 'flags';
@@ -81,6 +99,78 @@ function EmptyState({ icon, title, hint, illustration }: { icon: IconName; title
 }
 
 // ── RouteSheet ────────────────────────────────────────────────────────────────
+// ── Route map preview (renders polyline of route.points) ───────────────────
+function RouteMapPreview({ points }: { points: { lat: number; lng: number }[] }) {
+  // Compute bounds for camera fit
+  const bounds = useMemo(() => {
+    if (!points || points.length < 2) return null;
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    for (const p of points) {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lng < minLng) minLng = p.lng;
+      if (p.lng > maxLng) maxLng = p.lng;
+    }
+    return { ne: [maxLng, maxLat] as [number, number], sw: [minLng, minLat] as [number, number] };
+  }, [points]);
+
+  const lineGeoJson = useMemo(() => ({
+    type: 'Feature' as const,
+    geometry: {
+      type: 'LineString' as const,
+      coordinates: points.map((p) => [p.lng, p.lat]),
+    },
+    properties: {},
+  }), [points]);
+
+  if (!MapView || !points || points.length < 2 || !bounds) {
+    // Fallback when Mapbox unavailable or route has too few points
+    return (
+      <View style={routePreviewStyles.fallback}>
+        <Icon name="Map" size={28} color={Colors.primaryMuted} />
+        <Text style={routePreviewStyles.fallbackText}>Route preview</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={routePreviewStyles.mapWrap}>
+      <MapView
+        style={StyleSheet.absoluteFillObject}
+        styleURL="mapbox://styles/mapbox/outdoors-v12"
+        logoEnabled={false}
+        attributionEnabled={false}
+        compassEnabled={false}
+        scaleBarEnabled={false}
+        scrollEnabled={false}
+        zoomEnabled={false}
+        rotateEnabled={false}
+        pitchEnabled={false}
+      >
+        {CameraComponent && (
+          <CameraComponent
+            bounds={{ ne: bounds.ne, sw: bounds.sw, paddingTop: 24, paddingBottom: 24, paddingLeft: 24, paddingRight: 24 }}
+            animationDuration={0}
+          />
+        )}
+        {ShapeSource && LineLayer && (
+          <ShapeSource id="route-preview-line" shape={lineGeoJson}>
+            <LineLayer
+              id="route-preview-line-layer"
+              style={{
+                lineColor: Colors.primary,
+                lineWidth: 3,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </ShapeSource>
+        )}
+      </MapView>
+    </View>
+  );
+}
+
 function RouteSheet({
   route, onClose, onEdit, onDelete,
 }: {
@@ -142,6 +232,9 @@ function RouteSheet({
             <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.5} />
           </PressBtn>
         </View>
+
+        {/* Map preview — non-interactive polyline of the route */}
+        <RouteMapPreview points={data.points} />
 
         {/* Stats row */}
         <View style={routeSheetStyles.statsRow}>
@@ -847,4 +940,29 @@ const segStyles = StyleSheet.create({
   tabActive: { backgroundColor: Colors.primaryBg, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
   tabText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textMuted },
   tabTextActive: { color: Colors.primary, fontWeight: '700' },
+});
+
+const routePreviewStyles = StyleSheet.create({
+  mapWrap: {
+    height: 180,
+    borderRadius: Radius.card,
+    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  fallback: {
+    height: 180,
+    borderRadius: Radius.card,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+  },
+  fallbackText: {
+    fontSize: FontSize.small,
+    color: Colors.textMuted,
+  },
 });

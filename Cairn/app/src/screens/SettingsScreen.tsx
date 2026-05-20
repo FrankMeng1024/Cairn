@@ -10,7 +10,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Switch, Alert, Animated, TextInput, ActivityIndicator,
+  Switch, Alert, Animated, TextInput, ActivityIndicator, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -118,7 +118,7 @@ function ToggleRow({
       </View>
       <View style={rowStyles.content}>
         <Text style={rowStyles.label}>{label}</Text>
-        {hint ? <Text style={rowStyles.hint}>{hint}</Text> : null}
+        {hint ? <Text style={rowStyles.hint} numberOfLines={1}>{hint}</Text> : null}
       </View>
       <Switch
         value={value}
@@ -305,7 +305,7 @@ export function SettingsScreen() {
             iconColor={Colors.night}
             iconBg="rgba(90,79,207,0.1)"
             label="Night mode"
-            hint="Dark theme, easier on the eyes at night"
+            hint="Coming soon — full dark theme rolling out next update"
             value={nightMode}
             onToggle={() => updateSetting('nightMode', !nightMode)}
             pending={nightMode !== false}
@@ -429,17 +429,25 @@ export function SettingsScreen() {
             label="Sign Out"
             labelColor={Colors.danger}
             onPress={async () => {
-              // Alert.alert doesn't work on web — use window.confirm as fallback
-              const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
+              // Web uses window.confirm (Alert.alert is no-op on web).
+              // React Native polyfills `window` but does NOT provide window.confirm,
+              // so checking `typeof window` was a misleading bug — guard via Platform.
+              const confirmed = Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function'
                 ? window.confirm('Are you sure you want to sign out?')
                 : await new Promise<boolean>((resolve) =>
-                    Alert.alert('Sign Out', 'Are you sure?', [
+                    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
                       { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
                       { text: 'Sign Out', style: 'destructive', onPress: () => resolve(true) },
                     ])
                   );
               if (!confirmed) return;
-              await logout();
+              // Always clear local state, even if backend logout fails (e.g. offline).
+              // Otherwise user thinks they signed out but locally remain logged in.
+              try {
+                await logout();
+              } catch {
+                /* ignore — local state must clear regardless */
+              }
               appLogout();
             }}
           />
@@ -750,7 +758,7 @@ const rowStyles = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
-    minHeight: 54,
+    minHeight: 64, // unified row height — same whether or not a hint is present
   },
   rowPending: { backgroundColor: 'rgba(93,124,70,0.03)' },
   iconWrap: {
@@ -764,7 +772,7 @@ const rowStyles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
-    minHeight: 54,
+    minHeight: 64, // match toggle rows
   },
   actionLabel: { flex: 1, fontSize: FontSize.body, fontWeight: '500', color: Colors.textPrimary },
 });

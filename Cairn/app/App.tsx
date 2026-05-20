@@ -12,6 +12,7 @@ import { debugLogger } from './src/services/debugLogger';
 import { registerBackgroundTask } from './src/services/backgroundLocationTask';
 import { telemetryUploader } from './src/services/telemetryUploader';
 import { networkMonitor } from './src/services/networkMonitor';
+import { isPlaywrightBypass } from './src/utils/devFlags';
 
 // Must run at app entry — handles Google OAuth popup redirect on web
 WebBrowser.maybeCompleteAuthSession();
@@ -171,7 +172,7 @@ function AppRoot() {
   // In Playwright bypass mode, skip the font-loading gate — fonts may never
   // resolve in the sandboxed Chromium (no local file access), but the app
   // should still render so UI tests can run.
-  const playwrightBypass = process.env.EXPO_PUBLIC_PLAYWRIGHT_BYPASS === 'true';
+  const playwrightBypass = isPlaywrightBypass;
   if (!playwrightBypass && !fontsLoaded && !fontError) return <View style={{ flex: 1 }} />;
 
   // Apply Inter as the default font family for every <Text> and <TextInput>

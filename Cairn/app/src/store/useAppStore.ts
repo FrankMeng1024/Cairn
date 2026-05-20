@@ -8,6 +8,7 @@ import { getMe } from '../services/authService';
 import { fetchSessions } from '../services/sessionService';
 import { useSessionStore, type ActivityMode as SessionActivityMode, type TrackPoint } from './useSessionStore';
 import { useMarkerStore } from './useMarkerStore';
+import { isPlaywrightBypass } from '../utils/devFlags';
 
 export type UIMode = 'beginner' | 'expert';
 export type ActivityMode = 'hiking' | 'running';
@@ -94,10 +95,11 @@ export const useAppStore = create<AppState>((set) => ({
       set({ uiMode: saved });
     }
 
-    // Playwright bypass: EXPO_PUBLIC_PLAYWRIGHT_BYPASS=true skips network auth
-    // so UI tests can reach HomeScreen without a live API connection.
-    if (process.env.EXPO_PUBLIC_PLAYWRIGHT_BYPASS === 'true') {
-      set({ isLoggedIn: true, user: { id: '0', name: 'Playwright', email: 'pw@cairn.nz' } as any, hydrated: true });
+    // Playwright bypass: only allowed in __DEV__ to prevent leaking into production builds.
+    // Production builds ignore EXPO_PUBLIC_PLAYWRIGHT_BYPASS even if env leaks in.
+    if (isPlaywrightBypass) {
+      const playwrightUser: UserProfile = { id: '0', name: 'Playwright', email: 'pw@cairn.nz' };
+      set({ isLoggedIn: true, user: playwrightUser, hydrated: true });
       return;
     }
 
@@ -106,7 +108,7 @@ export const useAppStore = create<AppState>((set) => ({
       const user = await getMe();
       if (user) {
         set({ isLoggedIn: true, user });
-        // Load this user's markers from their own localStorage slot
+        // Load this user's markers + sessions from per-user storage slots
         await useMarkerStore.getState().hydrate(user.id);
         try {
           const remote = await fetchSessions();
@@ -122,19 +124,19 @@ export const useAppStore = create<AppState>((set) => ({
             trackPoints: [] as TrackPoint[],
             markerIds: [] as string[],
           }));
-          useSessionStore.setState({ sessions });
+          useSessionStore.setState({ sessions, currentUserId: user.id });
         } catch {
-          // Session fetch failed — show empty state, don't crash
-          useSessionStore.setState({ sessions: [] });
+          // Session fetch failed — fall back to user-scoped local cache
+          await useSessionStore.getState().hydrate(user.id);
         }
       } else {
-        // Not logged in — load from guest localStorage slot
-        await useSessionStore.getState().hydrate();
+        // Not logged in — load from guest slots only
+        await useSessionStore.getState().hydrate('guest');
         await useMarkerStore.getState().hydrate('guest');
       }
     } catch {
-      // Network unavailable — stay logged out, load guest localStorage as fallback
-      await useSessionStore.getState().hydrate();
+      // Network unavailable — guest fallback
+      await useSessionStore.getState().hydrate('guest');
       await useMarkerStore.getState().hydrate('guest');
     }
     set({ hydrated: true });

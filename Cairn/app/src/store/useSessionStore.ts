@@ -5,7 +5,10 @@
  * Schema is geo-extensible: sessions are tagged with regionCode.
  * MapHistoryScreen and RoutesScreen read from this store in Sprint 16.
  *
- * Storage key: cairn_sessions
+ * Storage keys are USER-SCOPED to prevent cross-user data leak:
+ *   cairn_sessions_<userId>            — session summaries (no trackPoints)
+ *   cairn_trackpoints_<userId>_<id>    — per-session trackPoints
+ *   cairn_sessions_guest, cairn_trackpoints_guest_<id> — pre-login state
  */
 import { create } from 'zustand';
 import { storage } from './storage';
@@ -31,37 +34,43 @@ export interface TrackingSession {
   elevationGainM: number;     // meters
   trackPoints: TrackPoint[];  // GPS breadcrumb trail
   markerIds: string[];        // markers planted during this session
+  pausePins?: Coordinate[];   // locations where user paused (rendered as flag pins)
   name?: string;              // user-assigned name (optional, auto-generated if absent)
 }
 
-const STORAGE_KEY = 'cairn_sessions';
 const MAX_SESSIONS = 100;
+
+const sessionsKey = (userId: string) => `cairn_sessions_${userId}`;
+const trackPointsKey = (userId: string, sessionId: string) =>
+  `cairn_trackpoints_${userId}_${sessionId}`;
 
 interface SessionState {
   sessions: TrackingSession[];
+  currentUserId: string;            // 'guest' before login, real userId after
   addSession: (session: TrackingSession) => void;
   deleteSession: (id: string) => void;
   clearSessions: () => void;       // called on logout to remove prior user's data
   getSessions: () => TrackingSession[];
   getSessionsByRegion: (regionCode: string) => TrackingSession[];
-  hydrate: () => Promise<void>;
+  hydrate: (userId?: string) => Promise<void>;
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
+  currentUserId: 'guest',
 
   addSession: (session) => {
+    const userId = get().currentUserId;
     set((s) => {
       // Prepend newest first, prune oldest beyond MAX_SESSIONS
       const next = [session, ...s.sessions].slice(0, MAX_SESSIONS);
       // Store summary without trackPoints to keep localStorage small;
-      // trackPoints stored separately under cairn_trackpoints_{id}
+      // trackPoints stored separately under per-user key
       const summaries = next.map(({ trackPoints: _, ...rest }) => rest);
-      storage.setItem(STORAGE_KEY, JSON.stringify(summaries));
-      // Store trackPoints separately
+      storage.setItem(sessionsKey(userId), JSON.stringify(summaries));
       if (session.trackPoints.length > 0) {
         storage.setItem(
-          `cairn_trackpoints_${session.id}`,
+          trackPointsKey(userId, session.id),
           JSON.stringify(session.trackPoints),
         );
       }
@@ -91,7 +100,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           sess.id === session.id ? { ...sess, remoteId } : sess
         );
         const summaries = updated.map(({ trackPoints: _, ...rest }) => rest);
-        storage.setItem(STORAGE_KEY, JSON.stringify(summaries));
+        storage.setItem(sessionsKey(get().currentUserId), JSON.stringify(summaries));
         return { sessions: updated };
       });
     }).catch(() => {
@@ -100,17 +109,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   clearSessions: () => {
-    storage.removeItem(STORAGE_KEY);
+    const userId = get().currentUserId;
+    storage.removeItem(sessionsKey(userId));
+    // Note: trackpoints keyed per-session-id are not enumerable on AsyncStorage
+    // without listing all keys. They become orphaned but unreachable since
+    // sessions list is gone. Acceptable trade-off; full cleanup would require
+    // AsyncStorage.getAllKeys() filter.
     set({ sessions: [] });
   },
 
   deleteSession: (id) => {
+    const userId = get().currentUserId;
     const session = get().sessions.find((s) => s.id === id);
     set((s) => {
       const next = s.sessions.filter((sess) => sess.id !== id);
       const summaries = next.map(({ trackPoints: _, ...rest }) => rest);
-      storage.setItem(STORAGE_KEY, JSON.stringify(summaries));
-      storage.removeItem(`cairn_trackpoints_${id}`);
+      storage.setItem(sessionsKey(userId), JSON.stringify(summaries));
+      storage.removeItem(trackPointsKey(userId, id));
       return { sessions: next };
     });
     // Mirror deletion to backend (fire-and-forget)
@@ -124,8 +139,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   getSessionsByRegion: (regionCode) =>
     get().sessions.filter((s) => s.regionCode === regionCode),
 
-  hydrate: async () => {
-    const raw = await storage.getItem(STORAGE_KEY);
+  hydrate: async (userId = 'guest') => {
+    set({ currentUserId: userId });
+    const raw = await storage.getItem(sessionsKey(userId));
     if (raw) {
       try {
         // Sessions loaded without trackPoints (loaded on demand)
@@ -136,8 +152,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         }));
         set({ sessions });
       } catch {
-        storage.removeItem(STORAGE_KEY);
+        storage.removeItem(sessionsKey(userId));
+        set({ sessions: [] });
       }
+    } else {
+      set({ sessions: [] });
     }
   },
 }));
@@ -146,7 +165,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
  * Load track points for a specific session on demand.
  */
 export async function loadTrackPoints(sessionId: string): Promise<TrackPoint[]> {
-  const raw = await storage.getItem(`cairn_trackpoints_${sessionId}`);
+  const userId = useSessionStore.getState().currentUserId;
+  const raw = await storage.getItem(trackPointsKey(userId, sessionId));
   if (!raw) return [];
   try {
     return JSON.parse(raw) as TrackPoint[];

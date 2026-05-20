@@ -720,7 +720,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.09,
     shadowRadius: 16,
-    elevation: 4,
+    elevation: 10, // sit above the topo backdrop layers
+    zIndex: 10,
   },
   trackStat: { flex: 1, alignItems: 'center', paddingLeft: Spacing.xs },
   trackStatValue: { fontSize: FontSize.caption, fontWeight: '800', color: Colors.textPrimary },
@@ -910,18 +911,21 @@ const cardStyles = StyleSheet.create({
     width: 200, height: 200, borderRadius: 100,
     borderWidth: 1.5, borderColor: Colors.primary + '18',
     top: -40, left: -20,
+    zIndex: 1,
   },
   topoRingMid: {
     position: 'absolute',
     width: 140, height: 140, borderRadius: 70,
     borderWidth: 1.5, borderColor: Colors.primary + '22',
     top: -10, left: 10,
+    zIndex: 1,
   },
   topoRingInner: {
     position: 'absolute',
     width: 80, height: 80, borderRadius: 40,
     borderWidth: 1.5, borderColor: Colors.primary + '28',
     top: 20, left: 40,
+    zIndex: 1,
   },
   previewChipsRow: {
     flexDirection: 'row', gap: Spacing.sm,

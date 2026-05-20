@@ -138,14 +138,25 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete }: { size?: number
   const [sheenD, setSheenD] = useState('');
   const waveStartRef = useRef<number | null>(null);
   const waveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track every setInterval/setTimeout to guarantee cleanup on unmount.
+  // Without this, unmounting mid-animation leaves intervals running and
+  // calling setState on an unmounted component → crash on slow devices.
+  const timersRef = useRef<Array<ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>>>([]);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     // Animate each stone rising in sequence
     STONE_DEFS.forEach((_, idx) => {
-      setTimeout(() => {
+      const startTimeout = setTimeout(() => {
+        if (!mountedRef.current) return;
         // Rise over 320ms
         const start = Date.now();
         const timer = setInterval(() => {
+          if (!mountedRef.current) {
+            clearInterval(timer);
+            return;
+          }
           const p = Math.min((Date.now() - start) / 320, 1);
           // ease out cubic
           const ease = 1 - Math.pow(1 - p, 3);
@@ -155,14 +166,30 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete }: { size?: number
             clearInterval(timer);
             // After top stone rises, show flag
             if (idx === 2) {
-              onComplete?.();
-              if (!noFlag) setTimeout(() => setShowFlag(true), 50);
+              if (mountedRef.current) onComplete?.();
+              if (!noFlag) {
+                const flagTimeout = setTimeout(() => {
+                  if (mountedRef.current) setShowFlag(true);
+                }, 50);
+                timersRef.current.push(flagTimeout);
+              }
             }
           }
         }, 16);
+        timersRef.current.push(timer);
       }, STONE_DEFS[idx].delay);
+      timersRef.current.push(startTimeout);
     });
-    return () => { if (waveTimerRef.current) clearInterval(waveTimerRef.current); };
+    return () => {
+      mountedRef.current = false;
+      // Clear ALL pending timers (rise intervals, delay timeouts, flag timeout)
+      timersRef.current.forEach((t) => {
+        clearInterval(t as any);
+        clearTimeout(t as any);
+      });
+      timersRef.current = [];
+      if (waveTimerRef.current) clearInterval(waveTimerRef.current);
+    };
   }, []);
 
   // Once flag is shown, animate drop then wave
@@ -171,6 +198,10 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete }: { size?: number
     waveStartRef.current = null;
     const dropStart = Date.now();
     waveTimerRef.current = setInterval(() => {
+      if (!mountedRef.current) {
+        if (waveTimerRef.current) clearInterval(waveTimerRef.current);
+        return;
+      }
       const now = Date.now();
       if (!waveStartRef.current) waveStartRef.current = now;
       const t = (now - waveStartRef.current) / 1000;
