@@ -61,12 +61,6 @@
         "projectId": "8c80a6aa-1c08-44a7-8f21-e331ae7548fb"
       }
     },
-    "owner": "frankmeng920313",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/8c80a6aa-1c08-44a7-8f21-e331ae7548fb"
-    }
+    "owner": "frankmeng920313"
   }
 }
