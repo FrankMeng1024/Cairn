@@ -76,11 +76,6 @@ class TelemetryUploader {
       return { ok: false, sessionId, error: 'No backend URL configured', retryable: true };
     }
 
-    const apiKey = settings.telemetryApiKey;
-    if (!apiKey) {
-      return { ok: false, sessionId, error: 'No telemetry API key', retryable: false };
-    }
-
     // WiFi gate
     if (settings.telemetryWifiOnly && !networkMonitor.isWifi()) {
       return { ok: false, sessionId, error: 'WiFi-only mode: waiting for WiFi', retryable: true };
@@ -118,7 +113,6 @@ class TelemetryUploader {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-ndjson',
-          'X-API-Key': apiKey,
           'X-Cairn-Device-Model': deviceInfo.model ?? '',
           'X-Cairn-Device-Os': deviceInfo.os ?? '',
           'X-Cairn-Os-Version': deviceInfo.os_version ?? '',

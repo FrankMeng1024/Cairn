@@ -45,16 +45,8 @@ const readLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// ── Auth middleware ────────────────────────────────────────────────────────
+// ── Auth middleware (disabled for dev) ────────────────────────────────────
 function requireApiKey(req, res, next) {
-  const provided = req.header('X-API-Key');
-  const expected = process.env.CAIRN_TELEMETRY_API_KEY;
-  if (!expected) {
-    return res.status(500).json({ error: 'Telemetry API key not configured on server.' });
-  }
-  if (!provided || provided !== expected) {
-    return res.status(401).json({ error: 'Invalid or missing X-API-Key.' });
-  }
   next();
 }
 
