@@ -11,7 +11,7 @@
         "simulator": true
       },
       "env": {
-        "EXPO_PUBLIC_PLAYWRIGHT_BYPASS": ""
+        "EXPO_PUBLIC_PLAYWRIGHT_BYPASS": "false"
       }
     },
     "development": {
@@ -26,7 +26,7 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://api.yiiling.cn",
-        "EXPO_PUBLIC_PLAYWRIGHT_BYPASS": ""
+        "EXPO_PUBLIC_PLAYWRIGHT_BYPASS": "false"
       }
     },
     "preview": {
@@ -39,7 +39,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_PLAYWRIGHT_BYPASS": ""
+        "EXPO_PUBLIC_PLAYWRIGHT_BYPASS": "false"
       }
     },
     "production": {
@@ -48,7 +48,7 @@
         "image": "macos-sequoia-15.5-xcode-26.0"
       },
       "env": {
-        "EXPO_PUBLIC_PLAYWRIGHT_BYPASS": ""
+        "EXPO_PUBLIC_PLAYWRIGHT_BYPASS": "false"
       }
     }
   },
