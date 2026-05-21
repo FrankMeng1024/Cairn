@@ -21,6 +21,7 @@ import { useSessionStore } from '../store/useSessionStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { formatDistance, formatDuration, getRelativeTime } from '../utils/geo';
 import { getCurrentRegion } from '../config/regions';
+import { OtaBadge } from '../components/OtaBadge';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -162,6 +163,7 @@ export function HomeScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
+      <OtaBadge />
       <Animated.View style={[styles.screen, { opacity }]}>
 
         {/* Header */}

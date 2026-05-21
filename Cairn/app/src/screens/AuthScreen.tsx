@@ -75,13 +75,15 @@ function TrailPath({ onComplete }: { onComplete?: () => void }) {
 
 // Stone rise: 3 stones animate up sequentially (s0=base, s1=mid, s2=top)
 // viewBox: 0 0 22 30 — same as HTML prototype
+// Each stone settles 1000ms after the previous one for a deliberate,
+// weighty feel — like placing real stones one by one.
 const STONE_DEFS = [
   // base stone
   { cx: 11,   cy: 23.5, rx: 8.0,  ry: 3.0,  color: '#4a6b38', shadowOp: 0.20, delay: 0    },
   // mid stone
-  { cx: 9.8,  cy: 16.5, rx: 4.95, ry: 1.98, color: '#5d7c46', shadowOp: 0.24, delay: 280  },
+  { cx: 9.8,  cy: 16.5, rx: 4.95, ry: 1.98, color: '#5d7c46', shadowOp: 0.24, delay: 1000 },
   // top stone
-  { cx: 12.5, cy: 10.5, rx: 3.06, ry: 1.28, color: '#7a9e5a', shadowOp: 0.28, delay: 560  },
+  { cx: 12.5, cy: 10.5, rx: 3.06, ry: 1.28, color: '#7a9e5a', shadowOp: 0.28, delay: 2000 },
 ];
 // Flag pole tip Y (top of top stone)
 const POLE_TIP_Y = 9.22;
@@ -165,14 +167,15 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete, staticMode = fals
     STONE_DEFS.forEach((_, idx) => {
       const startTimeout = setTimeout(() => {
         if (!mountedRef.current) return;
-        // Rise over 600ms (slowed from 320ms for nicer feel)
+        // Rise over 700ms with deliberate ease — feels like a stone
+        // settling under its own weight onto the cairn.
         const start = Date.now();
         const timer = setInterval(() => {
           if (!mountedRef.current) {
             clearInterval(timer);
             return;
           }
-          const p = Math.min((Date.now() - start) / 600, 1);
+          const p = Math.min((Date.now() - start) / 700, 1);
           const ease = 1 - Math.pow(1 - p, 3);
           setStoneY(prev => { const n = [...prev]; n[idx] = 6 * (1 - ease); return n; });
           setStoneOp(prev => { const n = [...prev]; n[idx] = ease; return n; });
@@ -181,9 +184,10 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete, staticMode = fals
             if (idx === 2) {
               if (mountedRef.current) onComplete?.();
               if (!noFlag) {
+                // Hold a beat after top stone lands, then plant flag with a "bam" feel.
                 const flagTimeout = setTimeout(() => {
                   if (mountedRef.current) setShowFlag(true);
-                }, 50);
+                }, 350);
                 timersRef.current.push(flagTimeout);
               }
             }
@@ -220,7 +224,16 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete, staticMode = fals
       const t = (now - waveStartRef.current) / 1000;
       const fadeIn = Math.min(t / 1.4, 1);
       const dropElapsed = now - dropStart;
-      const dy = dropElapsed < 400 ? -26 + (26 * dropElapsed / 400) : 0;
+      // Flag plants with a snappy "bam" — fast drop with ease-in (gravity).
+      // -26 → 0 over 250ms, easeInQuad so it accelerates as it lands.
+      let dy: number;
+      if (dropElapsed < 250) {
+        const p = dropElapsed / 250;
+        const eased = p * p; // easeInQuad
+        dy = -26 + (26 * eased);
+      } else {
+        dy = 0;
+      }
       setFlagDropY(dy);
       const { flagD: fd, sheenD: sd } = calcFlagPaths(t, fadeIn);
       setFlagD(fd);
