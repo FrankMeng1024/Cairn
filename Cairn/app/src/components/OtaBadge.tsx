@@ -20,6 +20,7 @@ import {
   TouchableOpacity, Text, View, StyleSheet, ActivityIndicator,
   Animated, Easing, Modal, Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type OtaState =
   | 'hidden'        // no update / not yet checked — render nothing
@@ -47,6 +48,12 @@ export function OtaBadge() {
   const fade = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(1)).current;
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const insets = useSafeAreaInsets();
+  // Dynamic Island on iPhone 14 Pro / 15 Pro / Pro Max sits inside the
+  // safe-area top inset region. Push the badge ~10px below the inset to
+  // clear both the island and the system status bar reliably across all
+  // notch / island devices.
+  const topOffset = insets.top + 10;
 
   // Fade in whenever state becomes visible
   useEffect(() => {
@@ -159,7 +166,7 @@ export function OtaBadge() {
   return (
     <>
       <Animated.View
-        style={[styles.wrap, { opacity: fade, transform: [{ scale: pulse }] }]}
+        style={[styles.wrap, { top: topOffset, opacity: fade, transform: [{ scale: pulse }] }]}
         pointerEvents="box-none"
       >
         <TouchableOpacity
@@ -212,7 +219,6 @@ export function OtaBadge() {
 const styles = StyleSheet.create({
   wrap: {
     position: 'absolute',
-    top: 12,
     right: 12,
     zIndex: 1000,
   },

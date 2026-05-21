@@ -816,7 +816,14 @@ export function AuthScreen() {
 
           {/* Title row: small icon inline-left of title */}
           <View style={formStyles.titleRow}>
-            <CairnLogo size={28} />
+            {/* CairnLogo's viewBox has asymmetric vertical padding (7.8u top
+                vs 0.6u bottom out of 24u). Without compensation the cairn
+                visually sits below the title baseline. Pull it up so the
+                top stone aligns with the title's cap height and the base
+                stone with its descender. */}
+            <View style={{ marginTop: -6 }}>
+              <CairnLogo size={28} />
+            </View>
             <Text style={formStyles.title}>{isRegister ? 'Create Account' : 'Sign In'}</Text>
           </View>
           {isRegister && (
@@ -992,7 +999,7 @@ const styles = StyleSheet.create({
   },
   logoArea: {
     flex: 1, justifyContent: 'center', alignItems: 'center',
-    gap: Spacing.lg,
+    gap: Spacing.xs,
     minHeight: SCREEN_H * 0.42,
   },
   logoGlowWrap: {
@@ -1005,7 +1012,7 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontSize: 56, fontWeight: '900', color: Colors.textPrimary,
-    letterSpacing: -2.5, marginTop: Spacing.sm,
+    letterSpacing: -2.5, marginTop: -12,
   },
   taglineWrap: { alignItems: 'center', gap: 2 },
   tagline: {
