@@ -98,6 +98,63 @@ function EmptyState({ icon, title, hint, illustration }: { icon: IconName; title
   );
 }
 
+// ── FilterSortBar ─────────────────────────────────────────────────────────
+// Shared header for the three tabs: a single-axis filter chip row +
+// a sort-direction chip on the right. Each tab passes its own filters
+// and sort options. Pure UI — no data shaping happens here, just
+// state callbacks.
+function FilterSortBar<F extends string, S extends string>({
+  filters,
+  filterValue,
+  onFilterChange,
+  sorts,
+  sortValue,
+  onSortChange,
+}: {
+  filters: { id: F; label: string }[];
+  filterValue: F;
+  onFilterChange: (id: F) => void;
+  sorts: { id: S; label: string }[];
+  sortValue: S;
+  onSortChange: (id: S) => void;
+}) {
+  return (
+    <View style={filterBarStyles.row}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={filterBarStyles.filtersScroll}
+      >
+        {filters.map(f => (
+          <TouchableOpacity
+            key={f.id}
+            style={[filterBarStyles.chip, filterValue === f.id && filterBarStyles.chipActive]}
+            onPress={() => onFilterChange(f.id)}
+            activeOpacity={0.7}
+          >
+            <Text style={[filterBarStyles.chipText, filterValue === f.id && filterBarStyles.chipTextActive]}>
+              {f.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <TouchableOpacity
+        style={filterBarStyles.sortChip}
+        onPress={() => {
+          // cycle to next sort option
+          const idx = sorts.findIndex(s => s.id === sortValue);
+          const next = sorts[(idx + 1) % sorts.length];
+          onSortChange(next.id);
+        }}
+        activeOpacity={0.7}
+      >
+        <Icon name="ArrowUpDown" size={12} color={Colors.primary} strokeWidth={2} />
+        <Text style={filterBarStyles.sortText}>{sorts.find(s => s.id === sortValue)?.label}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // ── RouteSheet ────────────────────────────────────────────────────────────────
 // ── Route map preview (renders polyline of route.points) ───────────────────
 function RouteMapPreview({ points }: { points: { lat: number; lng: number }[] }) {
@@ -395,11 +452,43 @@ function RoutesTab() {
   const routes = useRouteStore(s => s.routes);
   const deleteRoute = useRouteStore(s => s.deleteRoute);
   const [selectedRoute, setSelectedRoute] = useState<import('../store/useRouteStore').Route | null>(null);
+  // Filter + sort state — local-only, resets if user leaves the tab.
+  const [filter, setFilter] = useState<'all' | 'hiking' | 'running'>('all');
+  const [sort, setSort] = useState<'recent' | 'distance-desc' | 'distance-asc'>('recent');
+
+  const visible = useMemo(() => {
+    let list = routes;
+    if (filter !== 'all') list = list.filter(r => r.activityMode === filter);
+    if (sort === 'recent') {
+      list = [...list].sort((a, b) => b.updatedAt - a.updatedAt);
+    } else if (sort === 'distance-desc') {
+      list = [...list].sort((a, b) => b.distanceM - a.distanceM);
+    } else {
+      list = [...list].sort((a, b) => a.distanceM - b.distanceM);
+    }
+    return list;
+  }, [routes, filter, sort]);
 
   return (
     <View style={{ flex: 1 }}>
+      <FilterSortBar
+        filters={[
+          { id: 'all', label: 'All' },
+          { id: 'hiking', label: 'Hiking' },
+          { id: 'running', label: 'Running' },
+        ]}
+        filterValue={filter}
+        onFilterChange={setFilter}
+        sorts={[
+          { id: 'recent', label: 'Recent' },
+          { id: 'distance-desc', label: 'Longest' },
+          { id: 'distance-asc', label: 'Shortest' },
+        ]}
+        sortValue={sort}
+        onSortChange={setSort}
+      />
       <FlatList
-        data={routes}
+        data={visible}
         keyExtractor={r => r.id}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
@@ -410,7 +499,11 @@ function RoutesTab() {
         }
         ListEmptyComponent={
           <View style={{ alignItems: 'center', paddingTop: 40 }}>
-            <Text style={styles.emptyHint}>Plan your next track. Save routes for offline use.</Text>
+            <Text style={styles.emptyHint}>
+              {routes.length === 0
+                ? 'Plan your next track. Save routes for offline use.'
+                : 'No routes match this filter.'}
+            </Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -440,19 +533,53 @@ function RoutesTab() {
 function ActivitiesTab() {
   const sessions = useSessionStore(s => s.sessions);
   const [selectedSession, setSelectedSession] = useState<import('../store/useSessionStore').TrackingSession | null>(null);
+  const [filter, setFilter] = useState<'all' | 'hiking' | 'running'>('all');
+  const [sort, setSort] = useState<'recent' | 'distance-desc' | 'duration-desc'>('recent');
+
+  const visible = useMemo(() => {
+    let list = sessions;
+    if (filter !== 'all') list = list.filter(s => s.activityMode === filter);
+    if (sort === 'recent') {
+      list = [...list].sort((a, b) => b.startedAt - a.startedAt);
+    } else if (sort === 'distance-desc') {
+      list = [...list].sort((a, b) => b.distanceM - a.distanceM);
+    } else {
+      list = [...list].sort((a, b) => b.durationS - a.durationS);
+    }
+    return list;
+  }, [sessions, filter, sort]);
 
   if (sessions.length === 0) {
     return <EmptyState icon="Map" title="No tracks walked yet" hint="Start hiking or running. Your tracks will live here." illustration={<EmptyRoutes size={160} />} />;
   }
 
-  const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
-
   return (
     <View style={{ flex: 1 }}>
+      <FilterSortBar
+        filters={[
+          { id: 'all', label: 'All' },
+          { id: 'hiking', label: 'Hiking' },
+          { id: 'running', label: 'Running' },
+        ]}
+        filterValue={filter}
+        onFilterChange={setFilter}
+        sorts={[
+          { id: 'recent', label: 'Recent' },
+          { id: 'distance-desc', label: 'Longest' },
+          { id: 'duration-desc', label: 'Most time' },
+        ]}
+        sortValue={sort}
+        onSortChange={setSort}
+      />
       <FlatList
-        data={sorted}
+        data={visible}
         keyExtractor={s => s.id}
         contentContainerStyle={styles.listContent}
+        ListEmptyComponent={
+          <View style={{ alignItems: 'center', paddingTop: 40 }}>
+            <Text style={styles.emptyHint}>No activities match this filter.</Text>
+          </View>
+        }
         renderItem={({ item }) => {
           const isRun = item.activityMode === 'running';
           const accent = isRun ? Colors.running : Colors.primary;
@@ -684,6 +811,7 @@ function FlagsTab() {
   const lastCoord = useTrackingStore(s => s.lastCoordinate);
   const [typeFilter, setTypeFilter] = useState<MarkerType | 'all'>('all');
   const [permFilter, setPermFilter] = useState<MarkerPermission | 'all'>('all');
+  const [sort, setSort] = useState<'recent' | 'nearest'>('recent');
   const [editingMarker, setEditingMarker] = useState<Marker | null>(null);
 
   const filtered = markers.filter(m => {
@@ -691,7 +819,19 @@ function FlagsTab() {
     if (permFilter !== 'all' && (m.permission ?? 'personal') !== permFilter) return false;
     return true;
   });
-  const sorted = [...filtered].sort((a, b) => b.createdAt - a.createdAt);
+  const sorted = useMemo(() => {
+    if (sort === 'recent') {
+      return [...filtered].sort((a, b) => b.createdAt - a.createdAt);
+    }
+    // 'nearest' — needs lastCoord; fall back to recent if no GPS yet
+    if (!lastCoord) return [...filtered].sort((a, b) => b.createdAt - a.createdAt);
+    const dist = (m: Marker) => {
+      const dx = (m.lng - lastCoord.lng) * Math.cos((m.lat * Math.PI) / 180);
+      const dy = m.lat - lastCoord.lat;
+      return dx * dx + dy * dy; // squared euclidean is enough for ordering
+    };
+    return [...filtered].sort((a, b) => dist(a) - dist(b));
+  }, [filtered, sort, lastCoord]);
 
   const handleSaveEdit = async (id: string, type: MarkerType, note: string, permission: MarkerPermission) => {
     await updateMarker(id, { type, note, permission });
@@ -727,6 +867,17 @@ function FlagsTab() {
             );
           })}
         </View>
+      </View>
+      {/* Sort chip — toggles between Recent / Nearest. Tap to cycle. */}
+      <View style={filterBarStyles.flagSortRow}>
+        <TouchableOpacity
+          style={filterBarStyles.sortChip}
+          onPress={() => setSort(sort === 'recent' ? 'nearest' : 'recent')}
+          activeOpacity={0.7}
+        >
+          <Icon name="ArrowUpDown" size={12} color={Colors.primary} strokeWidth={2} />
+          <Text style={filterBarStyles.sortText}>{sort === 'recent' ? 'Recent' : 'Nearest'}</Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -932,6 +1083,40 @@ const routeSheetStyles = StyleSheet.create({
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
   statValue: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
   lastRun: { fontSize: FontSize.caption, color: Colors.textMuted, textAlign: 'center', marginTop: -Spacing.xs },
+});
+
+const filterBarStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
+    paddingHorizontal: Spacing.base, paddingTop: Spacing.xs, paddingBottom: Spacing.sm,
+  },
+  filtersScroll: {
+    gap: Spacing.xs, paddingRight: Spacing.sm,
+  },
+  chip: {
+    paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  chipActive: {
+    backgroundColor: Colors.primaryBg,
+    borderColor: Colors.primary,
+  },
+  chipText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
+  chipTextActive: { color: Colors.primary, fontWeight: '700' },
+  sortChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 7,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.primaryBg,
+    borderWidth: 1, borderColor: Colors.primaryMuted,
+  },
+  sortText: { fontSize: FontSize.small, fontWeight: '700', color: Colors.primary },
+  flagSortRow: {
+    flexDirection: 'row', justifyContent: 'flex-end',
+    paddingHorizontal: Spacing.base, paddingBottom: Spacing.sm,
+  },
 });
 
 const segStyles = StyleSheet.create({
