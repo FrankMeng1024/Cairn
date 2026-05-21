@@ -31,7 +31,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 //
 // Bump rule: increment by 1 immediately before running `eas update`.
 // Never reuse a number, never decrement.
-export const OTA_VERSION = 5;
+export const OTA_VERSION = 6;
 
 type OtaState =
   | 'idle'          // checked, no update — "Up to date"
@@ -120,7 +120,7 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
     (async () => {
       // Hard cap on the check phase — on flaky networks
       // checkForUpdateAsync can hang for tens of seconds. Treat anything
-      // longer than 5s as "no update" so the user doesn't see a stuck
+      // longer than 15s as "no update" so the user doesn't see a stuck
       // Checking pill (or, in idleHidden mode, an indefinitely-shifted
       // layout if the upstream layout depends on this badge's presence).
       const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
@@ -134,6 +134,15 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
           if (!cancelled) setState('idle');
           return;
         }
+        // Fast path — if a previous launch already downloaded an update
+        // and the user closed the app before tapping Restart, the bundle
+        // is already on disk. Reload immediately on this launch so the
+        // new code is live without making the user wait for another
+        // check + download cycle.
+        if (Updates.isUpdatePending) {
+          await Updates.reloadAsync();
+          return;
+        }
         // 15s for the check phase — production OTA endpoint can be slow
         // on weaker connections; shorter timeouts caused stuck "Up to date".
         const result = await withTimeout(Updates.checkForUpdateAsync(), 15000);
@@ -143,18 +152,23 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
           return;
         }
         setState('downloading');
-        // Hold "Downloading" visible for at least 800ms so the user can
-        // actually see the state — small bundles can fetch in <100ms and
-        // the pill would otherwise blink past it.
-        const minDisplay = new Promise(r => setTimeout(r, 800));
-        await Promise.all([
-          withTimeout(Updates.fetchUpdateAsync(), 60000),
-          minDisplay,
-        ]);
+        // 60s timeout for the actual bundle fetch.
+        await withTimeout(Updates.fetchUpdateAsync(), 60000);
         if (cancelled) return;
-        setState('ready');
+        // Auto-apply: instead of asking the user to tap "Restart", reload
+        // immediately. Users complained that the manual "Done · tap to
+        // restart" prompt + 3-cold-start cycle to actually receive the
+        // bundle was confusing. Now: open app → "Downloading" pill →
+        // app reboots → next frame they're on the new bundle.
+        setState('applying');
+        // Tiny delay so the user briefly sees the "Restarting" pill —
+        // otherwise the reload feels like a random crash.
+        setTimeout(() => { Updates.reloadAsync().catch(() => {}); }, 600);
       } catch {
-        if (!cancelled) setState('idle');
+        // Network / OTA endpoint failed — surface this honestly so
+        // users don't see a fake "Up to date" pill when we never
+        // actually verified anything.
+        if (!cancelled) setState('error');
       }
     })();
     return () => { cancelled = true; };
@@ -162,6 +176,17 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
 
   const handlePress = () => {
     if (state === 'ready') setModalOpen(true);
+    if (state === 'error') {
+      // Re-trigger the OTA check on tap — same code path as the mount
+      // useEffect, but we just bump state to checking so the spinner
+      // shows immediately and let the existing effect re-run via a
+      // state-key change. Cheap retry: full reload of the JS surface.
+      setState('checking');
+      // Use Updates.reloadAsync as a hard retry, since refreshing the
+      // useEffect dep is non-trivial — and reloadAsync is cheap when
+      // there's no pending bundle (it just re-runs the JS).
+      import('expo-updates').then(U => U.reloadAsync().catch(() => setState('error')));
+    }
   };
 
   const handleApply = async () => {
@@ -199,15 +224,15 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
 
   switch (state) {
     case 'checking':
-      // Show a real "checking" state with a spinner so the user can tell
-      // us apart from a stale "Up to date" pill — when we hit a stuck
-      // network we now wait up to 15s before giving up, and the user
-      // deserves to know we're trying.
+      // Honest checking state — never pretend we already verified.
       dotColor = COLORS.dotGrey;
       label = 'Checking for update';
       showSpinner = true;
       break;
     case 'idle':
+      // Only reached when the OTA endpoint *successfully* told us there
+      // is no newer bundle. This is the only state where "Up to date"
+      // is truthful — never use it as a fallback for failures.
       dotColor = COLORS.dotGreen;
       label = 'Up to date';
       break;
@@ -217,18 +242,22 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
       showSpinner = true;
       break;
     case 'ready':
+      // Should be brief — auto-reload kicks in 600ms after download.
+      // Kept tappable as a manual fallback in case reload fails.
       dotColor = COLORS.dotAmber;
-      label = 'Done · tap to restart';
+      label = 'Update downloaded';
       interactive = true;
       break;
     case 'applying':
       dotColor = COLORS.dotBlue;
-      label = 'Restarting';
+      label = 'Restarting…';
       showSpinner = true;
       break;
     case 'error':
+      // Honest failure state — do NOT mask as "Up to date".
       dotColor = COLORS.dotGrey;
-      label = 'Up to date';
+      label = "Couldn't check · tap to retry";
+      interactive = true;
       break;
   }
 

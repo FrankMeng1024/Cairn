@@ -185,12 +185,11 @@ export function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoRow}>
-            {/* Sign In page uses size=28 with marginTop:-7 to compensate
-                for the cairn viewBox's top-heavy padding (7.8u top vs
-                0.6u bottom). Here size=26 + center alignment, so a
-                smaller -3 nudge is enough. */}
-            <View style={{ marginTop: -3 }}>
-              <CairnLogo size={26} color={Colors.primary} />
+            {/* Match Sign In page exactly: size=28 + marginTop:-7 + center
+                alignment + gap=Spacing.xs. Keeps the brand mark visually
+                consistent across the whole app. */}
+            <View style={{ marginTop: -7 }}>
+              <CairnLogo size={28} color={Colors.primary} />
             </View>
             <Text style={styles.logo}>Cairn</Text>
           </View>
@@ -262,7 +261,7 @@ const styles = StyleSheet.create({
   },
 
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   logo: {
     fontSize: FontSize.h1, fontWeight: '900', color: Colors.textPrimary,
     letterSpacing: -1, lineHeight: 32, includeFontPadding: false,
