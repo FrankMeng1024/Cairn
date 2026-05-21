@@ -132,12 +132,14 @@ function calcFlagPaths(t: number, fadeIn: number): { flagD: string; sheenD: stri
 // Full logo: stones rise sequentially, then flag drops + waves
 // size prop scales the whole SVG (used for small version in verify screen)
 function AnimatedCairn({ size = 4, noFlag = false, onComplete, staticMode = false }: { size?: number; noFlag?: boolean; onComplete?: () => void; staticMode?: boolean }) {
-  // Stone visibility: 0=hidden → 1=risen
+  // Stone visibility: starts FAR off the bottom (y=30 = pushed entirely
+  // out of the 22×30 viewBox) and opacity 0. Initialising y far below the
+  // base position guarantees that even if react-native-svg's native bridge
+  // momentarily ignores opacity=0 on first paint, the stones still cannot
+  // be seen because they are translated outside the visible area.
   // staticMode renders the final state (stones risen, flag down) without
-  // running any setInterval/setTimeout — used in the diagnostic build to
-  // isolate whether the high-frequency SVG path animation is the source
-  // of the sign-out → AuthScreen mount crash.
-  const [stoneY, setStoneY] = useState(staticMode ? [0, 0, 0] : [6, 6, 6]);
+  // running any setInterval/setTimeout.
+  const [stoneY, setStoneY] = useState(staticMode ? [0, 0, 0] : [30, 30, 30]);
   const [stoneOp, setStoneOp] = useState(staticMode ? [1, 1, 1] : [0, 0, 0]);
   const [showFlag, setShowFlag] = useState(staticMode ? !noFlag : false);
   const [flagDropY, setFlagDropY] = useState(staticMode ? 0 : -26);
@@ -166,6 +168,10 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete, staticMode = fals
     STONE_DEFS.forEach((_, idx) => {
       const startTimeout = setTimeout(() => {
         if (!mountedRef.current) return;
+        // Snap from far-offscreen (y=30) to the rise-start position (y=6)
+        // on the same tick we begin animating, so the stone never visibly
+        // teleports — it just appears at the bottom and rises.
+        setStoneY(prev => { const n = [...prev]; n[idx] = 6; return n; });
         // Rise over 630ms with deliberate ease — feels like a stone
         // settling under its own weight onto the cairn.
         const start = Date.now();

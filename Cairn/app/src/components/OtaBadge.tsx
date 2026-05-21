@@ -149,6 +149,11 @@ export function OtaBadge({ inline = false }: Props) {
   if (!inline && (state === 'idle' || state === 'checking' || state === 'error')) {
     return null;
   }
+  // Inline mode: hide while we're still checking — user shouldn't see
+  // a "Checking…" pill flash for half a second on every cold start.
+  if (inline && state === 'checking') {
+    return null;
+  }
 
   // Visual config per state
   let dotColor = COLORS.dotGreen;
@@ -158,9 +163,9 @@ export function OtaBadge({ inline = false }: Props) {
 
   switch (state) {
     case 'checking':
+      // unreachable — short-circuited above
       dotColor = COLORS.dotGrey;
-      label = 'Checking for updates';
-      showSpinner = true;
+      label = '';
       break;
     case 'idle':
       dotColor = COLORS.dotGreen;
@@ -173,7 +178,7 @@ export function OtaBadge({ inline = false }: Props) {
       break;
     case 'ready':
       dotColor = COLORS.dotAmber;
-      label = 'Update ready · tap to restart';
+      label = 'Done · tap to restart';
       interactive = true;
       break;
     case 'applying':
@@ -222,9 +227,9 @@ export function OtaBadge({ inline = false }: Props) {
               <View style={[styles.modalIconDot, { backgroundColor: COLORS.dotAmber, opacity: 0.5 }]} />
               <View style={[styles.modalIconDot, { backgroundColor: COLORS.dotAmber, opacity: 0.25 }]} />
             </View>
-            <Text style={styles.modalTitle}>Update ready</Text>
+            <Text style={styles.modalTitle}>Update downloaded</Text>
             <Text style={styles.modalBody}>
-              The update has finished downloading. Restart now to apply — it only takes a second.
+              The new version is ready. Restart now to apply — it only takes a second.
             </Text>
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.btnSecondary} onPress={handleLater} activeOpacity={0.7}>
