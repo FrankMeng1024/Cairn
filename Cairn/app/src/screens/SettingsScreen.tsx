@@ -133,10 +133,10 @@ function ToggleRow({
 
 // ── Action Row ───────────────────────────────────────────────────────────────
 function ActionRow({
-  iconName, iconColor, iconBg, label, labelColor, onPress,
+  iconName, iconColor, iconBg, label, labelColor, onPress, hideChevron,
 }: {
   iconName: IconName; iconColor: string; iconBg: string;
-  label: string; labelColor?: string; onPress: () => void;
+  label: string; labelColor?: string; onPress: () => void; hideChevron?: boolean;
 }) {
   return (
     <PressBtn style={rowStyles.actionRow} onPress={onPress} scaleTo={0.97}>
@@ -144,7 +144,9 @@ function ActionRow({
         <Icon name={iconName} size={16} color={iconColor} strokeWidth={1.8} />
       </View>
       <Text style={[rowStyles.actionLabel, labelColor ? { color: labelColor } : null]}>{label}</Text>
-      <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
+      {!hideChevron && (
+        <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
+      )}
     </PressBtn>
   );
 }
@@ -429,6 +431,7 @@ export function SettingsScreen() {
             iconBg={Colors.dangerBg}
             label="Sign Out"
             labelColor={Colors.danger}
+            hideChevron
             onPress={async () => {
               // Web uses window.confirm (Alert.alert is no-op on web).
               // React Native polyfills `window` but does NOT provide window.confirm,

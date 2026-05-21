@@ -19,11 +19,34 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useRouteStore } from '../store/useRouteStore';
 import { useSessionStore, loadTrackPoints } from '../store/useSessionStore';
 import { haversineM, formatDistance } from '../utils/geo';
+import { getCurrentRegion } from '../config/regions';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
 
 const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || '';
+
+// Conditional Mapbox import — same pattern as RoutesScreen so the editor
+// works on Expo Go (no native @rnmapbox) and degrades to the existing
+// fallback panel.
+let MapView: any = null;
+let CameraComponent: any = null;
+let LineLayer: any = null;
+let ShapeSource: any = null;
+let PointAnnotation: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Mapbox = require('@rnmapbox/maps');
+    MapView = Mapbox.MapView;
+    CameraComponent = Mapbox.Camera;
+    LineLayer = Mapbox.LineLayer;
+    ShapeSource = Mapbox.ShapeSource;
+    PointAnnotation = Mapbox.PointAnnotation;
+  } catch {
+    // @rnmapbox/maps not in this build — fallback panel will render.
+  }
+}
 
 interface WaypointDraft {
   id: string;
@@ -177,28 +200,100 @@ export function RouteEditorScreen() {
     <View style={styles.container}>
       {/* Map area */}
       <View style={styles.mapArea}>
-        <View style={styles.mapFallback}>
-          <Icon name="Map" size={48} color={Colors.primaryMuted} />
-          <Text style={styles.mapFallbackText}>Route Editor</Text>
-          <Text style={styles.mapFallbackSub}>
-            {Platform.OS === 'web'
-              ? 'Use search below to add waypoints'
-              : 'Tap map to add waypoints'}
-          </Text>
-        </View>
-
-        {/* Waypoint markers on fallback map */}
-        {waypoints.map((wp, i) => (
-          <View
-            key={wp.id}
-            style={[styles.waypointDot, {
-              left: 100 + (i % 6) * 80,
-              top: 120 + Math.floor(i / 6) * 60,
-            }]}
+        {MapView ? (
+          <MapView
+            style={StyleSheet.absoluteFillObject}
+            styleURL="mapbox://styles/mapbox/outdoors-v12"
+            logoEnabled={false}
+            attributionEnabled={false}
+            scaleBarEnabled={false}
+            compassEnabled={false}
+            onPress={(e: any) => {
+              const coords = e?.geometry?.coordinates;
+              if (Array.isArray(coords) && coords.length >= 2) {
+                handleAddWaypoint(coords[1], coords[0]);
+              }
+            }}
           >
-            <Text style={styles.waypointDotText}>{i + 1}</Text>
-          </View>
-        ))}
+            {CameraComponent && (() => {
+              const region = getCurrentRegion();
+              const last = waypoints[waypoints.length - 1];
+              const center: [number, number] = last
+                ? [last.lng, last.lat]
+                : [region.centerLng, region.centerLat];
+              const zoom = waypoints.length > 0 ? 13 : region.defaultZoom;
+              return (
+                <CameraComponent
+                  centerCoordinate={center}
+                  zoomLevel={zoom}
+                  animationDuration={300}
+                />
+              );
+            })()}
+            {/* Connect waypoints with a line */}
+            {ShapeSource && LineLayer && waypoints.length >= 2 && (
+              <ShapeSource
+                id="route-line"
+                shape={{
+                  type: 'Feature',
+                  geometry: {
+                    type: 'LineString',
+                    coordinates: waypoints.map(wp => [wp.lng, wp.lat]),
+                  },
+                  properties: {},
+                }}
+              >
+                <LineLayer
+                  id="route-line-layer"
+                  style={{
+                    lineColor: Colors.primary,
+                    lineWidth: 4,
+                    lineOpacity: 0.85,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                  }}
+                />
+              </ShapeSource>
+            )}
+            {/* Numbered waypoint pins */}
+            {PointAnnotation && waypoints.map((wp, i) => (
+              <PointAnnotation
+                key={wp.id}
+                id={wp.id}
+                coordinate={[wp.lng, wp.lat]}
+              >
+                <View style={styles.waypointDot}>
+                  <Text style={styles.waypointDotText}>{i + 1}</Text>
+                </View>
+              </PointAnnotation>
+            ))}
+          </MapView>
+        ) : (
+          <>
+            <View style={styles.mapFallback}>
+              <Icon name="Map" size={48} color={Colors.primaryMuted} />
+              <Text style={styles.mapFallbackText}>Route Editor</Text>
+              <Text style={styles.mapFallbackSub}>
+                {Platform.OS === 'web'
+                  ? 'Use search below to add waypoints'
+                  : 'Tap map to add waypoints'}
+              </Text>
+            </View>
+            {/* Waypoint markers on fallback panel */}
+            {waypoints.map((wp, i) => (
+              <View
+                key={wp.id}
+                style={[styles.waypointDot, {
+                  position: 'absolute',
+                  left: 100 + (i % 6) * 80,
+                  top: 120 + Math.floor(i / 6) * 60,
+                }]}
+              >
+                <Text style={styles.waypointDotText}>{i + 1}</Text>
+              </View>
+            ))}
+          </>
+        )}
       </View>
 
       {/* Top bar */}
@@ -296,7 +391,7 @@ const styles = StyleSheet.create({
   mapFallbackText: { fontSize: FontSize.h3, fontWeight: '600', color: Colors.textPrimary },
   mapFallbackSub: { fontSize: FontSize.body, color: Colors.textSecondary, textAlign: 'center' },
   waypointDot: {
-    position: 'absolute', width: 28, height: 28, borderRadius: 14,
+    width: 28, height: 28, borderRadius: 14,
     backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: '#fff', ...Shadow.card,
   },

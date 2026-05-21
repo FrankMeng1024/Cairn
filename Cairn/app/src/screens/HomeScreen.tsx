@@ -169,7 +169,12 @@ export function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoRow}>
-            <CairnLogo size={26} color={Colors.primary} />
+            {/* CairnLogo viewBox is top-padded (7.8u of 24u above the top
+                stone, only 0.6u below the base). Pull up so the cairn
+                visually aligns with the wordmark optical center. */}
+            <View style={{ marginTop: -7 }}>
+              <CairnLogo size={26} color={Colors.primary} />
+            </View>
             <Text style={styles.logo}>Cairn</Text>
           </View>
           <Text style={styles.greeting}>{getGreeting(uiMode)}</Text>
@@ -240,7 +245,7 @@ const styles = StyleSheet.create({
   },
 
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  logoRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  logoRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
   logo: {
     fontSize: FontSize.h1, fontWeight: '900', color: Colors.textPrimary,
     letterSpacing: -1, lineHeight: 32, includeFontPadding: false,
@@ -332,13 +337,13 @@ const recentStyles = StyleSheet.create({
 const toolStyles = StyleSheet.create({
   btn: {
     flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.card,
-    alignItems: 'center', justifyContent: 'flex-start',
-    paddingVertical: Spacing.md, gap: 6,
-    minHeight: 86,
+    alignItems: 'center', justifyContent: 'center',
+    paddingVertical: Spacing.sm, gap: 4,
+    minHeight: 70,
     borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
   },
   iconWrap: {
-    width: 36, height: 36, borderRadius: 18, // perfect circle for visual consistency
+    width: 32, height: 32, borderRadius: 16, // perfect circle for visual consistency
     backgroundColor: Colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
   },

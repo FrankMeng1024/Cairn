@@ -13,6 +13,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, Animated } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, FontSize, Radius } from '../components/tokens';
@@ -241,7 +242,9 @@ const dialStyles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#000',
+    // Was solid black — felt like a dead screen. Switch to a deep nature
+    // tone that still gives the dial enough contrast but feels intentional.
+    backgroundColor: '#0d1f12',
   },
   dial: {
     width: 240,
@@ -255,13 +258,14 @@ const dialStyles = StyleSheet.create({
     height: 240,
     borderRadius: 120,
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: 'rgba(255,255,255,0.32)',
   },
   cardinal: {
     position: 'absolute',
-    fontSize: 16,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: 18,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.92)',
+    letterSpacing: 0.5,
   },
   arrowAnchor: {
     position: 'absolute',
@@ -302,6 +306,7 @@ const dialStyles = StyleSheet.create({
 
 export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   const nav = useNavigation();
+  const insets = useSafeAreaInsets();
   const markers = useMarkerStore(s => s.markers);
   const addMarker = useMarkerStore(s => s.addMarker);
   const lastCoord = useTrackingStore(s => s.lastCoordinate);
@@ -484,8 +489,9 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
         })}
       </GlassPanel>
 
-      {/* Top controls */}
-      <View style={styles.topBar}>
+      {/* Top controls — uses safe-area inset so X button clears the
+          status bar / Dynamic Island on every device. */}
+      <View style={[styles.topBar, { top: insets.top + 8 }]}>
         <PressBtn style={styles.closeBtn} onPress={() => onClose ? onClose() : nav.goBack()} scaleTo={0.92}>
           <Icon name="X" size={20} color="#fff" />
         </PressBtn>
@@ -588,7 +594,7 @@ const styles = StyleSheet.create({
   markerLabel: { flex: 1, fontSize: FontSize.body, color: '#fff' },
   markerDist: { fontSize: FontSize.caption, color: 'rgba(255,255,255,0.6)' },
   topBar: {
-    position: 'absolute', top: 50, left: Spacing.md, right: Spacing.md,
+    position: 'absolute', left: Spacing.md, right: Spacing.md,
     flexDirection: 'row', justifyContent: 'flex-end',
   },
   closeBtn: {

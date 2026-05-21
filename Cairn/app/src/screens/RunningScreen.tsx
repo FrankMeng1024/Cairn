@@ -288,6 +288,7 @@ export function RunningScreen() {
             styleURL="mapbox://styles/mapbox/outdoors-v12"
             logoEnabled={false}
             attributionEnabled={false}
+            scaleBarEnabled={false}
             compassEnabled={false}
           >
             {CameraComponent && (
