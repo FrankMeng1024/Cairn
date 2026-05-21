@@ -35,6 +35,7 @@ import { CairnLogo } from '../components/ActivityIcons/CairnLogo';
 import * as Google from 'expo-auth-session/providers/google';
 import { makeRedirectUri, Prompt } from 'expo-auth-session';
 import { crashLogger } from '../services/crashLogger';
+import { OtaBadge } from '../components/OtaBadge';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { height: SCREEN_H } = Dimensions.get('window');
@@ -78,9 +79,9 @@ const STONE_DEFS = [
   // base stone
   { cx: 11,   cy: 23.5, rx: 8.0,  ry: 3.0,  color: '#4a6b38', shadowOp: 0.20, delay: 0    },
   // mid stone
-  { cx: 9.8,  cy: 16.5, rx: 4.95, ry: 1.98, color: '#5d7c46', shadowOp: 0.24, delay: 140  },
+  { cx: 9.8,  cy: 16.5, rx: 4.95, ry: 1.98, color: '#5d7c46', shadowOp: 0.24, delay: 280  },
   // top stone
-  { cx: 12.5, cy: 10.5, rx: 3.06, ry: 1.28, color: '#7a9e5a', shadowOp: 0.28, delay: 280  },
+  { cx: 12.5, cy: 10.5, rx: 3.06, ry: 1.28, color: '#7a9e5a', shadowOp: 0.28, delay: 560  },
 ];
 // Flag pole tip Y (top of top stone)
 const POLE_TIP_Y = 9.22;
@@ -164,14 +165,14 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete, staticMode = fals
     STONE_DEFS.forEach((_, idx) => {
       const startTimeout = setTimeout(() => {
         if (!mountedRef.current) return;
-        // Rise over 320ms
+        // Rise over 600ms (slowed from 320ms for nicer feel)
         const start = Date.now();
         const timer = setInterval(() => {
           if (!mountedRef.current) {
             clearInterval(timer);
             return;
           }
-          const p = Math.min((Date.now() - start) / 320, 1);
+          const p = Math.min((Date.now() - start) / 600, 1);
           const ease = 1 - Math.pow(1 - p, 3);
           setStoneY(prev => { const n = [...prev]; n[idx] = 6 * (1 - ease); return n; });
           setStoneOp(prev => { const n = [...prev]; n[idx] = ease; return n; });
@@ -624,6 +625,7 @@ export function AuthScreen() {
   if (view === 'splash') {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <OtaBadge />
       <Animated.View style={[styles.splashInner, { opacity: splashFade, transform: [{ translateY: splashTranslate }] }]}>
           {/* Hero area */}
           <View style={styles.logoArea}>
@@ -679,6 +681,7 @@ export function AuthScreen() {
   if (view === 'verify') {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <OtaBadge />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={formStyles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
@@ -779,6 +782,7 @@ export function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <OtaBadge />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={formStyles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 

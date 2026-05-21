@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Platform, AppState, Text as RNText, TextInput as RNTextInput, Alert } from 'react-native';
+import { View, Platform, AppState, Text as RNText, TextInput as RNTextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import { useFonts } from 'expo-font';
@@ -147,26 +147,8 @@ function AppRoot() {
       // so a sign-out/login crash actually reaches the server.
       crashLogger.uploadCrashIfAny(API_BASE_URL).catch(() => {});
 
-      // OTA update visible feedback: check for update on launch, alert user
-      // when downloading and when ready to relaunch into new bundle.
-      // Uses dynamic import so we don't crash if expo-updates fails to init.
-      (async () => {
-        try {
-          const Updates = await import('expo-updates');
-          if (!Updates.isEnabled) return;
-          const result = await Updates.checkForUpdateAsync();
-          if (result.isAvailable) {
-            Alert.alert('Update available', 'Downloading new version…');
-            await Updates.fetchUpdateAsync();
-            Alert.alert('Update ready', 'Restart now to apply?', [
-              { text: 'Later', style: 'cancel' },
-              { text: 'Restart', onPress: () => Updates.reloadAsync() },
-            ]);
-          }
-        } catch {
-          /* expo-updates not available or network down — silent */
-        }
-      })();
+      // Note: OTA update check + download UX is handled by <OtaBadge />
+      // mounted on AuthScreen (top-right pill). No global Alert here.
     } catch (err) {
       // crashLogger itself failed — proceed without it
       // eslint-disable-next-line no-console
