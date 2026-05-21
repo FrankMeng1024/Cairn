@@ -356,6 +356,21 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
           </PointAnnotation>
         ))}
       </MapView>
+      {/* Touch shield during the welcome fly-in. Absolutely positioned
+          over the map and intercepts all touches so Mapbox's native
+          gesture handler can't cancel the running camera animation
+          when the user taps anywhere on the map area. Removed the
+          moment fly-in completes (gesturesEnabled flips to true).
+          The Stop / Compass / Flag buttons sit in their own absolute
+          overlays ABOVE this shield in the JSX tree, so they remain
+          tappable. */}
+      {!gesturesEnabled && (
+        <View
+          style={StyleSheet.absoluteFillObject}
+          // pointerEvents: 'auto' (the React Native default) — every
+          // touch on this view is consumed and never reaches MapView.
+        />
+      )}
     </View>
   );
 }
@@ -641,8 +656,11 @@ export function HikingScreen() {
   // the user can "close the lid" to save battery if they don't want
   // a live needle. Permission is shared with location, already
   // granted by the time the user is in tracking mode.
+  // Default: closed (lid icon visible) — most users don't need
+  // continuous orientation, and the sensor + low-pass filter cost
+  // a small amount of battery. Tap to open.
   const [heading, setHeading] = useState<number | null>(null);
-  const [compassEnabled, setCompassEnabled] = useState(true);
+  const [compassEnabled, setCompassEnabled] = useState(false);
   useEffect(() => {
     if (!compassEnabled) {
       setHeading(null);
@@ -1089,9 +1107,11 @@ export function HikingScreen() {
                   // moving.
                   <CompassNeedle heading={heading} size={22} />
                 ) : (
-                  // "Closed lid" state — sensor off, dimmed icon.
-                  // Tap again to re-enable.
-                  <Icon name="Compass" size={22} color={Colors.textMuted} strokeWidth={2} />
+                  // "Closed lid" state — sensor off, but the icon
+                  // still uses the primary colour so users can tell
+                  // it's an interactive compass button (not a broken
+                  // greyed-out element). Tap to open the lid.
+                  <Icon name="Compass" size={22} color={Colors.primary} strokeWidth={2} />
                 )}
               </TouchableOpacity>
             </View>
