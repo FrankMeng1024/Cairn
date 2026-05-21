@@ -7,7 +7,7 @@
  */
 import React, { useRef, useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, LayoutChangeEvent,
+  View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, LayoutChangeEvent, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -154,18 +154,16 @@ function ActivityCard({
   anim: Animated.Value;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
-  const [h, setH] = useState(0);
-  const panelW = h > 0 ? Math.min(Math.round(h * 0.38), 130) : 90;
+  // Panel width is derived from screen width — known on first paint —
+  // so the card never re-measures and re-renders. Was: useState(h) +
+  // onLayout, which caused a visible "jump" on first sign-in as the
+  // initial 90px panel resized to ~110px after layout.
+  const { width: screenW } = useWindowDimensions();
+  const panelW = Math.min(Math.round(screenW * 0.32), 130);
   const iconSize = Math.round(panelW * 0.55);
 
   return (
-    <Animated.View
-      style={{ flex: 1, opacity: anim, transform: [{ scale }] }}
-      onLayout={(e: LayoutChangeEvent) => {
-        const newH = e.nativeEvent.layout.height;
-        if (newH !== h) setH(newH);
-      }}
-    >
+    <Animated.View style={{ flex: 1, opacity: anim, transform: [{ scale }] }}>
       <TouchableOpacity
         activeOpacity={1}
         onPress={onPress}

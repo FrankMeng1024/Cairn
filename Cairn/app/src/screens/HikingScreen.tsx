@@ -20,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import Svg, { Path, Circle as SvgCircle } from 'react-native-svg';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -105,6 +106,37 @@ if (Platform.OS !== 'web') {
   }
 }
 
+// ── Compass needle ───────────────────────────────────────────────────────
+// Two-colour needle: red half points to north (top-half of the SVG when
+// heading=0), grey half points south. The whole needle rotates by
+// -heading so the red tip always points to true/magnetic north as the
+// phone yaws. A static "N" letter sits at the top of the bezel
+// (NOT rotating) so users can always anchor cardinal direction to the
+// device frame, even when the needle is wobbling.
+function CompassNeedle({ heading, size = 22 }: { heading: number | null; size?: number }) {
+  const angle = heading != null ? -heading : 0;
+  return (
+    <View style={{ width: size + 8, height: size + 8, alignItems: 'center', justifyContent: 'center' }}>
+      {/* Static N marker — never rotates, anchored to top of button */}
+      <Text style={{
+        position: 'absolute', top: -2,
+        fontSize: 8, fontWeight: '800', color: Colors.textPrimary, letterSpacing: 0.5,
+      }}>N</Text>
+      {/* Rotating two-colour needle */}
+      <View style={{ transform: [{ rotate: `${angle}deg` }] }}>
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          {/* North half — red, pointing up */}
+          <Path d="M 12 2 L 14.5 12 L 12 12 L 9.5 12 Z" fill="#d63031" />
+          {/* South half — grey, pointing down */}
+          <Path d="M 12 22 L 14.5 12 L 12 12 L 9.5 12 Z" fill="#9CA3AF" />
+          {/* Center pivot dot */}
+          <SvgCircle cx="12" cy="12" r="1.6" fill="#1f2937" />
+        </Svg>
+      </View>
+    </View>
+  );
+}
+
 // ── Map component (real Mapbox or fallback) ─────────────────────────────
 function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStart, userPos, instantCamera }: {
   markers: Marker[];
@@ -136,6 +168,44 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
       properties: {},
     }] : [],
   };
+
+  // Imperative camera ref — used to forcefully snap the camera to the
+  // user's position on resume, bypassing the followUserLocation
+  // auto-fly-to-puck animation that runs even when defaultSettings is
+  // provided. Without this, "Resume" still flies in from globe view.
+  const cameraRef = useRef<any>(null);
+
+  // When in instant mode (resume / re-entry with a known location),
+  // skip Mapbox's followUserLocation entirely. Manually set the camera
+  // to the user's position with animation off, then update on every
+  // userPos change to track. For first-launch new hike, fall through
+  // to followUserLocation with a fly-in.
+  useEffect(() => {
+    if (!instantCamera || !userPos || !cameraRef.current) return;
+    cameraRef.current.setCamera({
+      centerCoordinate: [userPos.lng, userPos.lat],
+      zoomLevel: 15,
+      animationDuration: 0,
+      animationMode: 'none',
+    });
+  }, [instantCamera, userPos?.lat, userPos?.lng]);
+
+  // During the welcome fly-in, gestures must be disabled so that an
+  // accidental tap (e.g. user reaching for the Stop button before the
+  // animation finishes) doesn't cancel the camera mid-flight. After
+  // the fly-in completes (or immediately when instantCamera) we
+  // re-enable gestures.
+  const [gesturesEnabled, setGesturesEnabled] = useState(instantCamera);
+  useEffect(() => {
+    if (instantCamera) {
+      setGesturesEnabled(true);
+      return;
+    }
+    setGesturesEnabled(false);
+    // 600ms fly-in duration + 100ms safety buffer
+    const t = setTimeout(() => setGesturesEnabled(true), 700);
+    return () => clearTimeout(t);
+  }, [instantCamera]);
 
   // Fallback when Mapbox not available
   if (!MapView) {
@@ -175,20 +245,26 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
         // SOS (centre) and Place Flag (right). showCompass is also
         // gated on tracking state so a fresh map screen isn't cluttered.
         compassEnabled={false}
+        // Disable gestures during the fly-in so a stray tap doesn't
+        // freeze the camera mid-animation. Tapping anywhere on the
+        // map during a Mapbox flyTo cancels the animation by default.
+        scrollEnabled={gesturesEnabled}
+        zoomEnabled={gesturesEnabled}
+        rotateEnabled={gesturesEnabled}
+        pitchEnabled={gesturesEnabled}
         scaleBarEnabled={false}
       >
         <CameraComponent
-          followUserLocation={true}
+          ref={cameraRef}
+          // Only auto-follow on first-launch new hikes. Resume mode
+          // uses the imperative cameraRef.setCamera in the useEffect
+          // above to keep the camera locked on the user without
+          // Mapbox's globe-zoom-in animation.
+          followUserLocation={!instantCamera}
           followZoomLevel={15}
           followPitch={0}
-          // 600ms fly-in is welcoming on first launch but short
-          // enough that users don't feel locked. Resume / re-entry
-          // skips the animation entirely (instantCamera path).
           animationDuration={instantCamera ? 0 : 600}
           animationMode={instantCamera ? 'none' : 'flyTo'}
-          // defaultSettings positions the camera on mount BEFORE
-          // followUserLocation kicks in, so a resume sees the right
-          // viewport on the first frame instead of an opening fly-in.
           defaultSettings={instantCamera && userPos
             ? { centerCoordinate: [userPos.lng, userPos.lat], zoomLevel: 15 }
             : undefined}
@@ -584,7 +660,18 @@ export function HikingScreen() {
           // fall back to magHeading (magnetic north) — close enough
           // for a hiker's mental model. -1 means unavailable.
           const h = trueHeading >= 0 ? trueHeading : magHeading;
-          if (h >= 0) setHeading(h);
+          if (h < 0) return;
+          // Low-pass filter: 70% old + 30% new, so the needle settles
+          // smoothly instead of jittering ±5° every frame on devices
+          // with imperfect magnetometer calibration.
+          setHeading(prev => {
+            if (prev == null) return h;
+            // Handle the 360→0 wrap (shortest angular distance)
+            let delta = h - prev;
+            if (delta > 180) delta -= 360;
+            if (delta < -180) delta += 360;
+            return (prev + delta * 0.3 + 360) % 360;
+          });
         });
       } catch {
         // Compass unavailable — leave heading null, UI shows static
@@ -996,15 +1083,11 @@ export function HikingScreen() {
                 }}
               >
                 {compassEnabled ? (
-                  // Live needle — rotates so it always points to north
-                  // regardless of phone orientation. heading is the
-                  // direction the phone is pointing; we rotate the
-                  // icon by -heading so the icon's "up" stays north.
-                  <View style={{
-                    transform: [{ rotate: heading != null ? `${-heading}deg` : '0deg' }],
-                  }}>
-                    <Icon name="Navigation" size={22} color={Colors.primary} strokeWidth={2.5} />
-                  </View>
+                  // Live compass needle — north stays red, south grey,
+                  // and a static "N" letter on the bezel anchors the
+                  // user's mental direction even when the needle is
+                  // moving.
+                  <CompassNeedle heading={heading} size={22} />
                 ) : (
                   // "Closed lid" state — sensor off, dimmed icon.
                   // Tap again to re-enable.
@@ -1310,10 +1393,16 @@ const styles = StyleSheet.create({
   },
   circleBtnPrimary: {
     width: 56, height: 56, borderRadius: 28,
-    backgroundColor: Colors.primary,
+    // Translucent green to match the compass button's frosted-glass
+    // language. Was solid hex (#5d7c46) which read as a "stop sign"
+    // glued to the map. Now: same alpha as compass (0.78), with a
+    // subtle white inner border so the icon contrast still pops over
+    // varied terrain.
+    backgroundColor: 'rgba(93,124,70,0.78)',
     alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
     shadowColor: Colors.primary, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35, shadowRadius: 16, elevation: 8,
+    shadowOpacity: 0.20, shadowRadius: 16, elevation: 8,
   },
   // Compass chip — bottom-left slot, mirrors the GPS chip in the top
   // overlay (same shadow, border, surface colour) so the page reads as
