@@ -182,9 +182,17 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
           followZoomLevel={15}
           followPitch={0}
           // 1s zoom-in is delightful on first launch but slow when
-          // resuming an in-progress hike — instantly snap to the
-          // user's location instead.
+          // resuming an in-progress hike — both the duration and the
+          // animationMode must be non-animated, otherwise Mapbox still
+          // tweens from its default position to the user's location.
           animationDuration={instantCamera ? 0 : 1000}
+          animationMode={instantCamera ? 'none' : 'flyTo'}
+          // defaultSettings positions the camera on mount BEFORE
+          // followUserLocation kicks in, so a resume sees the right
+          // viewport on the first frame instead of an opening fly-in.
+          defaultSettings={instantCamera && userPos
+            ? { centerCoordinate: [userPos.lng, userPos.lat], zoomLevel: 15 }
+            : undefined}
         />
         <UserLocationComponent visible={true} renderMode="native" />
 
@@ -855,7 +863,7 @@ export function HikingScreen() {
               status === 'idle' ? styles.gpsTextAmber : (!locationAvailable && styles.gpsTextOffline),
             ]}>
               {locationAvailable
-                ? 'GPS Connected ±5m'
+                ? 'GPS'
                 : status === 'idle' ? 'Enable GPS' : 'GPS Offline'}
             </Text>
           </View>
@@ -933,30 +941,38 @@ export function HikingScreen() {
             </Animated.View>
           </View>
         ) : (
-          // Tracking: just the Place Flag FAB, centred. Compass and
-          // SOS are temporarily hidden — compass had no real action
-          // wired (it was a tap-to-haptic placeholder, which the user
-          // correctly flagged as "non-functional"), and the SOS
-          // not-configured state was confusing without the
-          // emergency-contacts setup flow. Both will return when
-          // their respective interactions are properly designed.
-          <View style={[styles.controlRow, { justifyContent: 'center' }]}>
-            <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+          // Tracking: two evenly-spaced controls — Compass (left) +
+          // Place Flag (right). Both 56x56 frosted-glass circles. The
+          // compass tap recentres the camera bearing to north; flag
+          // opens the AR placement screen.
+          <View style={styles.controlRow}>
+            <View style={styles.controlSlot}>
               <TouchableOpacity
-                style={styles.circleBtnPrimary}
-                onPress={() => nav.navigate('AR')}
-                activeOpacity={1}
-                onPressIn={() => springIn(fabScale)}
-                onPressOut={() => springOut(fabScale)}
+                style={styles.circleBtn}
+                activeOpacity={0.85}
+                onPress={() => Haptics.selectionAsync().catch(() => {})}
               >
-                <Icon name="Flag" size={22} color="#fff" strokeWidth={2} />
-                {markers.length > 0 && (
-                  <View style={styles.fabBadge}>
-                    <Text style={styles.fabBadgeText}>{markers.length}</Text>
-                  </View>
-                )}
+                <Icon name="Compass" size={22} color={Colors.primary} strokeWidth={2} />
               </TouchableOpacity>
-            </Animated.View>
+            </View>
+            <View style={styles.controlSlot}>
+              <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+                <TouchableOpacity
+                  style={styles.circleBtnPrimary}
+                  onPress={() => nav.navigate('AR')}
+                  activeOpacity={1}
+                  onPressIn={() => springIn(fabScale)}
+                  onPressOut={() => springOut(fabScale)}
+                >
+                  <Icon name="Flag" size={22} color="#fff" strokeWidth={2} />
+                  {markers.length > 0 && (
+                    <View style={styles.fabBadge}>
+                      <Text style={styles.fabBadgeText}>{markers.length}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
           </View>
         )}
       </View>
@@ -1143,7 +1159,11 @@ const styles = StyleSheet.create({
   topOverlay: { position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'box-none' },
   topRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: Spacing.base, paddingTop: Spacing.lg, gap: Spacing.sm,
+    // paddingTop is supplied by the topOverlay container inline
+    // (insets.top + 8). Don't double-pad here, otherwise Back/GPS
+    // chips drift further from the status bar than the rest of the
+    // app (Home uses inset + Spacing.sm only).
+    paddingHorizontal: Spacing.base, gap: Spacing.sm,
   },
   gpsChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -1180,13 +1200,13 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: Colors.primary,
   },
   trackingStat: { alignItems: 'center', flex: 1 },
-  // Tracking stats panel — value sizes were uneven before (h2 for
-  // distance, caption for time/elev) which read as a typographic bug.
-  // Now: all three values share the same size so the user reads them
-  // as a coherent set.
-  trackingValueLg: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'], lineHeight: 26 },
-  trackingValue: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'], lineHeight: 26 },
-  trackingUnit: { fontSize: 11, color: Colors.textSecondary, marginTop: 1, fontWeight: '500', letterSpacing: 0.2 },
+  // Tracking stats panel — values intentionally compact (16pt) so the
+  // panel doesn't dominate the map view. The numbers are reference
+  // information; users glance at them, they don't read them like a
+  // dashboard. Unit row stays small for the same reason.
+  trackingValueLg: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'], lineHeight: 20 },
+  trackingValue: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'], lineHeight: 20 },
+  trackingUnit: { fontSize: 10, color: Colors.textSecondary, marginTop: 1, fontWeight: '500', letterSpacing: 0.2 },
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
   routeSwitchBtn: {
     width: 28, height: 28, borderRadius: 14,
@@ -1216,23 +1236,25 @@ const styles = StyleSheet.create({
   controlSlot: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
   },
-  // Two control buttons share one consistent shape — 56x56 circles —
-  // so the layout reads as a coherent pair instead of three random
-  // sizes (the previous compass chip + 180-wide SOS pill + 60 FAB
-  // looked broken).
+  // Two control buttons share one consistent shape — 56x56 circles
+  // with a frosted-glass effect (translucent white + soft border +
+  // diffuse shadow) so they read as floating UI on top of the map
+  // rather than solid buttons. Same dimensions for both so the layout
+  // is perfectly balanced left/right.
   circleBtn: {
     width: 56, height: 56, borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255,255,255,0.78)',
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.10, shadowRadius: 12, elevation: 4,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18, shadowRadius: 16, elevation: 6,
   },
   circleBtnPrimary: {
     width: 56, height: 56, borderRadius: 28,
     backgroundColor: Colors.primary,
     alignItems: 'center', justifyContent: 'center',
-    ...Shadow.fab,
+    shadowColor: Colors.primary, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35, shadowRadius: 16, elevation: 8,
   },
   // Compass chip — bottom-left slot, mirrors the GPS chip in the top
   // overlay (same shadow, border, surface colour) so the page reads as
