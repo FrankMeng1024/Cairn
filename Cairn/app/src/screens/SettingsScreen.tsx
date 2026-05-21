@@ -20,6 +20,7 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore, UIMode } from '../store/useAppStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { logout } from '../services/authService';
+import { crashLogger } from '../services/crashLogger';
 import { getToken } from '../services/tokenStore';
 import { API_BASE_URL } from '../config/api';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
@@ -441,14 +442,19 @@ export function SettingsScreen() {
                     ])
                   );
               if (!confirmed) return;
+              crashLogger.breadcrumb('signout:confirmed');
               // Always clear local state, even if backend logout fails (e.g. offline).
               // Otherwise user thinks they signed out but locally remain logged in.
               try {
                 await logout();
+                crashLogger.breadcrumb('signout:backend_logout_done');
               } catch {
+                crashLogger.breadcrumb('signout:backend_logout_failed');
                 /* ignore — local state must clear regardless */
               }
+              crashLogger.breadcrumb('signout:before_appLogout');
               appLogout();
+              crashLogger.breadcrumb('signout:after_appLogout');
             }}
           />
         </View>

@@ -34,6 +34,7 @@ import { login, register, loginWithGoogle, verifyCode, resendCode } from '../ser
 import { CairnLogo } from '../components/ActivityIcons/CairnLogo';
 import * as Google from 'expo-auth-session/providers/google';
 import { makeRedirectUri, Prompt } from 'expo-auth-session';
+import { crashLogger } from '../services/crashLogger';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { height: SCREEN_H } = Dimensions.get('window');
@@ -393,6 +394,8 @@ privacy@cairnapp.nz`;
 type AuthView = 'splash' | 'login' | 'register' | 'verify' | 'welcome';
 
 export function AuthScreen() {
+  // Breadcrumb FIRST so even if hooks below crash we know we got here.
+  crashLogger.breadcrumb('AuthScreen:render_start');
   const nav = useNavigation<Nav>();
   const { setLoggedIn, setUIMode, setUser, hydrate } = useAppStore();
   const [view, setView] = useState<AuthView>('splash');

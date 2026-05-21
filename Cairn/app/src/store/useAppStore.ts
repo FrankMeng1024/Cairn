@@ -9,6 +9,7 @@ import { fetchSessions } from '../services/sessionService';
 import { useSessionStore, type ActivityMode as SessionActivityMode, type TrackPoint } from './useSessionStore';
 import { useMarkerStore } from './useMarkerStore';
 import { isPlaywrightBypass } from '../utils/devFlags';
+import { crashLogger } from '../services/crashLogger';
 
 export type UIMode = 'beginner' | 'expert';
 export type ActivityMode = 'hiking' | 'running';
@@ -84,61 +85,75 @@ export const useAppStore = create<AppState>((set) => ({
   setSessionExpired: (v) => set({ sessionExpired: v }),
 
   logout: () => {
+    crashLogger.breadcrumb('logout:start');
     set({ isLoggedIn: false, user: null, sessionExpired: false });
+    crashLogger.breadcrumb('logout:state_cleared');
     useSessionStore.getState().clearSessions();
-    useMarkerStore.getState().clearMarkers(); // clears in-memory only — localStorage preserved per user
+    crashLogger.breadcrumb('logout:sessions_cleared');
+    useMarkerStore.getState().clearMarkers();
+    crashLogger.breadcrumb('logout:markers_cleared');
   },
 
   hydrate: async () => {
-    const saved = await storage.getItem(STORAGE_KEY_UI_MODE);
-    if (saved === 'beginner' || saved === 'expert') {
-      set({ uiMode: saved });
-    }
-
-    // Playwright bypass: only allowed in __DEV__ to prevent leaking into production builds.
-    // Production builds ignore EXPO_PUBLIC_PLAYWRIGHT_BYPASS even if env leaks in.
-    if (isPlaywrightBypass) {
-      const playwrightUser: UserProfile = { id: '0', name: 'Playwright', email: 'pw@cairn.nz' };
-      set({ isLoggedIn: true, user: playwrightUser, hydrated: true });
-      return;
-    }
-
-    // Restore auth state from stored JWT
+    // Outermost try/catch: hydrate must NEVER throw, otherwise the
+    // App.tsx await blocks and the loading View renders forever (or
+    // worse, RN's default global handler kills the app).
     try {
-      const user = await getMe();
-      if (user) {
-        set({ isLoggedIn: true, user });
-        // Load this user's markers + sessions from per-user storage slots
-        await useMarkerStore.getState().hydrate(user.id);
-        try {
-          const remote = await fetchSessions();
-          const sessions = remote.map((r) => ({
-            id: String(r.id),
-            activityMode: r.type as SessionActivityMode,
-            regionCode: 'nz',
-            startedAt: new Date(r.start_time).getTime(),
-            endedAt: new Date(r.end_time).getTime(),
-            durationS: r.duration_s,
-            distanceM: r.distance_m,
-            elevationGainM: 0,
-            trackPoints: [] as TrackPoint[],
-            markerIds: [] as string[],
-          }));
-          useSessionStore.setState({ sessions, currentUserId: user.id });
-        } catch {
-          // Session fetch failed — fall back to user-scoped local cache
-          await useSessionStore.getState().hydrate(user.id);
-        }
-      } else {
-        // Not logged in — load from guest slots only
-        await useSessionStore.getState().hydrate('guest');
-        await useMarkerStore.getState().hydrate('guest');
+      const saved = await storage.getItem(STORAGE_KEY_UI_MODE);
+      if (saved === 'beginner' || saved === 'expert') {
+        set({ uiMode: saved });
       }
-    } catch {
-      // Network unavailable — guest fallback
-      await useSessionStore.getState().hydrate('guest');
-      await useMarkerStore.getState().hydrate('guest');
+
+      // Playwright bypass: only allowed in __DEV__ to prevent leaking into production builds.
+      // Production builds ignore EXPO_PUBLIC_PLAYWRIGHT_BYPASS even if env leaks in.
+      if (isPlaywrightBypass) {
+        const playwrightUser: UserProfile = { id: '0', name: 'Playwright', email: 'pw@cairn.nz' };
+        set({ isLoggedIn: true, user: playwrightUser, hydrated: true });
+        return;
+      }
+
+      // Restore auth state from stored JWT
+      try {
+        const user = await getMe();
+        if (user) {
+          set({ isLoggedIn: true, user });
+          // Load this user's markers + sessions from per-user storage slots
+          try { await useMarkerStore.getState().hydrate(user.id); } catch { /* swallow */ }
+          try {
+            const remote = await fetchSessions();
+            const sessions = remote.map((r) => ({
+              id: String(r.id),
+              activityMode: r.type as SessionActivityMode,
+              regionCode: 'nz',
+              startedAt: new Date(r.start_time).getTime(),
+              endedAt: new Date(r.end_time).getTime(),
+              durationS: r.duration_s,
+              distanceM: r.distance_m,
+              elevationGainM: 0,
+              trackPoints: [] as TrackPoint[],
+              markerIds: [] as string[],
+            }));
+            useSessionStore.setState({ sessions, currentUserId: user.id });
+          } catch {
+            // Session fetch failed — fall back to user-scoped local cache
+            try { await useSessionStore.getState().hydrate(user.id); } catch { /* swallow */ }
+          }
+        } else {
+          // Not logged in — load from guest slots only
+          try { await useSessionStore.getState().hydrate('guest'); } catch { /* swallow */ }
+          try { await useMarkerStore.getState().hydrate('guest'); } catch { /* swallow */ }
+        }
+      } catch {
+        // Network unavailable — guest fallback
+        try { await useSessionStore.getState().hydrate('guest'); } catch { /* swallow */ }
+        try { await useMarkerStore.getState().hydrate('guest'); } catch { /* swallow */ }
+      }
+    } catch (err) {
+      // Last-resort safeguard: never block app boot on hydrate.
+      // eslint-disable-next-line no-console
+      console.warn('[useAppStore.hydrate] caught unexpected:', err);
     }
+    // Always mark hydrated so App.tsx unblocks the loading View.
     set({ hydrated: true });
   },
 }));
