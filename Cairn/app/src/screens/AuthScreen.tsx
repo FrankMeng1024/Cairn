@@ -75,15 +75,14 @@ function TrailPath({ onComplete }: { onComplete?: () => void }) {
 
 // Stone rise: 3 stones animate up sequentially (s0=base, s1=mid, s2=top)
 // viewBox: 0 0 22 30 — same as HTML prototype
-// Each stone settles 1000ms after the previous one for a deliberate,
-// weighty feel — like placing real stones one by one.
+// Each stone settles ~0.9s after the previous for a deliberate, weighty feel.
 const STONE_DEFS = [
   // base stone
   { cx: 11,   cy: 23.5, rx: 8.0,  ry: 3.0,  color: '#4a6b38', shadowOp: 0.20, delay: 0    },
   // mid stone
-  { cx: 9.8,  cy: 16.5, rx: 4.95, ry: 1.98, color: '#5d7c46', shadowOp: 0.24, delay: 1000 },
+  { cx: 9.8,  cy: 16.5, rx: 4.95, ry: 1.98, color: '#5d7c46', shadowOp: 0.24, delay: 900  },
   // top stone
-  { cx: 12.5, cy: 10.5, rx: 3.06, ry: 1.28, color: '#7a9e5a', shadowOp: 0.28, delay: 2000 },
+  { cx: 12.5, cy: 10.5, rx: 3.06, ry: 1.28, color: '#7a9e5a', shadowOp: 0.28, delay: 1800 },
 ];
 // Flag pole tip Y (top of top stone)
 const POLE_TIP_Y = 9.22;
@@ -167,7 +166,7 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete, staticMode = fals
     STONE_DEFS.forEach((_, idx) => {
       const startTimeout = setTimeout(() => {
         if (!mountedRef.current) return;
-        // Rise over 700ms with deliberate ease — feels like a stone
+        // Rise over 630ms with deliberate ease — feels like a stone
         // settling under its own weight onto the cairn.
         const start = Date.now();
         const timer = setInterval(() => {
@@ -175,7 +174,7 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete, staticMode = fals
             clearInterval(timer);
             return;
           }
-          const p = Math.min((Date.now() - start) / 700, 1);
+          const p = Math.min((Date.now() - start) / 630, 1);
           const ease = 1 - Math.pow(1 - p, 3);
           setStoneY(prev => { const n = [...prev]; n[idx] = 6 * (1 - ease); return n; });
           setStoneOp(prev => { const n = [...prev]; n[idx] = ease; return n; });
@@ -305,9 +304,9 @@ function PressBtn({ onPress, style, children, scale = 0.97, disabled }: {
 }
 
 // ── Password field with eye toggle ─────────────────────────────────────────
-function PasswordInput({ value, onChangeText, placeholder, error, onBlur }: {
+function PasswordInput({ value, onChangeText, placeholder, error, onBlur, isNew }: {
   value: string; onChangeText: (v: string) => void; placeholder: string;
-  error?: string; onBlur?: () => void;
+  error?: string; onBlur?: () => void; isNew?: boolean;
 }) {
   const [show, setShow] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -324,6 +323,11 @@ function PasswordInput({ value, onChangeText, placeholder, error, onBlur }: {
           value={value}
           onChangeText={onChangeText}
           secureTextEntry={!show}
+          textContentType={isNew ? 'newPassword' : 'password'}
+          autoComplete={isNew ? 'password-new' : 'password'}
+          autoCorrect={false}
+          autoCapitalize="none"
+          spellCheck={false}
           onFocus={() => setFocused(true)}
           onBlur={() => { setFocused(false); onBlur?.(); }}
         />
@@ -337,9 +341,10 @@ function PasswordInput({ value, onChangeText, placeholder, error, onBlur }: {
 }
 
 // ── Inline text input with error ───────────────────────────────────────────
-function FieldInput({ icon, placeholder, value, onChangeText, error, onBlur, keyboardType, autoCapitalize, autoFocus }: {
+function FieldInput({ icon, placeholder, value, onChangeText, error, onBlur, keyboardType, autoCapitalize, autoFocus, textContentType, autoComplete }: {
   icon: string; placeholder: string; value: string; onChangeText: (v: string) => void;
   error?: string; onBlur?: () => void; keyboardType?: any; autoCapitalize?: any; autoFocus?: boolean;
+  textContentType?: any; autoComplete?: any;
 }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -357,6 +362,10 @@ function FieldInput({ icon, placeholder, value, onChangeText, error, onBlur, key
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize ?? 'sentences'}
           autoFocus={autoFocus}
+          textContentType={textContentType}
+          autoComplete={autoComplete}
+          autoCorrect={false}
+          spellCheck={false}
           onFocus={() => setFocused(true)}
           onBlur={() => { setFocused(false); onBlur?.(); }}
         />
@@ -465,25 +474,23 @@ export function AuthScreen() {
   void trailComplete;
 
   const animateWordmark = () => {
-    // Wordmark fades in 200ms after stones complete
-    setTimeout(() => {
+    // Wordmark fades in alongside the first stone landing — no delay.
+    Animated.parallel([
+      Animated.timing(wordmarkOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(wordmarkTranslate, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start(() => {
+      // Tagline line 1 — 80ms stagger
       Animated.parallel([
-        Animated.timing(wordmarkOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.timing(wordmarkTranslate, { toValue: 0, duration: 300, useNativeDriver: true }),
-      ]).start(() => {
-        // Tagline line 1 — 80ms stagger
+        Animated.timing(tagline1Opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.timing(tagline1Translate, { toValue: 0, duration: 250, useNativeDriver: true }),
+      ]).start();
+      setTimeout(() => {
         Animated.parallel([
-          Animated.timing(tagline1Opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
-          Animated.timing(tagline1Translate, { toValue: 0, duration: 250, useNativeDriver: true }),
+          Animated.timing(tagline2Opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+          Animated.timing(tagline2Translate, { toValue: 0, duration: 250, useNativeDriver: true }),
         ]).start();
-        setTimeout(() => {
-          Animated.parallel([
-            Animated.timing(tagline2Opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
-            Animated.timing(tagline2Translate, { toValue: 0, duration: 250, useNativeDriver: true }),
-          ]).start();
-        }, 80);
-      });
-    }, 200);
+      }, 80);
+    });
   };
 
   useEffect(() => {
@@ -492,6 +499,9 @@ export function AuthScreen() {
         Animated.timing(splashFade, { toValue: 1, duration: 400, useNativeDriver: true }),
         Animated.timing(splashTranslate, { toValue: 0, duration: 400, useNativeDriver: true }),
       ]).start();
+      // Wordmark + tagline animate in parallel with the first stone — the
+      // word "Cairn" should appear together with the base stone landing.
+      animateWordmark();
     }
   }, [view]);
 
@@ -652,7 +662,7 @@ export function AuthScreen() {
             </View>
             {/* Trail path draws first, then cairn stacks up */}
             <View style={{ position: 'relative', alignItems: 'center' }}>
-              <AnimatedCairn onComplete={animateWordmark} />
+              <AnimatedCairn />
             </View>
             {/* Wordmark fades in after cairn completes */}
             <Animated.Text style={[styles.appName, {
@@ -847,6 +857,8 @@ export function AuthScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoFocus={!isRegister}
+            textContentType="emailAddress"
+            autoComplete="email"
           />
 
           <Text style={formStyles.label}>Password</Text>
@@ -856,6 +868,7 @@ export function AuthScreen() {
             placeholder={isRegister ? 'Min. 8 characters' : '••••••••'}
             error={passwordError}
             onBlur={() => { if (!googleFlowActive.current && submitAttempted.current) setPasswordError(validatePassword(password)); }}
+            isNew={isRegister}
           />
           {isRegister && !passwordError && (
             <Text style={[formStyles.fieldError, { color: Colors.textSecondary, fontWeight: '400' }]}>Minimum 8 characters</Text>
@@ -870,6 +883,7 @@ export function AuthScreen() {
                 placeholder="Re-enter password"
                 error={confirmError}
                 onBlur={() => { if (confirm && confirm !== password) setConfirmError('Passwords do not match'); }}
+                isNew
               />
             </>
           )}
