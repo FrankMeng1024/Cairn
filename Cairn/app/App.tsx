@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { View, Platform, AppState, Text as RNText, TextInput as RNTextInput } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, Platform, AppState, Text as RNText, TextInput as RNTextInput, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import { useFonts } from 'expo-font';
@@ -14,6 +14,7 @@ import { telemetryUploader } from './src/services/telemetryUploader';
 import { networkMonitor } from './src/services/networkMonitor';
 import { isPlaywrightBypass } from './src/utils/devFlags';
 import { crashLogger } from './src/services/crashLogger';
+import { API_BASE_URL } from './src/config/api';
 
 // Must run at app entry — handles Google OAuth popup redirect on web
 WebBrowser.maybeCompleteAuthSession();
@@ -141,21 +142,31 @@ function AppRoot() {
     try {
       crashLogger.install();
       crashLogger.breadcrumb('app_boot');
-      crashLogger.drainLastCrash().then((report) => {
-        if (!report) return;
-        // eslint-disable-next-line no-console
-        console.warn('[crash] previous launch crashed:', report.message);
+      // Drain + upload any persisted crash directly to backend telemetry.
+      // This bypasses debugLogger sessions (which only flush on tracking end)
+      // so a sign-out/login crash actually reaches the server.
+      crashLogger.uploadCrashIfAny(API_BASE_URL).catch(() => {});
+
+      // OTA update visible feedback: check for update on launch, alert user
+      // when downloading and when ready to relaunch into new bundle.
+      // Uses dynamic import so we don't crash if expo-updates fails to init.
+      (async () => {
         try {
-          debugLogger.log({
-            ts: report.ts,
-            event: 'error' as const,
-            source: 'previous_launch_crash',
-            message: report.message,
-            stack: report.stack,
-            fatal: report.isFatal ?? true,
-          } as any);
-        } catch { /* logger may be off */ }
-      }).catch(() => {});
+          const Updates = await import('expo-updates');
+          if (!Updates.isEnabled) return;
+          const result = await Updates.checkForUpdateAsync();
+          if (result.isAvailable) {
+            Alert.alert('Update available', 'Downloading new version…');
+            await Updates.fetchUpdateAsync();
+            Alert.alert('Update ready', 'Restart now to apply?', [
+              { text: 'Later', style: 'cancel' },
+              { text: 'Restart', onPress: () => Updates.reloadAsync() },
+            ]);
+          }
+        } catch {
+          /* expo-updates not available or network down — silent */
+        }
+      })();
     } catch (err) {
       // crashLogger itself failed — proceed without it
       // eslint-disable-next-line no-console

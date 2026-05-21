@@ -423,41 +423,20 @@ export function AuthScreen() {
   const googleFlowActive = useRef(false);
   const submitAttempted = useRef(false);  // STORY-00133: only validate on blur after first submit
 
-  // Google OAuth hook — RE-ENABLED via OTA on 2026-05-21 to test if it
-  // was the sign-out crash root cause. AnimatedCairn still in staticMode.
-  // Wrapped breadcrumbs around mount so if it crashes the last breadcrumb
-  // tells us exactly where.
-  crashLogger.breadcrumb('AuthScreen:before_google_hook');
-  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-    redirectUri: makeRedirectUri(),
-    prompt: Prompt.SelectAccount,
-  });
-  crashLogger.breadcrumb('AuthScreen:after_google_hook');
+  // Google OAuth hook — CONFIRMED as sign-out crash root cause via OTA
+  // bisect on 2026-05-21. Re-disabled. Real fix requires app.json scheme
+  // for makeRedirectUri to work — coming in next build. Until then,
+  // Google sign-in shows alert and AnimatedCairn animation can be
+  // re-enabled (it's safe).
+  crashLogger.breadcrumb('AuthScreen:google_hook_skipped');
+  const googleRequest: any = null;
+  const googleResponse: any = null;
+  const promptGoogleAsync = async () => {
+    Alert.alert('Google Sign In', 'Coming in next app update. Please use email sign-in.');
+    return { type: 'dismiss' as const };
+  };
   void googleRequest;
-
-  // Handle Google OAuth response
-  useEffect(() => {
-    if (googleResponse?.type !== 'success') return;
-    crashLogger.breadcrumb('google:success_response');
-    const idToken = googleResponse.params?.id_token ?? (googleResponse.authentication as any)?.idToken;
-    if (!idToken) {
-      setApiError('Google sign-in failed. Please try again.');
-      setGoogleLoading(false);
-      return;
-    }
-    setLoading(true);
-    setApiError('');
-    loginWithGoogle(idToken).then(async (result) => {
-      setLoading(false);
-      setGoogleLoading(false);
-      if (result.error) { setApiError(result.error); return; }
-      setLoggedIn(true);
-      if (result.user) setUser(result.user);
-      await hydrate();
-      nav.replace('Home');
-    });
-  }, [googleResponse]);
+  void googleResponse;
 
   const splashFade = useRef(new Animated.Value(0)).current;
   const splashTranslate = useRef(new Animated.Value(8)).current;
@@ -658,7 +637,7 @@ export function AuthScreen() {
             </View>
             {/* Trail path draws first, then cairn stacks up */}
             <View style={{ position: 'relative', alignItems: 'center' }}>
-              <AnimatedCairn onComplete={animateWordmark} staticMode={true} />
+              <AnimatedCairn onComplete={animateWordmark} />
             </View>
             {/* Wordmark fades in after cairn completes */}
             <Animated.Text style={[styles.appName, {
