@@ -702,12 +702,12 @@ export function AuthScreen() {
               }]}>Guide the next.</Animated.Text>
             </View>
           </View>
-          {/* OTA status — sits above the CTA buttons. Always visible so the
-              user knows whether the app is current. Auto-checks on mount,
-              auto-downloads when an update is found, then prompts to
-              restart. */}
-          <View style={styles.splashOtaWrap}>
-            <OtaBadge inline />
+          {/* OTA status — absolutely positioned just above the CTA buttons
+              so it never shifts the logo / wordmark when it appears. Hidden
+              when the app is up to date — only shows during/after an
+              actual update. */}
+          <View style={styles.splashOtaWrap} pointerEvents="box-none">
+            <OtaBadge inline idleHidden />
           </View>
           {/* CTA buttons */}
           <View style={styles.splashActions}>
@@ -1045,10 +1045,16 @@ const styles = StyleSheet.create({
     textAlign: 'center', lineHeight: 26, fontWeight: '400',
   },
   splashActions: { gap: Spacing.sm, paddingTop: Spacing.xxl },
+  // Floats above the CTA buttons. Using absolute positioning so the badge
+  // never affects the layout above it — the cairn + wordmark stay put
+  // whether the badge is visible or not.
   splashOtaWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 168, // sits ~12px above the top Sign In button
     alignItems: 'center',
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.xs,
+    zIndex: 10,
   },
   primaryBtn: {
     backgroundColor: Colors.primary, borderRadius: 28,

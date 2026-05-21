@@ -52,9 +52,17 @@ interface Props {
    *   something to show (downloading / ready / applying).
    */
   inline?: boolean;
+  /**
+   * idleHidden=true: don't render anything when state is 'idle' (no update
+   * available). Useful when the badge is positioned in a layout where its
+   * presence vs absence shifts other content (e.g. the splash screen) — set
+   * this so the user only ever sees the pill when there is actually an
+   * update being downloaded or ready to install.
+   */
+  idleHidden?: boolean;
 }
 
-export function OtaBadge({ inline = false }: Props) {
+export function OtaBadge({ inline = false, idleHidden = false }: Props) {
   const [state, setState] = useState<OtaState>('checking');
   const [modalOpen, setModalOpen] = useState(false);
   const fade = useRef(new Animated.Value(inline ? 1 : 0)).current;
@@ -101,25 +109,36 @@ export function OtaBadge({ inline = false }: Props) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Hard cap on the check phase — on flaky networks
+      // checkForUpdateAsync can hang for tens of seconds. Treat anything
+      // longer than 5s as "no update" so the user doesn't see a stuck
+      // Checking pill (or, in idleHidden mode, an indefinitely-shifted
+      // layout if the upstream layout depends on this badge's presence).
+      const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+        new Promise((resolve, reject) => {
+          const t = setTimeout(() => reject(new Error('ota-timeout')), ms);
+          p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+        });
       try {
         const Updates = await import('expo-updates');
         if (!Updates.isEnabled) {
-          // No expo-updates available (Expo Go / dev) → idle
           if (!cancelled) setState('idle');
           return;
         }
-        const result = await Updates.checkForUpdateAsync();
+        const result = await withTimeout(Updates.checkForUpdateAsync(), 5000);
         if (cancelled) return;
         if (!result.isAvailable) {
           setState('idle');
           return;
         }
         setState('downloading');
-        await Updates.fetchUpdateAsync();
+        // Generous timeout for the actual bundle fetch — bundles can be
+        // 4-6 MB so 30s is reasonable on a slow connection.
+        await withTimeout(Updates.fetchUpdateAsync(), 30000);
         if (cancelled) return;
         setState('ready');
       } catch {
-        if (!cancelled) setState('error');
+        if (!cancelled) setState('idle');
       }
     })();
     return () => { cancelled = true; };
@@ -152,6 +171,12 @@ export function OtaBadge({ inline = false }: Props) {
   // Inline mode: hide while we're still checking — user shouldn't see
   // a "Checking…" pill flash for half a second on every cold start.
   if (inline && state === 'checking') {
+    return null;
+  }
+  // Inline + idleHidden: also hide when there's no update — prevents the
+  // pill from popping in/out of layout flow on screens where its presence
+  // would shift surrounding content.
+  if (inline && idleHidden && (state === 'idle' || state === 'error')) {
     return null;
   }
 
