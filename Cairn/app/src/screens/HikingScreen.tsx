@@ -107,10 +107,17 @@ if (Platform.OS !== 'web') {
 }
 
 // ── Map component (real Mapbox or fallback) ─────────────────────────────
-function HikingMap({ markers, trackPoints, onMarkerPress }: {
+function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStart, userPos }: {
   markers: Marker[];
   trackPoints: Array<{ lat: number; lng: number }>;
   onMarkerPress: (id: string) => void;
+  showCompass?: boolean;
+  // When a saved route is selected and the user isn't already at its
+  // start, we draw a dashed "approach" line from the user's current
+  // position to the route's first waypoint, plus a "Start" pin so the
+  // user can see how far away the trailhead is.
+  routeStart?: { lat: number; lng: number } | null;
+  userPos?: { lat: number; lng: number } | null;
 }) {
   const region = getCurrentRegion();
 
@@ -160,12 +167,11 @@ function HikingMap({ markers, trackPoints, onMarkerPress }: {
         styleURL="mapbox://styles/mapbox/outdoors-v12"
         logoEnabled={false}
         attributionEnabled={false}
-        compassEnabled={true}
-        // Pin compass to the bottom-right corner so it cannot overlap the
-        // GPS status chip in the top-right of the overlay.
-        // compassViewPosition: 0=TopLeft, 1=TopRight (default), 2=BottomLeft, 3=BottomRight
-        compassViewPosition={3}
-        compassViewMargins={{ x: 16, y: 80 }}
+        // Mapbox's built-in compass is hidden — we draw our own as a
+        // bottom-left chip so it sits in a predictable spot relative to
+        // SOS (centre) and Place Flag (right). showCompass is also
+        // gated on tracking state so a fresh map screen isn't cluttered.
+        compassEnabled={false}
         scaleBarEnabled={false}
       >
         <CameraComponent
@@ -189,6 +195,54 @@ function HikingMap({ markers, trackPoints, onMarkerPress }: {
               }}
             />
           </ShapeSource>
+        )}
+
+        {/* Approach line — dashed link from the user's current position
+            to the start of a selected route. Only drawn when both
+            endpoints exist and the user isn't already standing on the
+            start (within ~50m). Helps the user see how to get to the
+            trailhead from where they are. */}
+        {routeStart && userPos && (() => {
+          const distM = haversineM(userPos, routeStart);
+          if (distM < 50) return null;
+          return (
+            <ShapeSource
+              id="approach-line"
+              shape={{
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: [
+                    [userPos.lng, userPos.lat],
+                    [routeStart.lng, routeStart.lat],
+                  ],
+                },
+                properties: {},
+              }}
+            >
+              <LineLayer
+                id="approach-line-layer"
+                style={{
+                  lineColor: Colors.severityCaution,
+                  lineWidth: 3,
+                  lineOpacity: 0.85,
+                  lineDasharray: [2, 2],
+                  lineCap: 'round',
+                }}
+              />
+            </ShapeSource>
+          );
+        })()}
+        {/* Route start pin */}
+        {routeStart && (
+          <PointAnnotation
+            id="route-start"
+            coordinate={[routeStart.lng, routeStart.lat]}
+          >
+            <View style={styles.routeStartPin}>
+              <Icon name="Flag" size={12} color="#fff" strokeWidth={2.5} />
+            </View>
+          </PointAnnotation>
         )}
 
         {/* Markers */}
@@ -656,28 +710,54 @@ export function HikingScreen() {
                   {selectedRoute === null && <Icon name="Check" size={16} color={Colors.primary} strokeWidth={2.5} />}
                 </TouchableOpacity>
 
-                {/* Saved routes */}
-                {routes.map(r => (
-                  <TouchableOpacity
-                    key={r.id}
-                    style={[styles.routePickerRow, selectedRoute === r.id && styles.routePickerRowSelected]}
-                    onPress={() => pickRoute(r.id)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[styles.routePickerBadge, { backgroundColor: Colors.primaryLight }]}>
-                      <Icon name="Route" size={16} color={Colors.primary} strokeWidth={2} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.routePickerName}>{r.name}</Text>
-                      <Text style={styles.routePickerMeta}>
-                        {(r.distanceM / 1000).toFixed(1)} km
-                        {r.elevationGainM > 0 ? ` · ↑${Math.round(r.elevationGainM)}m` : ''}
-                        {r.runCount > 0 ? ` · ${r.runCount}× done` : ''}
-                      </Text>
-                    </View>
-                    {selectedRoute === r.id && <Icon name="Check" size={16} color={Colors.primary} strokeWidth={2.5} />}
-                  </TouchableOpacity>
-                ))}
+                {/* Saved routes — show start-point distance from the
+                    user. Routes whose start is more than 25km from the
+                    current GPS fix are dimmed and made non-tappable;
+                    starting a hike that requires driving 50km first
+                    is rarely the user's intent and clutters the list. */}
+                {routes.map(r => {
+                  const startPt = r.points?.[0] ?? r.waypoints?.[0];
+                  const distFromUser = (lastCoordinate && startPt)
+                    ? haversineM(lastCoordinate, { lat: startPt.lat, lng: startPt.lng })
+                    : null;
+                  const TOO_FAR_M = 25_000;
+                  const tooFar = distFromUser !== null && distFromUser > TOO_FAR_M;
+                  const distLabel = distFromUser === null
+                    ? null
+                    : distFromUser < 100
+                      ? '· at start'
+                      : distFromUser < 1000
+                        ? `· ${Math.round(distFromUser)}m away`
+                        : `· ${(distFromUser / 1000).toFixed(1)}km away`;
+                  return (
+                    <TouchableOpacity
+                      key={r.id}
+                      style={[
+                        styles.routePickerRow,
+                        selectedRoute === r.id && styles.routePickerRowSelected,
+                        tooFar && { opacity: 0.45 },
+                      ]}
+                      onPress={tooFar ? undefined : () => pickRoute(r.id)}
+                      disabled={tooFar}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.routePickerBadge, { backgroundColor: Colors.primaryLight }]}>
+                        <Icon name="Route" size={16} color={Colors.primary} strokeWidth={2} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.routePickerName}>{r.name}</Text>
+                        <Text style={styles.routePickerMeta}>
+                          {(r.distanceM / 1000).toFixed(1)} km
+                          {r.elevationGainM > 0 ? ` · ↑${Math.round(r.elevationGainM)}m` : ''}
+                          {r.runCount > 0 ? ` · ${r.runCount}× done` : ''}
+                          {distLabel ? ` ${distLabel}` : ''}
+                          {tooFar ? ' · too far' : ''}
+                        </Text>
+                      </View>
+                      {selectedRoute === r.id && <Icon name="Check" size={16} color={Colors.primary} strokeWidth={2.5} />}
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </Animated.View>
           </Animated.View>
@@ -698,6 +778,10 @@ export function HikingScreen() {
         markers={markers}
         trackPoints={trackPoints.map(tp => ({ lat: tp.lat, lng: tp.lng }))}
         onMarkerPress={(id) => { setSelectedMarkerId(id); setUi('detail'); }}
+        routeStart={routePolyline.length > 0
+          ? { lat: routePolyline[0].lat, lng: routePolyline[0].lng }
+          : null}
+        userPos={lastCoordinate ? { lat: lastCoordinate.lat, lng: lastCoordinate.lng } : null}
       />
 
       {/* Top overlay: back button (left) + GPS chip (right). Uses
@@ -776,20 +860,14 @@ export function HikingScreen() {
         )}
       </View>
 
-      {/* Bottom FABs */}
+      {/* Bottom controls. Three-column layout when tracking:
+          [Compass]  [SOS]  [Place Flag]
+          When pre-tracking, only the route picker + Start button are
+          visible (no compass, no SOS, no flag). */}
       <View style={[styles.bottomOverlay, { paddingBottom: insets.bottom + 8 }]} pointerEvents="box-none">
-        {/* SOS Button — visible during tracking */}
-        {isTracking && lastCoordinate && (
-          <View style={{ alignItems: 'center', marginBottom: Spacing.sm }}>
-            <SOSButton
-              lat={lastCoordinate.lat}
-              lng={lastCoordinate.lng}
-              accuracy={10}
-            />
-          </View>
-        )}
-        <View style={styles.bottomRow}>
-          {!isTracking ? (
+        {!isTracking ? (
+          // Pre-tracking: full-width Start button.
+          <View style={styles.bottomRow}>
             <Animated.View style={[{ flex: 1, height: 60 }, { transform: [{ scale: trackBtnScale }] }]}>
               <TouchableOpacity
                 style={styles.trackBtn}
@@ -802,27 +880,46 @@ export function HikingScreen() {
                 <Text style={styles.trackBtnText}>Start Hiking</Text>
               </TouchableOpacity>
             </Animated.View>
-          ) : (
-            <View style={{ flex: 1 }} />
-          )}
-
-          <Animated.View style={{ transform: [{ scale: fabScale }] }}>
-            <TouchableOpacity
-              style={styles.fab}
-              onPress={() => nav.navigate('AR')}
-              activeOpacity={1}
-              onPressIn={() => springIn(fabScale)}
-              onPressOut={() => springOut(fabScale)}
-            >
-              <Icon name="Flag" size={IconSize.md} color="#fff" strokeWidth={2} />
-              {markers.length > 0 && (
-                <View style={styles.fabBadge}>
-                  <Text style={styles.fabBadgeText}>{markers.length}</Text>
-                </View>
+          </View>
+        ) : (
+          // Tracking: 3 evenly-spaced controls. Compass left, SOS centre,
+          // Place Flag right — each gets its own column so nothing
+          // overlaps and the FAB never hugs the screen edge.
+          <View style={styles.controlRow}>
+            <View style={styles.controlSlot}>
+              <View style={styles.compassChip}>
+                <Icon name="Compass" size={20} color={Colors.primary} strokeWidth={2} />
+              </View>
+            </View>
+            <View style={styles.controlSlot}>
+              {lastCoordinate && (
+                <SOSButton
+                  lat={lastCoordinate.lat}
+                  lng={lastCoordinate.lng}
+                  accuracy={10}
+                />
               )}
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
+            </View>
+            <View style={styles.controlSlot}>
+              <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+                <TouchableOpacity
+                  style={styles.fab}
+                  onPress={() => nav.navigate('AR')}
+                  activeOpacity={1}
+                  onPressIn={() => springIn(fabScale)}
+                  onPressOut={() => springOut(fabScale)}
+                >
+                  <Icon name="Flag" size={IconSize.md} color="#fff" strokeWidth={2} />
+                  {markers.length > 0 && (
+                    <View style={styles.fabBadge}>
+                      <Text style={styles.fabBadgeText}>{markers.length}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Marker Detail Sheet */}
@@ -904,6 +1001,15 @@ const styles = StyleSheet.create({
     borderWidth: 2.5, alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.surface, ...Shadow.card,
   },
+  // Route start pin — distinct from regular markers so users can spot
+  // the trailhead at a glance.
+  routeStartPin: {
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: Colors.severityCaution,
+    borderWidth: 2, borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    ...Shadow.card,
+  },
   approxBadge: {
     position: 'absolute', top: -4, right: -4,
     width: 14, height: 14, borderRadius: 7,
@@ -936,6 +1042,10 @@ const styles = StyleSheet.create({
   // Route picker sheet
   routePickerBackdrop: {
     ...StyleSheet.absoluteFillObject,
+    // Dim backdrop so the route picker reads as a modal layer instead
+    // of a floating panel. Matches the rest of the app's bottom-sheet
+    // language (FlagPlantSheet, MarkerDetailSheet, etc).
+    backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'flex-end',
   },
   routePickerSheet: {
@@ -1051,7 +1161,28 @@ const styles = StyleSheet.create({
   bottomOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, pointerEvents: 'box-none' },
   bottomRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingBottom: Spacing.lg, gap: Spacing.sm,
+    paddingBottom: Spacing.lg, paddingHorizontal: Spacing.base, gap: Spacing.sm,
+  },
+  // Three-column control bar shown while tracking. Each slot is flex:1
+  // and its content centred so [Compass · SOS · Place Flag] are evenly
+  // spaced and never crowd the screen edges.
+  controlRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: Spacing.base, paddingBottom: Spacing.lg,
+  },
+  controlSlot: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+  },
+  // Compass chip — bottom-left slot, mirrors the GPS chip in the top
+  // overlay (same shadow, border, surface colour) so the page reads as
+  // a coherent system rather than a pile of buttons.
+  compassChip: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10, shadowRadius: 12, elevation: 4,
   },
   trackBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,

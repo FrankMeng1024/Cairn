@@ -175,8 +175,20 @@ export function RouteEditorScreen() {
   const handleSearch = async () => {
     if (!searchQuery.trim() || !MAPBOX_TOKEN) return;
     try {
+      // Pass language=zh-Hans alongside the default so Mapbox surfaces
+      // Chinese place names; pass proximity (bias by current region
+      // centre) so results are weighted toward where the user is hiking
+      // rather than scattered globally — critical for short queries
+      // like "公园" that match thousands of places worldwide.
+      const region = getCurrentRegion();
+      const params = new URLSearchParams({
+        access_token: MAPBOX_TOKEN,
+        limit: '8',
+        language: 'zh-Hans,en',
+        proximity: `${region.centerLng},${region.centerLat}`,
+      });
       const res = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?access_token=${MAPBOX_TOKEN}&limit=5`
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?${params.toString()}`
       );
       const data = await res.json();
       const results = (data.features || []).map((f: any) => ({
