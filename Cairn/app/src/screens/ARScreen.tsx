@@ -12,7 +12,7 @@
  * Sprint 51 — STORY-00173 (E-003: AR插旗)
  */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, Animated, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
@@ -25,6 +25,33 @@ import { useTrackingStore } from '../store/useTrackingStore';
 import { haversineM, type Coordinate } from '../utils/geo';
 import { filterContent, type ContentLevel } from '../services/contentFilter';
 import { checkMarkerSpacing } from '../utils/geo';
+
+// ── Conditional camera import ────────────────────────────────────────────
+// expo-camera is in package.json (added in v15 dep bump). Lazy-loaded
+// so a build that lacks it (e.g. Expo Go) still renders the AR screen
+// — it just falls back to the dark backdrop without a live camera
+// feed. The placement / projection logic works identically in both
+// modes; only the background changes.
+let CameraView: any = null;
+let useCameraPermissions: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const Mod = require('expo-camera');
+  CameraView = Mod.CameraView;
+  useCameraPermissions = Mod.useCameraPermissions;
+} catch {
+  // Camera module unavailable — fall through to backdrop-only AR.
+}
+
+// Screen dimensions (snapshotted at module load — fine for portrait
+// AR; would need re-measure on rotation but Cairn is portrait-only).
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+// Camera horizontal field-of-view in degrees. iPhone main rear camera
+// is ~63° in 1x; Android cameras vary 60-70°. 65° is a reasonable
+// middle that makes flag positions feel correct without per-device
+// calibration. Future: query CameraView for actual FOV.
+const CAMERA_FOV_DEG = 65;
 
 // ── GPS → AR Coordinate Conversion ─────────────────────────────────────────
 
@@ -163,6 +190,136 @@ const FLAG_TYPES: { id: 'danger' | 'scenic' | 'supply' | 'junction'; icon: strin
  * - Has stale GPS (> 30s) or lost signal → degraded placement with toast
  * - Never had GPS → blocked
  */
+
+// ── AR flag overlay ───────────────────────────────────────────────────────
+// Projects each nearby marker onto screen-space using:
+//   bearing = bearingTo(user, marker)        // 0-360°, geographic
+//   relative = bearing - userHeading          // -180 to +180
+//   if |relative| > FOV/2 → marker is outside camera view
+//   screenX = SCREEN_W/2 + (relative / (FOV/2)) * (SCREEN_W/2)
+// Vertical position scales with distance (closer = lower on screen,
+// further = higher), giving a soft "depth" cue without true 3D math.
+// Size shrinks logarithmically with distance so a flag 50m away looks
+// distinctly bigger than one 500m away.
+//
+// Markers behind the user (|relative| > 90°) render as edge arrows so
+// users know which way to turn to see them.
+function ARFlagOverlay({
+  markers,
+  userPos,
+  userHeading,
+}: {
+  markers: Marker[];
+  userPos: { lat: number; lng: number } | null;
+  userHeading: number | null;
+}) {
+  if (!userPos || userHeading == null || markers.length === 0) return null;
+
+  return (
+    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+      {markers.map(m => {
+        const distM = haversineM(userPos, { lat: m.lat, lng: m.lng });
+        if (distM > AR_MAX_RANGE_M) return null; // out of sensible range
+
+        const bearing = bearingTo(userPos, { lat: m.lat, lng: m.lng });
+        // Normalize relative to -180..180
+        let relative = bearing - userHeading;
+        while (relative > 180) relative -= 360;
+        while (relative < -180) relative += 360;
+
+        const config = getAR3DConfig(m.type);
+        const halfFov = CAMERA_FOV_DEG / 2;
+        const inView = Math.abs(relative) <= halfFov;
+
+        if (inView) {
+          // Inside the camera FOV — project to screen X.
+          const screenX = SCREEN_W / 2 + (relative / halfFov) * (SCREEN_W / 2);
+          // Vertical: closer markers sit lower (toward "ground"); far
+          // ones drift up to the horizon. Range 35-70% of screen height.
+          const t = Math.min(distM / AR_MAX_RANGE_M, 1);
+          const screenY = SCREEN_H * (0.35 + 0.35 * t);
+          // Size: 56px at 0m → 24px at AR_MAX_RANGE_M (logarithmic feel).
+          const size = Math.max(24, 56 - (distM / AR_MAX_RANGE_M) * 32);
+
+          return (
+            <View
+              key={m.id}
+              style={[
+                arOverlayStyles.flag,
+                {
+                  left: screenX - size / 2,
+                  top: screenY - size / 2,
+                  width: size,
+                  height: size,
+                  borderRadius: size / 2,
+                  backgroundColor: config.color,
+                  opacity: 0.9 - 0.3 * t, // far ones slightly dimmed
+                },
+              ]}
+            >
+              <Icon name="Flag" size={Math.max(14, size * 0.5)} color="#fff" strokeWidth={2.5} />
+              <View style={arOverlayStyles.distChip}>
+                <Text style={arOverlayStyles.distText}>
+                  {distM < 1000 ? `${Math.round(distM)}m` : `${(distM / 1000).toFixed(1)}km`}
+                </Text>
+              </View>
+            </View>
+          );
+        }
+
+        // Out of view — render edge arrow (left or right) at the
+        // marker's vertical band so users can turn toward it.
+        const onLeft = relative < 0;
+        const t = Math.min(distM / AR_MAX_RANGE_M, 1);
+        const arrowY = SCREEN_H * (0.35 + 0.35 * t);
+        return (
+          <View
+            key={m.id}
+            style={[
+              arOverlayStyles.edgeArrow,
+              {
+                top: arrowY - 14,
+                [onLeft ? 'left' : 'right']: 8,
+              },
+            ]}
+          >
+            <Icon
+              name={onLeft ? 'ChevronLeft' : 'ChevronRight'}
+              size={20}
+              color={config.color}
+              strokeWidth={3}
+            />
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+const arOverlayStyles = StyleSheet.create({
+  flag: {
+    position: 'absolute',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.9)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
+  },
+  distChip: {
+    position: 'absolute', bottom: -16,
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  distText: { fontSize: 9, color: '#fff', fontWeight: '700' },
+  edgeArrow: {
+    position: 'absolute',
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+  },
+});
+
 // ── 2D Compass Dial — replacement for the camera placeholder ──────────────
 function CompassDial({
   userHeading,
@@ -242,9 +399,11 @@ const dialStyles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    // Was solid black — felt like a dead screen. Switch to a deep nature
-    // tone that still gives the dial enough contrast but feels intentional.
-    backgroundColor: '#0d1f12',
+    // Transparent when camera background is rendering; falls through
+    // to container's #000 if the camera is unavailable. Dial elements
+    // have their own contrast (white text on dark ring) so readable
+    // either way.
+    backgroundColor: 'transparent',
   },
   dial: {
     width: 240,
@@ -458,8 +617,44 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
     savedToastTimerRef.current = setTimeout(() => { setSavedToast(false); nav.goBack(); }, 800);
   };
 
+  // Camera permission — request on mount when expo-camera is present.
+  // Hook is called only if useCameraPermissions exists (conditional
+  // import). When the module is missing, perm is undefined and we
+  // fall through to the dark backdrop.
+  const [cameraPerm, requestCameraPerm] = useCameraPermissions
+    ? useCameraPermissions()
+    : [null, async () => null];
+  useEffect(() => {
+    if (!useCameraPermissions) return;
+    if (cameraPerm && !cameraPerm.granted && cameraPerm.canAskAgain) {
+      requestCameraPerm();
+    }
+  }, [cameraPerm?.granted]);
+
   return (
     <View style={styles.container}>
+      {/* Camera background — live rear camera feed at the very bottom
+          of the z-stack. All AR overlays + compass dial + sheets layer
+          on top. If expo-camera is unavailable or permission denied,
+          the existing dark backdrop shows instead (CompassDial + UI
+          read fine against either). */}
+      {CameraView && cameraPerm?.granted && (
+        <CameraView
+          style={StyleSheet.absoluteFillObject}
+          facing="back"
+        />
+      )}
+
+      {/* AR flag overlay — projects nearby markers onto screen-space
+          so the user sees them anchored to real-world directions.
+          Renders above camera, below UI controls. Only meaningful
+          when both userPos and heading are known. */}
+      <ARFlagOverlay
+        markers={nearbyMarkers}
+        userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng } : null}
+        userHeading={userHeading}
+      />
+
       {/* Compass dial — directional indicators replace static AR placeholder.
           Each visible nearby marker shows a chevron arrow at its bearing
           relative to current device heading. */}
@@ -565,7 +760,7 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
 // ── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: '#000' /* fallback when no camera */ },
   cameraPlaceholder: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#1a1a2e',
