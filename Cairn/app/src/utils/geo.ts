@@ -42,7 +42,11 @@ export function formatDistance(
   unit: DistanceUnit = 'km',
   decimals = 2,
 ): string {
-  if (meters < 10) return '--';
+  // Show 0.0 (or 0.00) for very short distances rather than "--", so the
+  // user can see we did record a distance — they just didn't move far.
+  // The previous "<10m → '--'" rule made empty-looking screens (e.g.
+  // "-- km · 00:53 · +22m") that read like a hardware failure.
+  if (!Number.isFinite(meters) || meters < 0) return (0).toFixed(decimals);
   if (unit === 'mi') {
     return (meters / 1609.344).toFixed(decimals);
   }

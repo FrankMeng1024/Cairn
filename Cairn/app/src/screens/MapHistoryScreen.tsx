@@ -7,7 +7,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert,
-  Dimensions, Animated, Easing,
+  Dimensions, Animated, Easing, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,6 +28,28 @@ import { PressBtn } from '../components/PressBtn';
 import { MARKER_META } from '../data/mockData';
 import type { TrackingSession } from '../store/useSessionStore';
 import type { Marker } from '../store/useMarkerStore';
+
+// ── Conditional Mapbox import ─────────────────────────────────────────────
+// Native: render the track on top of a real Mapbox map. Web / Expo Go:
+// fall back to the existing SVG-on-coloured-panel rendering.
+let MapView: any = null;
+let CameraComponent: any = null;
+let LineLayer: any = null;
+let ShapeSource: any = null;
+let PointAnnotation: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Mapbox = require('@rnmapbox/maps');
+    MapView = Mapbox.MapView;
+    CameraComponent = Mapbox.Camera;
+    LineLayer = Mapbox.LineLayer;
+    ShapeSource = Mapbox.ShapeSource;
+    PointAnnotation = Mapbox.PointAnnotation;
+  } catch {
+    // @rnmapbox/maps not in this build — fallback panel will render.
+  }
+}
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { width: W, height: H } = Dimensions.get('window');
@@ -55,6 +77,86 @@ function PressRow({
         {children}
       </TouchableOpacity>
     </Animated.View>
+  );
+}
+
+// ── Native track map (Mapbox) ─────────────────────────────────────────────
+// Renders the session track as a polyline on top of a real Mapbox map.
+// Used in place of the SVG-on-coloured-panel TrackPolyline when
+// @rnmapbox/maps is available (i.e. on a real device, not web).
+function NativeTrackMap({ session }: { session: TrackingSession }) {
+  const pts = session.trackPoints;
+  const color = session.activityMode === 'running' ? Colors.running : Colors.primary;
+  if (!MapView || pts.length < 2) return null;
+
+  // Bounding box of the track for camera fit.
+  const lats = pts.map(p => p.lat);
+  const lngs = pts.map(p => p.lng);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+
+  const start = pts[0];
+  const end = pts[pts.length - 1];
+
+  return (
+    <MapView
+      style={StyleSheet.absoluteFillObject}
+      styleURL="mapbox://styles/mapbox/outdoors-v12"
+      logoEnabled={false}
+      attributionEnabled={false}
+      scaleBarEnabled={false}
+      compassEnabled={false}
+    >
+      {CameraComponent && (
+        <CameraComponent
+          bounds={{
+            ne: [maxLng, maxLat],
+            sw: [minLng, minLat],
+            paddingTop: 60,
+            paddingBottom: 60,
+            paddingLeft: 40,
+            paddingRight: 40,
+          }}
+          animationDuration={0}
+        />
+      )}
+      {ShapeSource && LineLayer && (
+        <ShapeSource
+          id="track-line"
+          shape={{
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: pts.map(p => [p.lng, p.lat]),
+            },
+            properties: {},
+          }}
+        >
+          <LineLayer
+            id="track-line-layer"
+            style={{
+              lineColor: color,
+              lineWidth: 4,
+              lineOpacity: 0.9,
+              lineCap: 'round',
+              lineJoin: 'round',
+            }}
+          />
+        </ShapeSource>
+      )}
+      {PointAnnotation && (
+        <>
+          <PointAnnotation id="track-start" coordinate={[start.lng, start.lat]}>
+            <View style={[trackStyles.nativeStartDot, { backgroundColor: color }]} />
+          </PointAnnotation>
+          <PointAnnotation id="track-end" coordinate={[end.lng, end.lat]}>
+            <View style={[trackStyles.nativeEndDot, { borderColor: color }]} />
+          </PointAnnotation>
+        </>
+      )}
+    </MapView>
   );
 }
 
@@ -438,9 +540,13 @@ export function MapHistoryScreen() {
     <View style={styles.container}>
       {/* Map area */}
       <View style={styles.mapArea}>
-        {/* Track polyline when session selected */}
+        {/* Track polyline when session selected. Native (iOS/Android with
+            @rnmapbox/maps available) renders the track on a real Mapbox
+            map; web/Expo Go falls back to the SVG-on-panel rendering. */}
         {sessionForDisplay ? (
-          <TrackPolyline session={sessionForDisplay} />
+          MapView && sessionForDisplay.trackPoints.length >= 2
+            ? <NativeTrackMap session={sessionForDisplay} />
+            : <TrackPolyline session={sessionForDisplay} />
         ) : (
           // Decorative lines when no session selected
           <>
@@ -1007,6 +1113,16 @@ const trackStyles = StyleSheet.create({
   },
   startDot: { width: 12, height: 12 },
   endDot: { width: 16, height: 16, backgroundColor: '#fff', borderWidth: 3 },
+  // Native Mapbox PointAnnotation children — same visual language as the
+  // SVG-mode dots so users see consistent start / end markers.
+  nativeStartDot: {
+    width: 14, height: 14, borderRadius: 7,
+    borderWidth: 2, borderColor: '#fff',
+  },
+  nativeEndDot: {
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: '#fff', borderWidth: 3,
+  },
 });
 
 const sheetStyles = StyleSheet.create({
