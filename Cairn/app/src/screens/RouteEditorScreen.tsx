@@ -20,6 +20,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useRouteStore } from '../store/useRouteStore';
 import { useSessionStore, loadTrackPoints } from '../store/useSessionStore';
 import { useTrackingStore } from '../store/useTrackingStore';
+import { snapToRoadAndTrim } from '../services/routeMatcher';
 import { haversineM, formatDistance } from '../utils/geo';
 import { getCurrentRegion } from '../config/regions';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
@@ -151,12 +152,26 @@ export function RouteEditorScreen() {
         })));
       }
     } else if (session) {
-      // Pre-fill name from activity, load track points as waypoints
+      // Pre-fill name from activity, then snap track to road network +
+      // trim home/off-grid head & tail before exposing waypoints to
+      // the editor. The product rule: "saved routes start from the
+      // nearest public road, not from the user's house." See
+      // routeMatcher service for the algorithm.
       const date = new Date(session.startedAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
       setName(`${session.activityMode === 'running' ? 'Run' : 'Hike'} ${date}`);
-      loadTrackPoints(session.id).then(tp => {
-        const step = Math.max(1, Math.floor(tp.length / 20));
-        const sampled = tp.filter((_, i) => i % step === 0);
+      loadTrackPoints(session.id).then(async tp => {
+        if (tp.length < 2) return;
+        const profile = session.activityMode === 'running' ? 'walking' : 'walking';
+        const matched = await snapToRoadAndTrim(
+          tp.map(p => ({ lat: p.lat, lng: p.lng })),
+          profile,
+        );
+        // Sample whichever polyline we have (snapped or fallback) down
+        // to ~20 waypoints so the editor's draggable pins stay
+        // manageable.
+        const source = matched.points;
+        const step = Math.max(1, Math.floor(source.length / 20));
+        const sampled = source.filter((_, i) => i % step === 0);
         setWaypoints(sampled.map((p, i) => ({
           id: `wp-session-${i}`, lat: p.lat, lng: p.lng, label: `Point ${i + 1}`,
         })));
