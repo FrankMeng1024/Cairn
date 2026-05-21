@@ -702,15 +702,11 @@ export function AuthScreen() {
               }]}>Guide the next.</Animated.Text>
             </View>
           </View>
-          {/* OTA status — absolutely positioned just above the CTA buttons
-              so it never shifts the logo / wordmark when state changes.
-              Always visible: shows "Up to date" when current, "Downloading
-              update" while fetching, "Done · tap to restart" when ready. */}
-          <View style={styles.splashOtaWrap} pointerEvents="box-none">
-            <OtaBadge inline />
-          </View>
-          {/* CTA buttons */}
+          {/* CTA buttons + OTA status above them */}
           <View style={styles.splashActions}>
+            <View style={styles.splashOtaWrap}>
+              <OtaBadge inline />
+            </View>
             <PressBtn style={styles.primaryBtn} onPress={() => handleViewChange('login')}>
               <View style={styles.btnContent}>
                 <Icon name="LogIn" size={IconSize.sm} color="#fff" strokeWidth={2} />
@@ -1044,17 +1040,14 @@ const styles = StyleSheet.create({
     fontSize: FontSize.h3, color: Colors.textSecondary,
     textAlign: 'center', lineHeight: 26, fontWeight: '400',
   },
-  splashActions: { gap: Spacing.sm, paddingTop: Spacing.xxl },
-  // Floats above the CTA buttons. Using absolute positioning so the badge
-  // never affects the layout above it — the cairn + wordmark stay put
-  // whether the badge is visible or not.
+  splashActions: { gap: Spacing.sm, paddingTop: Spacing.xl },
+  // OTA pill row — fixed height so the layout never shifts whether the
+  // pill is visible or not. Sits at the very top of the CTA stack.
   splashOtaWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 168, // sits ~12px above the top Sign In button
+    height: 32,
     alignItems: 'center',
-    zIndex: 10,
+    justifyContent: 'center',
+    marginBottom: Spacing.xs,
   },
   primaryBtn: {
     backgroundColor: Colors.primary, borderRadius: 28,
