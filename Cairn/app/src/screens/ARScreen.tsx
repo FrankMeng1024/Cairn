@@ -234,10 +234,12 @@ function ARFlagOverlay({
         if (inView) {
           // Inside the camera FOV — project to screen X.
           const screenX = SCREEN_W / 2 + (relative / halfFov) * (SCREEN_W / 2);
-          // Vertical: closer markers sit lower (toward "ground"); far
-          // ones drift up to the horizon. Range 35-70% of screen height.
+          // Vertical: closer markers sit lower (toward foreground / ground),
+          // far markers drift up toward the horizon. Range 35-70% of
+          // screen height. Matches the real-world mental model where
+          // distant things are higher in the visual field.
           const t = Math.min(distM / AR_MAX_RANGE_M, 1);
-          const screenY = SCREEN_H * (0.35 + 0.35 * t);
+          const screenY = SCREEN_H * (0.70 - 0.35 * t);
           // Size: 56px at 0m → 24px at AR_MAX_RANGE_M (logarithmic feel).
           const size = Math.max(24, 56 - (distM / AR_MAX_RANGE_M) * 32);
 
@@ -268,10 +270,11 @@ function ARFlagOverlay({
         }
 
         // Out of view — render edge arrow (left or right) at the
-        // marker's vertical band so users can turn toward it.
+        // marker's vertical band so users can turn toward it. Same
+        // depth-coding as in-view markers: closer = lower screen.
         const onLeft = relative < 0;
         const t = Math.min(distM / AR_MAX_RANGE_M, 1);
-        const arrowY = SCREEN_H * (0.35 + 0.35 * t);
+        const arrowY = SCREEN_H * (0.70 - 0.35 * t);
         return (
           <View
             key={m.id}
