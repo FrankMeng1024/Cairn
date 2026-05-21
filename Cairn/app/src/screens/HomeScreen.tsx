@@ -9,7 +9,7 @@ import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, LayoutChangeEvent,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
@@ -163,12 +163,24 @@ export function HomeScreen() {
   const opacity = useRef(new Animated.Value(1)).current;
   const card1 = useRef(new Animated.Value(1)).current;
   const card2 = useRef(new Animated.Value(1)).current;
+  const insets = useSafeAreaInsets();
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
       <OtaBadge />
-      <Animated.View style={[styles.screen, { opacity }]}>
+      <Animated.View
+        style={[
+          styles.screen,
+          {
+            // Honour the device's bottom inset (home indicator). We can't
+            // rely on SafeAreaView edges:['bottom'] alone — on Pro Max the
+            // indicator strip was eating the toolsRow labels.
+            paddingBottom: Math.max(insets.bottom, Spacing.sm) + Spacing.xs,
+          },
+          { opacity },
+        ]}
+      >
 
         {/* Header */}
         <View style={styles.header}>
@@ -244,8 +256,8 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     paddingHorizontal: Spacing.base,
-    paddingTop: Spacing.xs,
-    paddingBottom: Spacing.sm,
+    paddingTop: Spacing.sm,
+    // paddingBottom set inline using useSafeAreaInsets — see the JSX.
     gap: Spacing.sm,
   },
 

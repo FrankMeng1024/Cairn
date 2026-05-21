@@ -24,6 +24,15 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+// Manual OTA version counter. Bump this by 1 every time we ship an
+// OTA update so the user can visually confirm they're running the
+// latest bundle. The value is baked into the JS bundle, so when the
+// pill says "v5 · Up to date" the user knows v5's changes are live.
+//
+// Bump rule: increment by 1 immediately before running `eas update`.
+// Never reuse a number, never decrement.
+export const OTA_VERSION = 5;
+
 type OtaState =
   | 'idle'          // checked, no update — "Up to date"
   | 'checking'      // initial check in progress
@@ -241,7 +250,7 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
           ) : (
             <View style={[styles.dot, { backgroundColor: dotColor }]} />
           )}
-          <Text style={styles.label}>{label}</Text>
+          <Text style={styles.label}>{`v${OTA_VERSION} · ${label}`}</Text>
         </TouchableOpacity>
       </Animated.View>
 
