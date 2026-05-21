@@ -264,7 +264,7 @@ export function SettingsScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
         {/* ── Interface Mode ── */}
-        <SectionHeader title="Interface Mode" />
+        <SectionHeader title="Activity preferences" />
         <Text style={styles.sectionNote}>Choose your preferred UI style</Text>
         <View style={styles.modeRow}>
           <ModeCard mode="beginner" selected={pendingMode === 'beginner'} onSelect={() => setPendingMode('beginner')} />
@@ -467,7 +467,7 @@ export function SettingsScreen() {
         </View>
 
         {/* Emergency Section */}
-        <Text style={styles.sectionLabel}>EMERGENCY</Text>
+        <SectionHeader title="Safety" />
         <View style={styles.card}>
           <ActionRow
             iconName="Phone"
@@ -489,7 +489,7 @@ export function SettingsScreen() {
         </View>
 
         {/* Broadcast Section */}
-        <Text style={styles.sectionLabel}>BROADCASTS</Text>
+        <SectionHeader title="Communications" />
         <View style={styles.card}>
           <ToggleRow
             iconName="Volume2"
@@ -531,7 +531,7 @@ export function SettingsScreen() {
         </View>
 
         {/* Feedback Section */}
-        <Text style={styles.sectionLabel}>FEEDBACK</Text>
+        <SectionHeader title="Feedback" />
         <View style={styles.card}>
           <ToggleRow
             iconName="Zap"
