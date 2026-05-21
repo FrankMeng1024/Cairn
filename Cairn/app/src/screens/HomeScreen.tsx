@@ -43,6 +43,10 @@ function RecentRow({ onPress }: { onPress: (id: string) => void }) {
   if (sessions.length === 0) return null;
 
   const last = sessions.reduce((best, s) => s.startedAt > best.startedAt ? s : best);
+  // Only surface activities started in the last 24 hours — anything older
+  // belongs in the Routes / Activities tab, not on the home dashboard.
+  const ageMs = Date.now() - last.startedAt;
+  if (ageMs > 24 * 60 * 60 * 1000) return null;
   const isRun = last.activityMode === 'running';
   const accent = isRun ? Colors.running : Colors.primary;
   const bg = isRun ? Colors.runningLight : Colors.primaryLight;
@@ -169,10 +173,11 @@ export function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoRow}>
-            {/* CairnLogo viewBox is top-padded (7.8u of 24u above the top
-                stone, only 0.6u below the base). Pull up so the cairn
-                visually aligns with the wordmark optical center. */}
-            <View style={{ marginTop: -7 }}>
+            {/* Sign In page uses size=28 with marginTop:-7 to compensate
+                for the cairn viewBox's top-heavy padding (7.8u top vs
+                0.6u bottom). Here size=26 + center alignment, so a
+                smaller -3 nudge is enough. */}
+            <View style={{ marginTop: -3 }}>
               <CairnLogo size={26} color={Colors.primary} />
             </View>
             <Text style={styles.logo}>Cairn</Text>
@@ -239,13 +244,13 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     paddingHorizontal: Spacing.base,
-    paddingTop: Spacing.md,
+    paddingTop: Spacing.xs,
     paddingBottom: Spacing.sm,
     gap: Spacing.sm,
   },
 
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  logoRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   logo: {
     fontSize: FontSize.h1, fontWeight: '900', color: Colors.textPrimary,
     letterSpacing: -1, lineHeight: 32, includeFontPadding: false,
@@ -339,13 +344,13 @@ const toolStyles = StyleSheet.create({
     flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.card,
     alignItems: 'center', justifyContent: 'center',
     paddingVertical: Spacing.sm, gap: 4,
-    minHeight: 70,
+    minHeight: 64,
     borderWidth: 1, borderColor: Colors.border, ...Shadow.card,
   },
   iconWrap: {
-    width: 32, height: 32, borderRadius: 16, // perfect circle for visual consistency
+    width: 30, height: 30, borderRadius: 15,
     backgroundColor: Colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
   },
-  label: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },
+  label: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
 });
