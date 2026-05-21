@@ -472,6 +472,10 @@ export function AuthScreen() {
   const tagline2Translate = useRef(new Animated.Value(-8)).current;
   const [trailComplete, setTrailComplete] = useState(false);
   void trailComplete;
+  // Increments every time we (re-)enter splash so AnimatedCairn remounts and
+  // replays its stone-rising animation from scratch — without this, the user
+  // hits Back from Sign In and sees the stones already stacked.
+  const [splashMountKey, setSplashMountKey] = useState(0);
 
   const animateWordmark = () => {
     // Wordmark fades in alongside the first stone landing — no delay.
@@ -495,6 +499,17 @@ export function AuthScreen() {
 
   useEffect(() => {
     if (view === 'splash') {
+      // Reset every animation back to its starting state so re-entering the
+      // splash from Sign In replays the full sequence from scratch.
+      splashFade.setValue(0);
+      splashTranslate.setValue(8);
+      wordmarkOpacity.setValue(0);
+      wordmarkTranslate.setValue(-8);
+      tagline1Opacity.setValue(0);
+      tagline1Translate.setValue(-8);
+      tagline2Opacity.setValue(0);
+      tagline2Translate.setValue(-8);
+      setSplashMountKey(k => k + 1);
       Animated.parallel([
         Animated.timing(splashFade, { toValue: 1, duration: 400, useNativeDriver: true }),
         Animated.timing(splashTranslate, { toValue: 0, duration: 400, useNativeDriver: true }),
@@ -659,9 +674,11 @@ export function AuthScreen() {
                 end={{ x: 1, y: 1 }}
               />
             </View>
-            {/* Trail path draws first, then cairn stacks up */}
+            {/* Trail path draws first, then cairn stacks up. The key forces
+                a fresh mount when the user returns to splash via Back so
+                the rise animation replays. */}
             <View style={{ position: 'relative', alignItems: 'center' }}>
-              <AnimatedCairn />
+              <AnimatedCairn key={splashMountKey} />
             </View>
             {/* Wordmark fades in after cairn completes */}
             <Animated.Text style={[styles.appName, {
@@ -678,6 +695,13 @@ export function AuthScreen() {
                 transform: [{ translateY: tagline2Translate }],
               }]}>Guide the next.</Animated.Text>
             </View>
+          </View>
+          {/* OTA status — sits above the CTA buttons. Always visible so the
+              user knows whether the app is current. Auto-checks on mount,
+              auto-downloads when an update is found, then prompts to
+              restart. */}
+          <View style={styles.splashOtaWrap}>
+            <OtaBadge inline />
           </View>
           {/* CTA buttons */}
           <View style={styles.splashActions}>
@@ -811,20 +835,13 @@ export function AuthScreen() {
             <Text style={formStyles.backText}>Back</Text>
           </TouchableOpacity>
 
-          {/* OTA status — sits above the title, always visible. Auto-checks
-              on mount, auto-downloads if there's an update, then prompts
-              the user to restart when the bundle is ready. */}
-          <View style={{ marginBottom: Spacing.md }}>
-            <OtaBadge inline />
-          </View>
-
           {/* Title row: small icon inline-left of title */}
           <View style={formStyles.titleRow}>
             {/* CairnLogo's viewBox has asymmetric vertical padding (7.8u top
                 vs 0.6u bottom out of 24u) AND its stones are top-light /
                 bottom-heavy. Pull it up so the cairn visually sits with
                 the title's optical center, not the geometric one. */}
-            <View style={{ marginTop: -9 }}>
+            <View style={{ marginTop: -7 }}>
               <CairnLogo size={28} />
             </View>
             <Text style={formStyles.title}>{isRegister ? 'Create Account' : 'Sign In'}</Text>
@@ -971,7 +988,6 @@ export function AuthScreen() {
                   </View>
                 </View>
               </PressBtn>
-              <Text style={formStyles.socialHint}>Requires iOS device</Text>
 
               {/* Google */}
               <PressBtn style={formStyles.googleBtn} onPress={handleGoogleAuth} scale={0.98} disabled={googleLoading || loading}>
@@ -1023,6 +1039,11 @@ const styles = StyleSheet.create({
     textAlign: 'center', lineHeight: 26, fontWeight: '400',
   },
   splashActions: { gap: Spacing.sm, paddingTop: Spacing.xxl },
+  splashOtaWrap: {
+    alignItems: 'center',
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xs,
+  },
   primaryBtn: {
     backgroundColor: Colors.primary, borderRadius: 28,
     paddingVertical: Spacing.lg, alignItems: 'center', minHeight: 56,
