@@ -181,11 +181,10 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
           followUserLocation={true}
           followZoomLevel={15}
           followPitch={0}
-          // 1s zoom-in is delightful on first launch but slow when
-          // resuming an in-progress hike — both the duration and the
-          // animationMode must be non-animated, otherwise Mapbox still
-          // tweens from its default position to the user's location.
-          animationDuration={instantCamera ? 0 : 1000}
+          // 600ms fly-in is welcoming on first launch but short
+          // enough that users don't feel locked. Resume / re-entry
+          // skips the animation entirely (instantCamera path).
+          animationDuration={instantCamera ? 0 : 600}
           animationMode={instantCamera ? 'none' : 'flyTo'}
           // defaultSettings positions the camera on mount BEFORE
           // followUserLocation kicks in, so a resume sees the right
@@ -561,6 +560,43 @@ export function HikingScreen() {
   );
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
 
+  // Live compass: heading in degrees from north, updated by
+  // watchHeadingAsync. compassEnabled toggles the sensor on/off so
+  // the user can "close the lid" to save battery if they don't want
+  // a live needle. Permission is shared with location, already
+  // granted by the time the user is in tracking mode.
+  const [heading, setHeading] = useState<number | null>(null);
+  const [compassEnabled, setCompassEnabled] = useState(true);
+  useEffect(() => {
+    if (!compassEnabled) {
+      setHeading(null);
+      return;
+    }
+    let sub: { remove: () => void } | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (!perm.granted) return;
+        sub = await Location.watchHeadingAsync(({ trueHeading, magHeading }) => {
+          if (cancelled) return;
+          // Prefer trueHeading (geographic north) when available;
+          // fall back to magHeading (magnetic north) — close enough
+          // for a hiker's mental model. -1 means unavailable.
+          const h = trueHeading >= 0 ? trueHeading : magHeading;
+          if (h >= 0) setHeading(h);
+        });
+      } catch {
+        // Compass unavailable — leave heading null, UI shows static
+        // compass icon as a fallback.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
+  }, [compassEnabled]);
+
   const routes = useRouteStore(s => s.routes);
   const loadRoutes = useRouteStore(s => s.loadRoutes);
   const isTracking = status === 'tracking';
@@ -836,11 +872,15 @@ export function HikingScreen() {
           ? { lat: routePolyline[0].lat, lng: routePolyline[0].lng }
           : null}
         userPos={lastCoordinate ? { lat: lastCoordinate.lat, lng: lastCoordinate.lng } : null}
-        // Resume vs first-entry: if there are already track points or
-        // a known last coordinate from a tracking session that's still
-        // active, snap the camera instantly. Otherwise the 1s fly-in
-        // is the intended welcoming animation.
-        instantCamera={isTracking && (trackPoints.length > 0 || lastCoordinate != null)}
+        // Skip the globe → location fly-in whenever we already know
+        // where the user is. This covers all the cases where the user
+        // expects the map to "just be there":
+        //   - Resume tracking (isTracking + trackPoints already exist)
+        //   - Re-entering Hiking from Home Last-row after a recent
+        //     hike (lastCoordinate seeded by GPS prime effect)
+        //   - Returning from another screen mid-hike
+        // Only first-launch with no GPS fix yet gets the fly-in.
+        instantCamera={lastCoordinate != null}
       />
 
       {/* Top overlay: back button (left) + GPS chip (right). Uses
@@ -950,9 +990,26 @@ export function HikingScreen() {
               <TouchableOpacity
                 style={styles.circleBtn}
                 activeOpacity={0.85}
-                onPress={() => Haptics.selectionAsync().catch(() => {})}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setCompassEnabled(v => !v);
+                }}
               >
-                <Icon name="Compass" size={22} color={Colors.primary} strokeWidth={2} />
+                {compassEnabled ? (
+                  // Live needle — rotates so it always points to north
+                  // regardless of phone orientation. heading is the
+                  // direction the phone is pointing; we rotate the
+                  // icon by -heading so the icon's "up" stays north.
+                  <View style={{
+                    transform: [{ rotate: heading != null ? `${-heading}deg` : '0deg' }],
+                  }}>
+                    <Icon name="Navigation" size={22} color={Colors.primary} strokeWidth={2.5} />
+                  </View>
+                ) : (
+                  // "Closed lid" state — sensor off, dimmed icon.
+                  // Tap again to re-enable.
+                  <Icon name="Compass" size={22} color={Colors.textMuted} strokeWidth={2} />
+                )}
               </TouchableOpacity>
             </View>
             <View style={styles.controlSlot}>
@@ -1167,7 +1224,7 @@ const styles = StyleSheet.create({
   },
   gpsChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.82)', borderRadius: Radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.65)', borderRadius: Radius.pill,
     paddingHorizontal: Spacing.md, paddingVertical: 7,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
@@ -1191,7 +1248,7 @@ const styles = StyleSheet.create({
 
   trackingBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.88)',
+    backgroundColor: 'rgba(255,255,255,0.65)',
     marginHorizontal: Spacing.base, marginTop: Spacing.sm,
     borderRadius: Radius.card, padding: Spacing.md,
     gap: Spacing.sm,
@@ -1200,13 +1257,13 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: Colors.primary,
   },
   trackingStat: { alignItems: 'center', flex: 1 },
-  // Tracking stats panel — values intentionally compact (16pt) so the
+  // Tracking stats panel — values intentionally compact (14pt) so the
   // panel doesn't dominate the map view. The numbers are reference
   // information; users glance at them, they don't read them like a
   // dashboard. Unit row stays small for the same reason.
-  trackingValueLg: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'], lineHeight: 20 },
-  trackingValue: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'], lineHeight: 20 },
-  trackingUnit: { fontSize: 10, color: Colors.textSecondary, marginTop: 1, fontWeight: '500', letterSpacing: 0.2 },
+  trackingValueLg: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'], lineHeight: 18 },
+  trackingValue: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'], lineHeight: 18 },
+  trackingUnit: { fontSize: 9, color: Colors.textSecondary, marginTop: 1, fontWeight: '500', letterSpacing: 0.2 },
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
   routeSwitchBtn: {
     width: 28, height: 28, borderRadius: 14,
@@ -1226,15 +1283,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingBottom: Spacing.lg, paddingHorizontal: Spacing.base, gap: Spacing.sm,
   },
-  // Three-column control bar shown while tracking. Each slot is flex:1
-  // and its content centred so [Compass · SOS · Place Flag] are evenly
-  // spaced and never crowd the screen edges.
+  // Three-column control bar shown while tracking. space-between so
+  // the compass left + flag right align horizontally with the
+  // Back/GPS chips in the top overlay (also space-between with the
+  // same paddingHorizontal). User asked for left/right edges to
+  // line up across top + bottom.
   controlRow: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: Spacing.base, paddingBottom: Spacing.lg,
   },
   controlSlot: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
   // Two control buttons share one consistent shape — 56x56 circles
   // with a frosted-glass effect (translucent white + soft border +
@@ -1243,7 +1302,7 @@ const styles = StyleSheet.create({
   // is perfectly balanced left/right.
   circleBtn: {
     width: 56, height: 56, borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.78)',
+    backgroundColor: 'rgba(255,255,255,0.65)',
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)',
     shadowColor: '#000', shadowOffset: { width: 0, height: 6 },

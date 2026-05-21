@@ -99,10 +99,10 @@ const styles = StyleSheet.create({
   pillBlur: {
     borderRadius: Radius.pill,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.55)', // slight tint so blur reads even with low intensity
+    backgroundColor: 'rgba(255,255,255,0.45)', // slight tint so blur reads even with low intensity
   },
   pillFallback: {
-    backgroundColor: 'rgba(255,255,255,0.92)', // when BlurView absent, near-opaque
+    backgroundColor: 'rgba(255,255,255,0.65)', // when BlurView absent, semi-translucent
   },
   pillContent: {
     flexDirection: 'row', alignItems: 'center', gap: 2,
