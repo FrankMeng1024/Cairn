@@ -22,6 +22,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { logout } from '../services/authService';
 import { crashLogger } from '../services/crashLogger';
 import { getToken } from '../services/tokenStore';
+import { storage } from '../store/storage';
 import { API_BASE_URL } from '../config/api';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
@@ -456,6 +457,9 @@ export function SettingsScreen() {
                 /* ignore — local state must clear regardless */
               }
               crashLogger.breadcrumb('signout:before_appLogout');
+              // Clear remember-me credentials so the next launch shows
+              // the empty Sign In form (the user explicitly signed out).
+              try { await storage.removeItem('cairn_remember_me'); } catch { /* swallow */ }
               appLogout();
               crashLogger.breadcrumb('signout:after_appLogout');
             }}

@@ -28,6 +28,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useAppStore } from '../store/useAppStore';
+import { storage } from '../store/storage';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { login, register, loginWithGoogle, verifyCode, resendCode } from '../services/authService';
@@ -422,6 +423,11 @@ privacy@cairnapp.nz`;
 // ── Auth Screen ────────────────────────────────────────────────────────────
 type AuthView = 'splash' | 'login' | 'register' | 'verify' | 'welcome';
 
+// Remember-me persistence key. Stored value is a JSON-encoded
+// { email, password } pair. Cleared on Sign Out or when the user
+// signs in with the box unchecked.
+const REMEMBER_ME_KEY = 'cairn_remember_me';
+
 export function AuthScreen() {
   // Breadcrumb FIRST so even if hooks below crash we know we got here.
   crashLogger.breadcrumb('AuthScreen:render_start');
@@ -441,6 +447,7 @@ export function AuthScreen() {
   const [confirm, setConfirm] = useState('');
   const [privacyChecked, setPrivacyChecked] = useState(false);
   const [privacyExpanded, setPrivacyExpanded] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);  // STORY-00132: separate state
   const [apiError, setApiError] = useState('');
@@ -502,6 +509,27 @@ export function AuthScreen() {
       }, 80);
     });
   };
+
+  // Load remember-me credentials on first mount. If the user previously
+  // ticked the box on a successful Sign In we pre-fill email + password
+  // and re-tick the box. The user still has to tap Sign In — we never
+  // auto-route them past the auth screen.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await storage.getItem(REMEMBER_ME_KEY);
+        if (!raw || cancelled) return;
+        const creds = JSON.parse(raw) as { email?: string; password?: string };
+        if (creds.email) setEmail(creds.email);
+        if (creds.password) setPassword(creds.password);
+        setRememberMe(true);
+      } catch {
+        // Corrupt/missing creds — ignore.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (view === 'splash') {
@@ -591,6 +619,23 @@ export function AuthScreen() {
 
       setLoggedIn(true);
       if (result.user) setUser(result.user);
+      // Persist or clear remember-me credentials based on the checkbox.
+      // Only on Sign In path (register flow does verify→welcome→home and
+      // the user can tick the box on next sign-in if they want).
+      if (!isRegister) {
+        try {
+          if (rememberMe) {
+            await storage.setItem(
+              REMEMBER_ME_KEY,
+              JSON.stringify({ email: email.trim().toLowerCase(), password }),
+            );
+          } else {
+            await storage.removeItem(REMEMBER_ME_KEY);
+          }
+        } catch {
+          // Storage failure is non-fatal — the user is signed in either way.
+        }
+      }
       // Re-hydrate stores with new user's data (sessions, markers)
       await hydrate();
       if (isRegister) {
@@ -903,6 +948,25 @@ export function AuthScreen() {
             <Text style={[formStyles.fieldError, { color: Colors.textSecondary, fontWeight: '400' }]}>Minimum 8 characters</Text>
           )}
 
+          {/* Remember me — Sign In only. Saves email + password to local
+              storage on a successful Sign In so the form is pre-filled
+              next launch. The user must still tap Sign In every time —
+              we never bypass the auth screen. */}
+          {!isRegister && (
+            <View style={formStyles.rememberRow}>
+              <TouchableOpacity
+                style={[formStyles.checkbox, rememberMe && formStyles.checkboxChecked]}
+                onPress={() => setRememberMe(v => !v)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+              >
+                {rememberMe && <Icon name="Check" size={14} color="#fff" strokeWidth={3} />}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setRememberMe(v => !v)} activeOpacity={0.7}>
+                <Text style={formStyles.rememberText}>Remember me on this device</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {isRegister && (
             <>
               <Text style={formStyles.label}>Confirm Password</Text>
@@ -1105,6 +1169,8 @@ const formStyles = StyleSheet.create({
   fieldError: { fontSize: FontSize.small, color: Colors.danger, fontWeight: '600', marginTop: 3, marginLeft: 2 },
 
   privacyRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.base },
+  rememberRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
+  rememberText: { fontSize: FontSize.caption, color: Colors.textSecondary, fontWeight: '500' },
   checkbox: {
     width: 22, height: 22, borderRadius: 6,
     borderWidth: 2, borderColor: Colors.border,

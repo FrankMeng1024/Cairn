@@ -125,16 +125,23 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
           if (!cancelled) setState('idle');
           return;
         }
-        const result = await withTimeout(Updates.checkForUpdateAsync(), 5000);
+        // 15s for the check phase — production OTA endpoint can be slow
+        // on weaker connections; shorter timeouts caused stuck "Up to date".
+        const result = await withTimeout(Updates.checkForUpdateAsync(), 15000);
         if (cancelled) return;
         if (!result.isAvailable) {
           setState('idle');
           return;
         }
         setState('downloading');
-        // Generous timeout for the actual bundle fetch — bundles can be
-        // 4-6 MB so 30s is reasonable on a slow connection.
-        await withTimeout(Updates.fetchUpdateAsync(), 30000);
+        // Hold "Downloading" visible for at least 800ms so the user can
+        // actually see the state — small bundles can fetch in <100ms and
+        // the pill would otherwise blink past it.
+        const minDisplay = new Promise(r => setTimeout(r, 800));
+        await Promise.all([
+          withTimeout(Updates.fetchUpdateAsync(), 60000),
+          minDisplay,
+        ]);
         if (cancelled) return;
         setState('ready');
       } catch {
@@ -183,11 +190,13 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
 
   switch (state) {
     case 'checking':
-      // Show as "Up to date" optimistically — most cold starts have no
-      // update, and if one is found we'll switch to 'downloading' within
-      // a few seconds. Avoids a "Checking…" flash that adds nothing.
-      dotColor = COLORS.dotGreen;
-      label = 'Up to date';
+      // Show a real "checking" state with a spinner so the user can tell
+      // us apart from a stale "Up to date" pill — when we hit a stuck
+      // network we now wait up to 15s before giving up, and the user
+      // deserves to know we're trying.
+      dotColor = COLORS.dotGrey;
+      label = 'Checking for update';
+      showSpinner = true;
       break;
     case 'idle':
       dotColor = COLORS.dotGreen;

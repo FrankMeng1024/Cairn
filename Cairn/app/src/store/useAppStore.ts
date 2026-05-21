@@ -112,12 +112,19 @@ export const useAppStore = create<AppState>((set) => ({
         return;
       }
 
-      // Restore auth state from stored JWT
+      // ── Auth policy ────────────────────────────────────────────────────
+      // The user must always go through the Sign In screen on a cold
+      // start, even if a JWT is still valid in storage. We hydrate the
+      // user-scoped data ahead of time (so Sign In feels instant once
+      // the user taps it) but DO NOT flip isLoggedIn to true here. The
+      // AuthScreen "Remember me" flow is responsible for putting the
+      // user into Home.
       try {
         const user = await getMe();
         if (user) {
-          set({ isLoggedIn: true, user });
-          // Load this user's markers + sessions from per-user storage slots
+          // Token still valid — pre-warm this user's data, but keep
+          // isLoggedIn=false so the splash + Sign In renders.
+          set({ user });
           try { await useMarkerStore.getState().hydrate(user.id); } catch { /* swallow */ }
           try {
             const remote = await fetchSessions();
