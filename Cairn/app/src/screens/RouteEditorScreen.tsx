@@ -69,7 +69,7 @@ export function RouteEditorScreen() {
   const [name, setName] = useState('');
   const [waypoints, setWaypoints] = useState<WaypointDraft[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Array<{ name: string; lat: number; lng: number }>>([]);
+  const [searchResults, setSearchResults] = useState<Array<{ name: string; subtitle?: string | null; lat: number; lng: number }>>([]);
   const [showSearch, setShowSearch] = useState(false);
 
   // Load existing route OR session data on mount
@@ -176,31 +176,95 @@ export function RouteEditorScreen() {
   const handleSearch = async () => {
     if (!searchQuery.trim() || !MAPBOX_TOKEN) return;
     try {
-      // Pass language=zh-Hans alongside the default so Mapbox surfaces
-      // Chinese place names; pass proximity (bias by the user's current
-      // GPS, falling back to region centre) so results are weighted
-      // toward where the user is actually standing rather than scattered
-      // globally — critical for short queries like "公园" that match
-      // thousands of places worldwide.
+      // ── Geocoding strategy (modeled after Google Places best practices) ──
+      // 1. Bias by the user's live GPS (proximity). Falls back to the
+      //    configured region centre (NZ) when no GPS fix is available.
+      // 2. Auto-detect the user's country via a reverse-geocode of their
+      //    current GPS, then pass `country=<iso2>` so we hard-filter to
+      //    that country. This is what stops "公园" from matching parks
+      //    in Argentina when the user is standing in Shanghai.
+      // 3. Pick the local language from the country code (zh for CN,
+      //    ja for JP, ko for KR, en everywhere else by default), but
+      //    keep English as the primary display language — Mapbox returns
+      //    `place_name` in the requested language and `place_name_en`
+      //    alongside it, so we show English as the main title with the
+      //    local-language name as a secondary line.
+      // 4. autocomplete=true — Mapbox defaults to false, which is why
+      //    short queries used to feel broken. With autocomplete on,
+      //    prefix matching kicks in for free.
+      // 5. types=place,locality,neighborhood,address,poi — drop region
+      //    /country/postcode noise that's irrelevant to a route editor.
       const userCoord = useTrackingStore.getState().lastCoordinate;
       const region = getCurrentRegion();
       const proxLng = userCoord?.lng ?? region.centerLng;
       const proxLat = userCoord?.lat ?? region.centerLat;
+
+      // Reverse-geocode the proximity point to find which country we're
+      // in. Cheap (one extra request, or 0 if the user already searched
+      // and we cached). Best-effort — if it fails we just don't pass
+      // country and fall back to region-only filtering.
+      let countryCode: string | null = null;
+      let langCode = 'en';
+      try {
+        const revRes = await fetch(
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${proxLng},${proxLat}.json?` +
+          new URLSearchParams({
+            access_token: MAPBOX_TOKEN,
+            types: 'country',
+            limit: '1',
+          }).toString(),
+        );
+        const revData = await revRes.json();
+        const cc = revData?.features?.[0]?.properties?.short_code as string | undefined;
+        if (cc) {
+          countryCode = cc.toUpperCase();
+          // Map a handful of common countries to their primary local
+          // language. Default 'en' is reasonable everywhere else —
+          // Mapbox falls back gracefully.
+          const langMap: Record<string, string> = {
+            CN: 'zh-Hans', TW: 'zh-Hant', HK: 'zh-Hant',
+            JP: 'ja', KR: 'ko',
+            DE: 'de', FR: 'fr', ES: 'es', IT: 'it', PT: 'pt',
+            RU: 'ru', NL: 'nl', PL: 'pl', TR: 'tr',
+          };
+          langCode = langMap[countryCode] ?? 'en';
+        }
+      } catch {
+        // Network glitch on reverse geocode — proceed without country.
+      }
+
       const params = new URLSearchParams({
         access_token: MAPBOX_TOKEN,
         limit: '8',
-        language: 'zh-Hans,en',
+        autocomplete: 'true',
         proximity: `${proxLng},${proxLat}`,
+        types: 'place,locality,neighborhood,address,poi',
+        // Request the local language — the response includes BOTH the
+        // localized name AND an English fallback under text_en /
+        // place_name_en, so we can render English first + local second.
+        language: langCode,
       });
+      if (countryCode) params.append('country', countryCode.toLowerCase());
+
       const res = await fetch(
         `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?${params.toString()}`
       );
       const data = await res.json();
-      const results = (data.features || []).map((f: any) => ({
-        name: f.place_name,
-        lat: f.center[1],
-        lng: f.center[0],
-      }));
+      const results = (data.features || []).map((f: any) => {
+        // English-first display: prefer place_name_en when Mapbox
+        // returns it (which it does whenever language ≠ en). Fall back
+        // to place_name. The local-language version goes on the second
+        // line so users see both — "Shanghai Zoo" / "上海动物园".
+        const enName: string = f.place_name_en || f.place_name;
+        const localName: string = f.place_name;
+        const localDiffersFromEn = localName && localName !== enName;
+        return {
+          name: enName,
+          subtitle: localDiffersFromEn ? localName : null,
+          lat: f.center[1],
+          lng: f.center[0],
+        };
+      });
       setSearchResults(results);
     } catch {
       setSearchResults([]);
@@ -384,7 +448,12 @@ export function RouteEditorScreen() {
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.searchResultItem} onPress={() => handleSelectSearchResult(item)}>
                 <Icon name="MapPin" size={14} color={Colors.primary} strokeWidth={2} />
-                <Text style={styles.searchResultText} numberOfLines={1}>{item.name}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.searchResultText} numberOfLines={1}>{item.name}</Text>
+                  {item.subtitle && (
+                    <Text style={styles.searchResultSubtitle} numberOfLines={1}>{item.subtitle}</Text>
+                  )}
+                </View>
               </TouchableOpacity>
             )}
           />
@@ -482,7 +551,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8, paddingHorizontal: Spacing.sm,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  searchResultText: { flex: 1, fontSize: FontSize.small, color: Colors.textPrimary },
+  searchResultText: { fontSize: FontSize.small, color: Colors.textPrimary, fontWeight: '500' },
+  searchResultSubtitle: { fontSize: FontSize.caption, color: Colors.textSecondary, marginTop: 1 },
 
   toolRow: { flexDirection: 'row', gap: Spacing.sm },
   toolBtn: {
