@@ -135,38 +135,54 @@ function AppRoot() {
   });
 
   useEffect(() => {
-    // Install global crash handler FIRST so any error during boot is captured.
-    crashLogger.install();
-    crashLogger.breadcrumb('app_boot');
-
-    // If a previous launch crashed, ship the report to the telemetry pipeline
-    // so it auto-uploads next time the app is online.
-    crashLogger.drainLastCrash().then((report) => {
-      if (!report) return;
+    // Install global crash handler — wrap everything in try/catch so any
+    // bootstrap error (e.g. AsyncStorage native module unavailable) cannot
+    // prevent the rest of the app from booting.
+    try {
+      crashLogger.install();
+      crashLogger.breadcrumb('app_boot');
+      crashLogger.drainLastCrash().then((report) => {
+        if (!report) return;
+        // eslint-disable-next-line no-console
+        console.warn('[crash] previous launch crashed:', report.message);
+        try {
+          debugLogger.log({
+            ts: report.ts,
+            event: 'error' as const,
+            source: 'previous_launch_crash',
+            message: report.message,
+            stack: report.stack,
+            fatal: report.isFatal ?? true,
+          } as any);
+        } catch { /* logger may be off */ }
+      }).catch(() => {});
+    } catch (err) {
+      // crashLogger itself failed — proceed without it
       // eslint-disable-next-line no-console
-      console.warn('[crash] previous launch crashed:', report.message);
-      try {
-        debugLogger.log({
-          ts: report.ts,
-          event: 'error' as const,
-          source: 'previous_launch_crash',
-          message: report.message,
-          stack: report.stack,
-          fatal: report.isFatal ?? true,
-        } as any);
-      } catch { /* logger may be off */ }
-    }).catch(() => {});
+      console.warn('[crashLogger init failed]', err);
+    }
 
-    hydrateSettings();
-    // hydrate() handles auth restore, per-user session fetch from backend,
-    // and marker isolation. Do NOT call hydrateMarkers/hydrateSessions in
-    // parallel — they would overwrite backend data with previous user's cache.
-    hydrate();
+    try { hydrateSettings(); } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[hydrateSettings failed]', err);
+    }
+    try { hydrate(); } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[hydrate failed]', err);
+    }
 
     // Configure debug logger device info + start network monitor
-    debugLogger.configure({ deviceInfo: telemetryUploader.getDeviceInfo() });
-    networkMonitor.start().catch(() => {});
-    telemetryUploader.init();
+    try {
+      debugLogger.configure({ deviceInfo: telemetryUploader.getDeviceInfo() });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[debugLogger.configure failed]', err);
+    }
+    try { networkMonitor.start().catch(() => {}); } catch { /* swallow */ }
+    try { telemetryUploader.init(); } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[telemetryUploader.init failed]', err);
+    }
 
     // App state change listener for debug logger
     const sub = AppState.addEventListener('change', (next) => {
