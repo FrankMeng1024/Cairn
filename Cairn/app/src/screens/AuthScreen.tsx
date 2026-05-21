@@ -128,24 +128,37 @@ function calcFlagPaths(t: number, fadeIn: number): { flagD: string; sheenD: stri
 
 // Full logo: stones rise sequentially, then flag drops + waves
 // size prop scales the whole SVG (used for small version in verify screen)
-function AnimatedCairn({ size = 4, noFlag = false, onComplete }: { size?: number; noFlag?: boolean; onComplete?: () => void }) {
+function AnimatedCairn({ size = 4, noFlag = false, onComplete, staticMode = false }: { size?: number; noFlag?: boolean; onComplete?: () => void; staticMode?: boolean }) {
   // Stone visibility: 0=hidden → 1=risen
-  const [stoneY, setStoneY] = useState([6, 6, 6]); // translateY offsets — start slightly below, rise to 0
-  const [stoneOp, setStoneOp] = useState([0, 0, 0]);
-  const [showFlag, setShowFlag] = useState(false);
-  const [flagDropY, setFlagDropY] = useState(-26); // matches flagDrop keyframe in HTML
+  // staticMode renders the final state (stones risen, flag down) without
+  // running any setInterval/setTimeout — used in the diagnostic build to
+  // isolate whether the high-frequency SVG path animation is the source
+  // of the sign-out → AuthScreen mount crash.
+  const [stoneY, setStoneY] = useState(staticMode ? [0, 0, 0] : [6, 6, 6]);
+  const [stoneOp, setStoneOp] = useState(staticMode ? [1, 1, 1] : [0, 0, 0]);
+  const [showFlag, setShowFlag] = useState(staticMode ? !noFlag : false);
+  const [flagDropY, setFlagDropY] = useState(staticMode ? 0 : -26);
   const [flagD, setFlagD] = useState('');
   const [sheenD, setSheenD] = useState('');
   const waveStartRef = useRef<number | null>(null);
   const waveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Track every setInterval/setTimeout to guarantee cleanup on unmount.
-  // Without this, unmounting mid-animation leaves intervals running and
-  // calling setState on an unmounted component → crash on slow devices.
   const timersRef = useRef<Array<ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>>>([]);
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
+    if (staticMode) {
+      // Static mode: jump to final state, fire onComplete once, no timers.
+      onComplete?.();
+      // Compute the flag's final wave path once (t=large = settled wave).
+      try {
+        const { flagD: fd, sheenD: sd } = calcFlagPaths(2.0, 1.0);
+        setFlagD(fd);
+        setSheenD(sd);
+      } catch { /* ignore — flag will not render but stones will */ }
+      return () => { mountedRef.current = false; };
+    }
+
     // Animate each stone rising in sequence
     STONE_DEFS.forEach((_, idx) => {
       const startTimeout = setTimeout(() => {
@@ -158,13 +171,11 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete }: { size?: number
             return;
           }
           const p = Math.min((Date.now() - start) / 320, 1);
-          // ease out cubic
           const ease = 1 - Math.pow(1 - p, 3);
           setStoneY(prev => { const n = [...prev]; n[idx] = 6 * (1 - ease); return n; });
           setStoneOp(prev => { const n = [...prev]; n[idx] = ease; return n; });
           if (p >= 1) {
             clearInterval(timer);
-            // After top stone rises, show flag
             if (idx === 2) {
               if (mountedRef.current) onComplete?.();
               if (!noFlag) {
@@ -182,7 +193,6 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete }: { size?: number
     });
     return () => {
       mountedRef.current = false;
-      // Clear ALL pending timers (rise intervals, delay timeouts, flag timeout)
       timersRef.current.forEach((t) => {
         clearInterval(t as any);
         clearTimeout(t as any);
@@ -194,6 +204,7 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete }: { size?: number
 
   // Once flag is shown, animate drop then wave
   useEffect(() => {
+    if (staticMode) return;
     if (!showFlag) return;
     waveStartRef.current = null;
     const dropStart = Date.now();
@@ -206,7 +217,6 @@ function AnimatedCairn({ size = 4, noFlag = false, onComplete }: { size?: number
       if (!waveStartRef.current) waveStartRef.current = now;
       const t = (now - waveStartRef.current) / 1000;
       const fadeIn = Math.min(t / 1.4, 1);
-      // Drop: -26 → 0 over 400ms (mirrors flagDrop CSS)
       const dropElapsed = now - dropStart;
       const dy = dropElapsed < 400 ? -26 + (26 * dropElapsed / 400) : 0;
       setFlagDropY(dy);
@@ -410,34 +420,45 @@ export function AuthScreen() {
   const googleFlowActive = useRef(false);
   const submitAttempted = useRef(false);  // STORY-00133: only validate on blur after first submit
 
-  // Google OAuth hook
-  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-    redirectUri: makeRedirectUri(),
-    prompt: Prompt.SelectAccount,  // always show account picker, never use cached credentials
-  });
+  // Google OAuth hook — TEMPORARILY DISABLED for diagnostic build.
+  // Suspected as cause of sign-out crash. Will be re-enabled via OTA after
+  // we confirm sign-out works without it. Hook call commented out to avoid
+  // any native ASWebAuthenticationSession init at AuthScreen mount.
+  //
+  // const [googleRequest, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
+  //   webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+  //   redirectUri: makeRedirectUri(),
+  //   prompt: Prompt.SelectAccount,
+  // });
+  const googleRequest: any = null;
+  const googleResponse: any = null;
+  const promptGoogleAsync = async () => {
+    Alert.alert('Google Sign In', 'Temporarily disabled for diagnostic build. Use email sign-in.');
+    return { type: 'dismiss' as const };
+  };
+  void googleRequest;
 
-  // Handle Google OAuth response
-  useEffect(() => {
-    if (googleResponse?.type !== 'success') return;
-    const idToken = googleResponse.params?.id_token ?? (googleResponse.authentication as any)?.idToken;
-    if (!idToken) {
-      setApiError('Google sign-in failed. Please try again.');
-      setGoogleLoading(false);
-      return;
-    }
-    setLoading(true);
-    setApiError('');
-    loginWithGoogle(idToken).then(async (result) => {
-      setLoading(false);
-      setGoogleLoading(false);
-      if (result.error) { setApiError(result.error); return; }
-      setLoggedIn(true);
-      if (result.user) setUser(result.user);
-      await hydrate();
-      nav.replace('Home');
-    });
-  }, [googleResponse]);
+  // Handle Google OAuth response — DISABLED (no hook = no response).
+  // useEffect(() => {
+  //   if (googleResponse?.type !== 'success') return;
+  //   const idToken = googleResponse.params?.id_token ?? (googleResponse.authentication as any)?.idToken;
+  //   if (!idToken) {
+  //     setApiError('Google sign-in failed. Please try again.');
+  //     setGoogleLoading(false);
+  //     return;
+  //   }
+  //   setLoading(true);
+  //   setApiError('');
+  //   loginWithGoogle(idToken).then(async (result) => {
+  //     setLoading(false);
+  //     setGoogleLoading(false);
+  //     if (result.error) { setApiError(result.error); return; }
+  //     setLoggedIn(true);
+  //     if (result.user) setUser(result.user);
+  //     await hydrate();
+  //     nav.replace('Home');
+  //   });
+  // }, [googleResponse]);
 
   const splashFade = useRef(new Animated.Value(0)).current;
   const splashTranslate = useRef(new Animated.Value(8)).current;
@@ -638,7 +659,7 @@ export function AuthScreen() {
             </View>
             {/* Trail path draws first, then cairn stacks up */}
             <View style={{ position: 'relative', alignItems: 'center' }}>
-              <AnimatedCairn onComplete={animateWordmark} />
+              <AnimatedCairn onComplete={animateWordmark} staticMode={true} />
             </View>
             {/* Wordmark fades in after cairn completes */}
             <Animated.Text style={[styles.appName, {
