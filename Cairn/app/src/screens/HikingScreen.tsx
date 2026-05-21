@@ -137,6 +137,43 @@ function CompassNeedle({ heading, size = 22 }: { heading: number | null; size?: 
   );
 }
 
+// ── Compass rose (closed-lid state) ──────────────────────────────────────
+// A static traditional compass face — bezel ring, four cardinal tick
+// marks, and a four-pointed rose with a dominant red north petal.
+// Speaks the same SVG dialect as CairnLogo / FlagMarkerIcon (filled
+// shapes + opacity layering for depth) instead of being a thin lucide
+// outline icon. This is what users see when the compass lid is
+// "closed" — it's still recognisably a compass, just not actively
+// reading the magnetometer.
+function CompassRose({ size = 22 }: { size?: number }) {
+  return (
+    <View style={{ width: size + 8, height: size + 8, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{
+        position: 'absolute', top: -2,
+        fontSize: 8, fontWeight: '800', color: Colors.textPrimary, letterSpacing: 0.5,
+      }}>N</Text>
+      <Svg width={size} height={size} viewBox="0 0 24 24">
+        {/* Bezel ring */}
+        <SvgCircle cx="12" cy="12" r="10" stroke={Colors.primary} strokeWidth={1.2} fill="none" opacity={0.4} />
+        {/* Cardinal tick marks at 12 / 3 / 6 / 9 o'clock */}
+        <Path d="M 12 2 L 12 3.5 M 12 20.5 L 12 22 M 2 12 L 3.5 12 M 20.5 12 L 22 12"
+              stroke={Colors.primary} strokeWidth={1.5} opacity={0.6} />
+        {/* North petal — dominant red, anchors which way is north */}
+        <Path d="M 12 4 L 14 12 L 12 12 L 10 12 Z" fill="#d63031" />
+        <Path d="M 12 4 L 14 12 L 12 12 L 10 12 Z" stroke="#fff" strokeWidth={0.4} fill="none" opacity={0.5} />
+        {/* South petal — primary green, dimmer */}
+        <Path d="M 12 20 L 14 12 L 12 12 L 10 12 Z" fill={Colors.primary} fillOpacity={0.55} />
+        {/* East petal — secondary direction */}
+        <Path d="M 20 12 L 12 14 L 12 12 L 12 10 Z" fill={Colors.primary} fillOpacity={0.32} />
+        {/* West petal */}
+        <Path d="M 4 12 L 12 14 L 12 12 L 12 10 Z" fill={Colors.primary} fillOpacity={0.32} />
+        {/* Centre pivot */}
+        <SvgCircle cx="12" cy="12" r="1.6" fill="#1f2937" />
+      </Svg>
+    </View>
+  );
+}
+
 // ── Map component (real Mapbox or fallback) ─────────────────────────────
 function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStart, userPos, instantCamera }: {
   markers: Marker[];
@@ -169,17 +206,21 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
     }] : [],
   };
 
-  // Imperative camera ref — used to forcefully snap the camera to the
-  // user's position on resume, bypassing the followUserLocation
-  // auto-fly-to-puck animation that runs even when defaultSettings is
-  // provided. Without this, "Resume" still flies in from globe view.
+  // Imperative camera control — bypasses Mapbox's followUserLocation
+  // tap-cancel behaviour. Two distinct flows:
+  //
+  //   • instantCamera (resume / re-entry with known userPos): snap
+  //     immediately, no animation.
+  //   • fresh hike (instantCamera=false): once userPos arrives, run a
+  //     single imperative flyTo. This DOES NOT get cancelled by a user
+  //     tap the way followUserLocation's auto-fly-to-puck does — the
+  //     SDK only auto-cancels follow animations, not animations the
+  //     consumer asked for via setCamera. After the fly-in completes,
+  //     followUserLocation engages so the camera tracks the puck.
   const cameraRef = useRef<any>(null);
+  const [flyInDone, setFlyInDone] = useState(instantCamera);
 
-  // When in instant mode (resume / re-entry with a known location),
-  // skip Mapbox's followUserLocation entirely. Manually set the camera
-  // to the user's position with animation off, then update on every
-  // userPos change to track. For first-launch new hike, fall through
-  // to followUserLocation with a fly-in.
+  // Instant snap on resume / re-entry
   useEffect(() => {
     if (!instantCamera || !userPos || !cameraRef.current) return;
     cameraRef.current.setCamera({
@@ -190,22 +231,25 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
     });
   }, [instantCamera, userPos?.lat, userPos?.lng]);
 
-  // During the welcome fly-in, gestures must be disabled so that an
-  // accidental tap (e.g. user reaching for the Stop button before the
-  // animation finishes) doesn't cancel the camera mid-flight. After
-  // the fly-in completes (or immediately when instantCamera) we
-  // re-enable gestures.
-  const [gesturesEnabled, setGesturesEnabled] = useState(instantCamera);
+  // First-launch fly-in (imperative, not cancellable by tap)
   useEffect(() => {
     if (instantCamera) {
-      setGesturesEnabled(true);
+      // Resume case — flyInDone starts true via useState initializer
       return;
     }
-    setGesturesEnabled(false);
-    // 600ms fly-in duration + 100ms safety buffer
-    const t = setTimeout(() => setGesturesEnabled(true), 700);
+    if (flyInDone || !userPos || !cameraRef.current) return;
+    cameraRef.current.setCamera({
+      centerCoordinate: [userPos.lng, userPos.lat],
+      zoomLevel: 15,
+      animationMode: 'flyTo',
+      animationDuration: 600,
+    });
+    // 700ms = 600ms animation + 100ms safety, then engage
+    // followUserLocation so the camera stays on the puck as the user
+    // moves.
+    const t = setTimeout(() => setFlyInDone(true), 700);
     return () => clearTimeout(t);
-  }, [instantCamera]);
+  }, [instantCamera, userPos?.lat, userPos?.lng, flyInDone]);
 
   // Fallback when Mapbox not available
   if (!MapView) {
@@ -245,29 +289,19 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
         // SOS (centre) and Place Flag (right). showCompass is also
         // gated on tracking state so a fresh map screen isn't cluttered.
         compassEnabled={false}
-        // Disable gestures during the fly-in so a stray tap doesn't
-        // freeze the camera mid-animation. Tapping anywhere on the
-        // map during a Mapbox flyTo cancels the animation by default.
-        scrollEnabled={gesturesEnabled}
-        zoomEnabled={gesturesEnabled}
-        rotateEnabled={gesturesEnabled}
-        pitchEnabled={gesturesEnabled}
         scaleBarEnabled={false}
       >
         <CameraComponent
           ref={cameraRef}
-          // Only auto-follow on first-launch new hikes. Resume mode
-          // uses the imperative cameraRef.setCamera in the useEffect
-          // above to keep the camera locked on the user without
-          // Mapbox's globe-zoom-in animation.
-          followUserLocation={!instantCamera}
+          // followUserLocation only engages AFTER the fly-in completes
+          // (or immediately on resume). During the fly-in, the camera
+          // is driven by an imperative cameraRef.setCamera call (see
+          // useEffect above) — followUserLocation runs its own auto
+          // fly-to-puck animation that gets cancelled by user taps,
+          // which is exactly the bug we're avoiding.
+          followUserLocation={flyInDone}
           followZoomLevel={15}
           followPitch={0}
-          animationDuration={instantCamera ? 0 : 600}
-          animationMode={instantCamera ? 'none' : 'flyTo'}
-          defaultSettings={instantCamera && userPos
-            ? { centerCoordinate: [userPos.lng, userPos.lat], zoomLevel: 15 }
-            : undefined}
         />
         <UserLocationComponent visible={true} renderMode="native" />
 
@@ -356,21 +390,6 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
           </PointAnnotation>
         ))}
       </MapView>
-      {/* Touch shield during the welcome fly-in. Absolutely positioned
-          over the map and intercepts all touches so Mapbox's native
-          gesture handler can't cancel the running camera animation
-          when the user taps anywhere on the map area. Removed the
-          moment fly-in completes (gesturesEnabled flips to true).
-          The Stop / Compass / Flag buttons sit in their own absolute
-          overlays ABOVE this shield in the JSX tree, so they remain
-          tappable. */}
-      {!gesturesEnabled && (
-        <View
-          style={StyleSheet.absoluteFillObject}
-          // pointerEvents: 'auto' (the React Native default) — every
-          // touch on this view is consumed and never reaches MapView.
-        />
-      )}
     </View>
   );
 }
@@ -1107,11 +1126,12 @@ export function HikingScreen() {
                   // moving.
                   <CompassNeedle heading={heading} size={22} />
                 ) : (
-                  // "Closed lid" state — sensor off, but the icon
-                  // still uses the primary colour so users can tell
-                  // it's an interactive compass button (not a broken
-                  // greyed-out element). Tap to open the lid.
-                  <Icon name="Compass" size={22} color={Colors.primary} strokeWidth={2} />
+                  // Closed-lid state — static compass rose with red
+                  // north petal, primary-green south, dim east/west,
+                  // bezel ring, cardinal ticks. Reads as a tactile
+                  // compass face at rest, not a generic UI icon.
+                  // Tap to open the lid.
+                  <CompassRose size={22} />
                 )}
               </TouchableOpacity>
             </View>
