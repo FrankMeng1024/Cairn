@@ -38,23 +38,35 @@ function getGreeting(mode: 'beginner' | 'expert') {
   return `Good evening, ${label}`;
 }
 
-// ── Live session banner — visible while a hike/run is recording ─────────
-// Lets the user navigate back to the in-progress session from anywhere.
-// Fixes the "I pressed Back from Hiking and Home shows my last session
-// instead of the one I'm doing now" bug.
-function LiveSessionBanner() {
+// ── Recent / Live activity row ───────────────────────────────────────────
+// Single row that occupies one fixed slot on the home dashboard.
+//   • If a hike/run is actively recording → show "Hiking in progress" with
+//     live distance + duration, tap → resume the in-progress screen.
+//     Replaces (does NOT stack on top of) the most-recent-activity row,
+//     so the user sees one row in one position no matter the state.
+//   • Else if the most recent activity was within 24h → show it.
+//   • Else render nothing.
+// This unification fixes the "stacked Resume + Last activity" duplication
+// reported on V8.
+function RecentRow({ onPress }: { onPress: (id: string) => void }) {
+  const sessions = useSessionStore(s => s.sessions);
   const status = useTrackingStore(s => s.status);
-  const activityMode = useTrackingStore(s => s.activityMode);
-  const distanceM = useTrackingStore(s => s.distanceM);
-  const durationS = useTrackingStore(s => s.durationS);
+  const liveActivityMode = useTrackingStore(s => s.activityMode);
+  const liveDistanceM = useTrackingStore(s => s.distanceM);
+  const liveDurationS = useTrackingStore(s => s.durationS);
   const nav = useNavigation<Nav>();
   const pulse = useRef(new Animated.Value(1)).current;
 
+  // Pulse the dot when live so the row visually communicates "this is
+  // moving right now" rather than feeling identical to a stale entry.
   useEffect(() => {
-    if (status !== 'tracking') return;
+    if (status !== 'tracking') {
+      pulse.setValue(1);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.04, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1.4, duration: 900, useNativeDriver: true }),
         Animated.timing(pulse, { toValue: 1.0, duration: 900, useNativeDriver: true }),
       ]),
     );
@@ -62,45 +74,45 @@ function LiveSessionBanner() {
     return () => loop.stop();
   }, [status]);
 
-  if (status !== 'tracking') return null;
-  const isRun = activityMode === 'running';
-  const accent = isRun ? Colors.running : Colors.primary;
-  const bg = isRun ? Colors.runningLight : Colors.primaryLight;
-  const label = isRun ? 'Running' : 'Hiking';
-  const target = isRun ? 'Running' : 'Hiking';
-  return (
-    <Animated.View style={[liveStyles.row, { transform: [{ scale: pulse }] }]}>
+  // ── Live mode ──
+  if (status === 'tracking') {
+    const isRun = liveActivityMode === 'running';
+    const accent = isRun ? Colors.running : Colors.primary;
+    const bg = isRun ? Colors.runningLight : Colors.primaryLight;
+    const label = isRun ? 'Running' : 'Hiking';
+    const target = isRun ? 'Running' : 'Hiking';
+    return (
       <TouchableOpacity
-        style={liveStyles.touch}
-        activeOpacity={0.85}
+        style={recentStyles.row}
         onPress={() => nav.navigate(target as any)}
+        activeOpacity={0.85}
       >
-        <View style={[liveStyles.dot, { backgroundColor: accent }]} />
-        <View style={liveStyles.textGroup}>
-          <Text style={[liveStyles.label, { color: accent }]}>{label} in progress</Text>
-          <Text style={liveStyles.meta}>
-            {`${formatDistance(distanceM, 'km', 2)} km · ${formatDuration(durationS)}`}
+        <Animated.View
+          style={[recentStyles.dot, { backgroundColor: bg, transform: [{ scale: pulse }] }]}
+        >
+          {isRun
+            ? <RunningIcon size={14} color={accent} />
+            : <HikingIcon size={14} color={accent} />
+          }
+        </Animated.View>
+        <View style={recentStyles.textGroup}>
+          <Text style={[recentStyles.badge, { color: accent }]}>{label} in progress</Text>
+          <Text style={recentStyles.stat}>
+            {`${formatDistance(liveDistanceM, 'km', 2)} km · ${formatDuration(liveDurationS)}`}
           </Text>
         </View>
-        <View style={[liveStyles.cta, { backgroundColor: bg }]}>
-          <Text style={[liveStyles.ctaText, { color: accent }]}>Resume</Text>
-          <Icon name="ChevronRight" size={14} color={accent} strokeWidth={2.5} />
-        </View>
+        <Text style={[recentStyles.when, { color: accent, fontWeight: '700' }]}>Resume</Text>
+        <Icon name="ChevronRight" size={14} color={accent} strokeWidth={2.5} />
       </TouchableOpacity>
-    </Animated.View>
-  );
-}
+    );
+  }
 
-// ── Compact recent activity row — placed ABOVE cards ─────────────────────────
-function RecentRow({ onPress }: { onPress: (id: string) => void }) {
-  const sessions = useSessionStore(s => s.sessions);
+  // ── Last activity mode (only within 24h) ──
   if (sessions.length === 0) return null;
-
   const last = sessions.reduce((best, s) => s.startedAt > best.startedAt ? s : best);
-  // Only surface activities started in the last 24 hours — anything older
-  // belongs in the Routes / Activities tab, not on the home dashboard.
   const ageMs = Date.now() - last.startedAt;
   if (ageMs > 24 * 60 * 60 * 1000) return null;
+
   const isRun = last.activityMode === 'running';
   const accent = isRun ? Colors.running : Colors.primary;
   const bg = isRun ? Colors.runningLight : Colors.primaryLight;
@@ -250,12 +262,6 @@ export function HomeScreen() {
           <Text style={styles.greeting}>{getGreeting(uiMode)}</Text>
         </View>
 
-        {/* Live in-progress banner — only shows while a hike/run is
-            actively recording. Tapping it returns the user to that
-            screen. Sits above the stats strip so it's the first thing
-            the eye lands on. */}
-        <LiveSessionBanner />
-
         {/* Stats strip — only when data exists */}
         {hasData && (
           <View style={styles.statsRow}>
@@ -388,33 +394,6 @@ const cardStyles = StyleSheet.create({
     flexShrink: 0,
     backgroundColor: 'rgba(255,255,255,0.6)',
   },
-});
-
-const liveStyles = StyleSheet.create({
-  row: {
-    marginVertical: Spacing.xs,
-  },
-  touch: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: '#FFFFFF',
-    borderRadius: Radius.card,
-    paddingHorizontal: Spacing.base, paddingVertical: 12,
-    borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.10, shadowRadius: 12, elevation: 4,
-  },
-  dot: {
-    width: 10, height: 10, borderRadius: 5,
-  },
-  textGroup: { flex: 1, gap: 2 },
-  label: { fontSize: FontSize.small, fontWeight: '700', letterSpacing: 0.2 },
-  meta: { fontSize: FontSize.small, color: Colors.textSecondary, fontWeight: '500' },
-  cta: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: Radius.pill,
-  },
-  ctaText: { fontSize: FontSize.small, fontWeight: '700' },
 });
 
 const recentStyles = StyleSheet.create({

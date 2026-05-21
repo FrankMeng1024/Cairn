@@ -19,6 +19,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -33,8 +34,6 @@ import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../componen
 import { Icon, type IconName } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
 import { PressBtn } from '../components/PressBtn';
-import { GPSStatusBar } from '../components/GPSStatusBar';
-import { SOSButton } from '../components/SOSButton';
 import { MARKER_META, type MarkerType } from '../data/mockData';
 import type { Marker } from '../store/useMarkerStore';
 
@@ -107,7 +106,7 @@ if (Platform.OS !== 'web') {
 }
 
 // ── Map component (real Mapbox or fallback) ─────────────────────────────
-function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStart, userPos }: {
+function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStart, userPos, instantCamera }: {
   markers: Marker[];
   trackPoints: Array<{ lat: number; lng: number }>;
   onMarkerPress: (id: string) => void;
@@ -118,6 +117,10 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
   // user can see how far away the trailhead is.
   routeStart?: { lat: number; lng: number } | null;
   userPos?: { lat: number; lng: number } | null;
+  // When true, skip the camera fly-in animation. Used when resuming
+  // an in-progress hike — the user already knows where they are, the
+  // 1-second zoom-in feels slow.
+  instantCamera?: boolean;
 }) {
   const region = getCurrentRegion();
 
@@ -178,7 +181,10 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
           followUserLocation={true}
           followZoomLevel={15}
           followPitch={0}
-          animationDuration={1000}
+          // 1s zoom-in is delightful on first launch but slow when
+          // resuming an in-progress hike — instantly snap to the
+          // user's location instead.
+          animationDuration={instantCamera ? 0 : 1000}
         />
         <UserLocationComponent visible={true} renderMode="native" />
 
@@ -553,6 +559,46 @@ export function HikingScreen() {
 
   useEffect(() => { loadRoutes(); }, []);
 
+  // Pre-fetch a one-shot GPS fix on enter so the route picker can show
+  // accurate distance-from-start labels and apply the "too far" filter
+  // even before tracking starts. Without this, lastCoordinate is null
+  // until startTracking, which is why the > 25km dim/disable logic was
+  // visibly inactive on V8.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (!perm.granted) {
+          const req = await Location.requestForegroundPermissionsAsync();
+          if (!req.granted) return;
+        }
+        const fix = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        // Only seed lastCoordinate when no tracking session is active —
+        // an active session has its own watchPositionAsync stream and
+        // we don't want to clobber a fresher value.
+        const cur = useTrackingStore.getState();
+        if (cur.status !== 'tracking') {
+          useTrackingStore.setState({
+            lastCoordinate: {
+              lat: fix.coords.latitude,
+              lng: fix.coords.longitude,
+              alt: fix.coords.altitude ?? null,
+            },
+            lastCoordinateTime: Date.now(),
+          });
+        }
+      } catch {
+        // Permission denied or position unavailable — distance labels
+        // will fall back to "no GPS" rendering. Non-fatal.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // Sync phase with tracking status: if a hike is in progress (e.g. user
   // navigated away with the hike still running), show tracking UI; otherwise
   // show the route picker.
@@ -782,6 +828,11 @@ export function HikingScreen() {
           ? { lat: routePolyline[0].lat, lng: routePolyline[0].lng }
           : null}
         userPos={lastCoordinate ? { lat: lastCoordinate.lat, lng: lastCoordinate.lng } : null}
+        // Resume vs first-entry: if there are already track points or
+        // a known last coordinate from a tracking session that's still
+        // active, snap the camera instantly. Otherwise the 1s fly-in
+        // is the intended welcoming animation.
+        instantCamera={isTracking && (trackPoints.length > 0 || lastCoordinate != null)}
       />
 
       {/* Top overlay: back button (left) + GPS chip (right). Uses
@@ -882,42 +933,30 @@ export function HikingScreen() {
             </Animated.View>
           </View>
         ) : (
-          // Tracking: 3 evenly-spaced controls. Compass left, SOS centre,
-          // Place Flag right — each gets its own column so nothing
-          // overlaps and the FAB never hugs the screen edge.
-          <View style={styles.controlRow}>
-            <View style={styles.controlSlot}>
-              <View style={styles.compassChip}>
-                <Icon name="Compass" size={20} color={Colors.primary} strokeWidth={2} />
-              </View>
-            </View>
-            <View style={styles.controlSlot}>
-              {lastCoordinate && (
-                <SOSButton
-                  lat={lastCoordinate.lat}
-                  lng={lastCoordinate.lng}
-                  accuracy={10}
-                />
-              )}
-            </View>
-            <View style={styles.controlSlot}>
-              <Animated.View style={{ transform: [{ scale: fabScale }] }}>
-                <TouchableOpacity
-                  style={styles.fab}
-                  onPress={() => nav.navigate('AR')}
-                  activeOpacity={1}
-                  onPressIn={() => springIn(fabScale)}
-                  onPressOut={() => springOut(fabScale)}
-                >
-                  <Icon name="Flag" size={IconSize.md} color="#fff" strokeWidth={2} />
-                  {markers.length > 0 && (
-                    <View style={styles.fabBadge}>
-                      <Text style={styles.fabBadgeText}>{markers.length}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
+          // Tracking: just the Place Flag FAB, centred. Compass and
+          // SOS are temporarily hidden — compass had no real action
+          // wired (it was a tap-to-haptic placeholder, which the user
+          // correctly flagged as "non-functional"), and the SOS
+          // not-configured state was confusing without the
+          // emergency-contacts setup flow. Both will return when
+          // their respective interactions are properly designed.
+          <View style={[styles.controlRow, { justifyContent: 'center' }]}>
+            <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+              <TouchableOpacity
+                style={styles.circleBtnPrimary}
+                onPress={() => nav.navigate('AR')}
+                activeOpacity={1}
+                onPressIn={() => springIn(fabScale)}
+                onPressOut={() => springOut(fabScale)}
+              >
+                <Icon name="Flag" size={22} color="#fff" strokeWidth={2} />
+                {markers.length > 0 && (
+                  <View style={styles.fabBadge}>
+                    <Text style={styles.fabBadgeText}>{markers.length}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
           </View>
         )}
       </View>
@@ -1141,9 +1180,13 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: Colors.primary,
   },
   trackingStat: { alignItems: 'center', flex: 1 },
-  trackingValueLg: { fontSize: FontSize.h2, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
-  trackingValue: { fontSize: FontSize.caption, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
-  trackingUnit: { fontSize: FontSize.tiny, color: Colors.textSecondary, marginTop: 1 },
+  // Tracking stats panel — value sizes were uneven before (h2 for
+  // distance, caption for time/elev) which read as a typographic bug.
+  // Now: all three values share the same size so the user reads them
+  // as a coherent set.
+  trackingValueLg: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'], lineHeight: 26 },
+  trackingValue: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'], lineHeight: 26 },
+  trackingUnit: { fontSize: 11, color: Colors.textSecondary, marginTop: 1, fontWeight: '500', letterSpacing: 0.2 },
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
   routeSwitchBtn: {
     width: 28, height: 28, borderRadius: 14,
@@ -1172,6 +1215,24 @@ const styles = StyleSheet.create({
   },
   controlSlot: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
+  },
+  // Two control buttons share one consistent shape — 56x56 circles —
+  // so the layout reads as a coherent pair instead of three random
+  // sizes (the previous compass chip + 180-wide SOS pill + 60 FAB
+  // looked broken).
+  circleBtn: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10, shadowRadius: 12, elevation: 4,
+  },
+  circleBtnPrimary: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: Colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+    ...Shadow.fab,
   },
   // Compass chip — bottom-left slot, mirrors the GPS chip in the top
   // overlay (same shadow, border, surface colour) so the page reads as

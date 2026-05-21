@@ -14,6 +14,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Platform, FlatList, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useRouteStore } from '../store/useRouteStore';
@@ -59,6 +60,10 @@ interface WaypointDraft {
 export function RouteEditorScreen() {
   const nav = useNavigation();
   const insets = useSafeAreaInsets();
+  // Subscribe to lastCoordinate (don't just read it once via .getState())
+  // so the camera + search both re-evaluate when the GPS prime resolves
+  // a few seconds after mount.
+  const userCoord = useTrackingStore(s => s.lastCoordinate);
   const route = useRoute<any>();
   const routeId = route.params?.routeId as string | undefined;
   const fromSessionId = route.params?.fromSessionId as string | undefined;
@@ -71,6 +76,63 @@ export function RouteEditorScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ name: string; subtitle?: string | null; lat: number; lng: number }>>([]);
   const [showSearch, setShowSearch] = useState(false);
+  // Tracks the in-flight geocoding request so debounced typing can
+  // cancel a stale request before its results overwrite a newer one
+  // (race condition: "shang" results landing after "shanghai" results).
+  const searchAbortRef = useRef<AbortController | null>(null);
+
+  // Pre-fetch a one-shot GPS fix on enter so the editor opens centred
+  // on the user's actual location and the geocoding bias / country
+  // detection have a real coordinate to work from. Without this the
+  // editor falls back to the configured region centre (NZ) — wrong
+  // for a user testing in another country.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (!perm.granted) {
+          const req = await Location.requestForegroundPermissionsAsync();
+          if (!req.granted) return;
+        }
+        const fix = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        const cur = useTrackingStore.getState();
+        if (cur.status !== 'tracking') {
+          useTrackingStore.setState({
+            lastCoordinate: {
+              lat: fix.coords.latitude,
+              lng: fix.coords.longitude,
+              alt: fix.coords.altitude ?? null,
+            },
+            lastCoordinateTime: Date.now(),
+          });
+        }
+      } catch {
+        // GPS unavailable — fall back to region centre.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Debounced live-search: as the user types, fire handleSearch 400ms
+  // after the last keystroke. Means they don't have to tap the search
+  // button — typing "shang" surfaces matches automatically. 400ms is
+  // long enough that a fast typist doesn't trigger an in-flight
+  // request per keystroke.
+  useEffect(() => {
+    if (!showSearch) return;
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      handleSearch();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery, showSearch]);
 
   // Load existing route OR session data on mount
   useEffect(() => {
@@ -175,6 +237,14 @@ export function RouteEditorScreen() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim() || !MAPBOX_TOKEN) return;
+    // Cancel any prior in-flight search before starting a new one.
+    // Without this, rapid typing can result in stale results
+    // overwriting fresh ones (typed "shang" → "shanghai" → both
+    // requests in flight; "shang" returns last and overwrites the
+    // narrower "shanghai" results).
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
     try {
       // ── Geocoding strategy (modeled after Google Places best practices) ──
       // 1. Bias by the user's live GPS (proximity). Falls back to the
@@ -213,6 +283,7 @@ export function RouteEditorScreen() {
             types: 'country',
             limit: '1',
           }).toString(),
+          { signal: controller.signal },
         );
         const revData = await revRes.json();
         const cc = revData?.features?.[0]?.properties?.short_code as string | undefined;
@@ -247,8 +318,14 @@ export function RouteEditorScreen() {
       if (countryCode) params.append('country', countryCode.toLowerCase());
 
       const res = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?${params.toString()}`
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?${params.toString()}`,
+        { signal: controller.signal },
       );
+      // If a newer query has fired since we started this request, drop
+      // these results on the floor — abort() above already prevented
+      // the next-query handler from being affected by us, but we may
+      // still have parsed a stale response before the abort landed.
+      if (controller.signal.aborted) return;
       const data = await res.json();
       const results = (data.features || []).map((f: any) => {
         // English-first display: prefer place_name_en when Mapbox
@@ -266,7 +343,10 @@ export function RouteEditorScreen() {
         };
       });
       setSearchResults(results);
-    } catch {
+    } catch (err: any) {
+      // AbortError when a newer query took over — leave the existing
+      // results alone; the new query will populate setSearchResults.
+      if (err?.name === 'AbortError') return;
       setSearchResults([]);
     }
   };
@@ -300,15 +380,37 @@ export function RouteEditorScreen() {
             {CameraComponent && (() => {
               const region = getCurrentRegion();
               const last = waypoints[waypoints.length - 1];
+              // Camera centring priority:
+              //  1. Last waypoint placed (zoom 13) — keeps the editor
+              //     camera following what the user is editing.
+              //  2. User's current GPS (zoom 14) — opens the editor
+              //     centred on the user's actual location, the right
+              //     starting point for "I want to plan a route from
+              //     where I am right now". userCoord is reactive so
+              //     when the GPS prime resolves a few seconds after
+              //     mount the camera updates without a manual refresh.
+              //  3. Region centre at default zoom — only when GPS is
+              //     unavailable (cold start, permission denied).
               const center: [number, number] = last
                 ? [last.lng, last.lat]
-                : [region.centerLng, region.centerLat];
-              const zoom = waypoints.length > 0 ? 13 : region.defaultZoom;
+                : userCoord
+                  ? [userCoord.lng, userCoord.lat]
+                  : [region.centerLng, region.centerLat];
+              const zoom = waypoints.length > 0
+                ? 13
+                : userCoord
+                  ? 14
+                  : region.defaultZoom;
+              // Snap instantly when there are no waypoints yet — the
+              // user expects the editor to "open at" their location,
+              // not animate there. Animate during waypoint placement
+              // so the camera follow feels natural.
+              const dur = waypoints.length > 0 ? 300 : 0;
               return (
                 <CameraComponent
                   centerCoordinate={center}
                   zoomLevel={zoom}
-                  animationDuration={300}
+                  animationDuration={dur}
                 />
               );
             })()}
