@@ -703,11 +703,11 @@ export function AuthScreen() {
             </View>
           </View>
           {/* OTA status — absolutely positioned just above the CTA buttons
-              so it never shifts the logo / wordmark when it appears. Hidden
-              when the app is up to date — only shows during/after an
-              actual update. */}
+              so it never shifts the logo / wordmark when state changes.
+              Always visible: shows "Up to date" when current, "Downloading
+              update" while fetching, "Done · tap to restart" when ready. */}
           <View style={styles.splashOtaWrap} pointerEvents="box-none">
-            <OtaBadge inline idleHidden />
+            <OtaBadge inline />
           </View>
           {/* CTA buttons */}
           <View style={styles.splashActions}>

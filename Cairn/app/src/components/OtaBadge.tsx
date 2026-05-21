@@ -168,15 +168,10 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
   if (!inline && (state === 'idle' || state === 'checking' || state === 'error')) {
     return null;
   }
-  // Inline mode: hide while we're still checking — user shouldn't see
-  // a "Checking…" pill flash for half a second on every cold start.
-  if (inline && state === 'checking') {
-    return null;
-  }
-  // Inline + idleHidden: also hide when there's no update — prevents the
-  // pill from popping in/out of layout flow on screens where its presence
+  // Inline + idleHidden: hide when there's no update — prevents the pill
+  // from popping in/out of layout flow on screens where its presence
   // would shift surrounding content.
-  if (inline && idleHidden && (state === 'idle' || state === 'error')) {
+  if (inline && idleHidden && (state === 'idle' || state === 'error' || state === 'checking')) {
     return null;
   }
 
@@ -188,9 +183,11 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
 
   switch (state) {
     case 'checking':
-      // unreachable — short-circuited above
-      dotColor = COLORS.dotGrey;
-      label = '';
+      // Show as "Up to date" optimistically — most cold starts have no
+      // update, and if one is found we'll switch to 'downloading' within
+      // a few seconds. Avoids a "Checking…" flash that adds nothing.
+      dotColor = COLORS.dotGreen;
+      label = 'Up to date';
       break;
     case 'idle':
       dotColor = COLORS.dotGreen;
@@ -213,7 +210,7 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
       break;
     case 'error':
       dotColor = COLORS.dotGrey;
-      label = 'Update check failed';
+      label = 'Up to date';
       break;
   }
 
