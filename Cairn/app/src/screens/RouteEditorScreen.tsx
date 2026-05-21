@@ -18,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useRouteStore } from '../store/useRouteStore';
 import { useSessionStore, loadTrackPoints } from '../store/useSessionStore';
+import { useTrackingStore } from '../store/useTrackingStore';
 import { haversineM, formatDistance } from '../utils/geo';
 import { getCurrentRegion } from '../config/regions';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
@@ -176,16 +177,20 @@ export function RouteEditorScreen() {
     if (!searchQuery.trim() || !MAPBOX_TOKEN) return;
     try {
       // Pass language=zh-Hans alongside the default so Mapbox surfaces
-      // Chinese place names; pass proximity (bias by current region
-      // centre) so results are weighted toward where the user is hiking
-      // rather than scattered globally — critical for short queries
-      // like "公园" that match thousands of places worldwide.
+      // Chinese place names; pass proximity (bias by the user's current
+      // GPS, falling back to region centre) so results are weighted
+      // toward where the user is actually standing rather than scattered
+      // globally — critical for short queries like "公园" that match
+      // thousands of places worldwide.
+      const userCoord = useTrackingStore.getState().lastCoordinate;
       const region = getCurrentRegion();
+      const proxLng = userCoord?.lng ?? region.centerLng;
+      const proxLat = userCoord?.lat ?? region.centerLat;
       const params = new URLSearchParams({
         access_token: MAPBOX_TOKEN,
         limit: '8',
         language: 'zh-Hans,en',
-        proximity: `${region.centerLng},${region.centerLat}`,
+        proximity: `${proxLng},${proxLat}`,
       });
       const res = await fetch(
         `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?${params.toString()}`
