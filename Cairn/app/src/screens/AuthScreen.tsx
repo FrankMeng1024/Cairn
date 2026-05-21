@@ -648,7 +648,6 @@ export function AuthScreen() {
   if (view === 'splash') {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <OtaBadge />
       <Animated.View style={[styles.splashInner, { opacity: splashFade, transform: [{ translateY: splashTranslate }] }]}>
           {/* Hero area */}
           <View style={styles.logoArea}>
@@ -704,7 +703,6 @@ export function AuthScreen() {
   if (view === 'verify') {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-        <OtaBadge />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={formStyles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
@@ -805,7 +803,6 @@ export function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <OtaBadge />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={formStyles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
@@ -814,14 +811,20 @@ export function AuthScreen() {
             <Text style={formStyles.backText}>Back</Text>
           </TouchableOpacity>
 
+          {/* OTA status — sits above the title, always visible. Auto-checks
+              on mount, auto-downloads if there's an update, then prompts
+              the user to restart when the bundle is ready. */}
+          <View style={{ marginBottom: Spacing.md }}>
+            <OtaBadge inline />
+          </View>
+
           {/* Title row: small icon inline-left of title */}
           <View style={formStyles.titleRow}>
             {/* CairnLogo's viewBox has asymmetric vertical padding (7.8u top
-                vs 0.6u bottom out of 24u). Without compensation the cairn
-                visually sits below the title baseline. Pull it up so the
-                top stone aligns with the title's cap height and the base
-                stone with its descender. */}
-            <View style={{ marginTop: -6 }}>
+                vs 0.6u bottom out of 24u) AND its stones are top-light /
+                bottom-heavy. Pull it up so the cairn visually sits with
+                the title's optical center, not the geometric one. */}
+            <View style={{ marginTop: -9 }}>
               <CairnLogo size={28} />
             </View>
             <Text style={formStyles.title}>{isRegister ? 'Create Account' : 'Sign In'}</Text>
@@ -999,7 +1002,7 @@ const styles = StyleSheet.create({
   },
   logoArea: {
     flex: 1, justifyContent: 'center', alignItems: 'center',
-    gap: Spacing.xs,
+    gap: Spacing.md,
     minHeight: SCREEN_H * 0.42,
   },
   logoGlowWrap: {
@@ -1012,7 +1015,7 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontSize: 56, fontWeight: '900', color: Colors.textPrimary,
-    letterSpacing: -2.5, marginTop: -12,
+    letterSpacing: -2.5, marginTop: -2,
   },
   taglineWrap: { alignItems: 'center', gap: 2 },
   tagline: {
@@ -1043,7 +1046,7 @@ const formStyles = StyleSheet.create({
 
   // Title row: icon inline-left of title text
   titleRow: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.xs,
     marginBottom: Spacing.xs,
   },
   title: { fontSize: FontSize.h1, fontWeight: '800', color: Colors.textPrimary },

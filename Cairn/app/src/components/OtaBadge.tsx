@@ -1,17 +1,19 @@
 /**
  * OtaBadge — production-grade OTA status pill.
  *
- * Visibility rule (per user request):
- *   • No update → COMPLETELY HIDDEN (no version display, no idle pill)
- *   • Update detected → SHOW persistently top-right until applied
- *   • While downloading → spinner + label
- *   • When ready → amber pulse, tappable
- *   • User taps → modal "Update now / Later"
- *   • Update now → spinner → reload
- *   • Later → stays as small "Update pending" dot until tapped again
+ * Two display modes:
+ *   • Default (floating top-right) — used on screens like Home where there
+ *     is no natural slot for an inline badge. Hidden when up-to-date.
+ *   • inline=true — renders inline (caller positions it). Always visible:
+ *     shows "Up to date" when no update, "Updating…" while downloading,
+ *     and "Update ready · tap to restart" when a downloaded update is
+ *     waiting. Used on AuthScreen above the Sign In title.
  *
- * Mount on every primary screen (Home, Auth, Settings, etc.) so the
- * badge follows the user wherever they go after launch.
+ * Behaviour:
+ *   - Auto-checks expo-updates on mount
+ *   - Auto-downloads when an update is available (no user prompt)
+ *   - Once downloaded → shows "Update ready" pill that user taps to apply
+ *   - Tap → modal "Restart now / Later" (inline mode) or direct restart
  *
  * Lazy-loads expo-updates so a missing module doesn't crash the screen.
  */
@@ -23,12 +25,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type OtaState =
-  | 'hidden'        // no update / not yet checked — render nothing
-  | 'checking'      // brief — only if we want to show "checking" UI; hidden by default
-  | 'downloading'   // spinner + "Downloading"
-  | 'ready'         // amber pulse, tappable, "Update available"
-  | 'applying'      // spinner + "Applying"
-  | 'pending';      // user chose Later — small dot, persists
+  | 'idle'          // checked, no update — "Up to date"
+  | 'checking'      // initial check in progress
+  | 'downloading'   // update found, fetching bundle
+  | 'ready'         // bundle downloaded, waiting for user to restart
+  | 'applying'      // user tapped restart
+  | 'error';        // network / OTA failure (inline mode only — floating mode hides)
 
 const COLORS = {
   bg: 'rgba(255,255,255,0.96)',
@@ -38,14 +40,24 @@ const COLORS = {
   dotBlue: '#3B82F6',
   dotAmber: '#F59E0B',
   dotGreen: '#10B981',
+  dotGrey: '#9CA3AF',
   ctaBg: '#5d7c46',
   ctaText: '#FFFFFF',
 };
 
-export function OtaBadge() {
-  const [state, setState] = useState<OtaState>('hidden');
+interface Props {
+  /**
+   * inline=true: render inline (no absolute positioning), always visible.
+   * inline=false (default): float at top-right, only show when there's
+   *   something to show (downloading / ready / applying).
+   */
+  inline?: boolean;
+}
+
+export function OtaBadge({ inline = false }: Props) {
+  const [state, setState] = useState<OtaState>('checking');
   const [modalOpen, setModalOpen] = useState(false);
-  const fade = useRef(new Animated.Value(0)).current;
+  const fade = useRef(new Animated.Value(inline ? 1 : 0)).current;
   const pulse = useRef(new Animated.Value(1)).current;
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const insets = useSafeAreaInsets();
@@ -55,18 +67,19 @@ export function OtaBadge() {
   // notch / island devices.
   const topOffset = insets.top + 10;
 
-  // Fade in whenever state becomes visible
+  // Floating mode: fade in only when state has something to show
   useEffect(() => {
-    if (state === 'hidden') {
-      Animated.timing(fade, { toValue: 0, duration: 220, useNativeDriver: true }).start();
-      return;
-    }
+    if (inline) return; // inline mode is always visible
+    const visible = state === 'downloading' || state === 'ready' || state === 'applying';
     Animated.timing(fade, {
-      toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      toValue: visible ? 1 : 0,
+      duration: visible ? 280 : 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
     }).start();
-  }, [state]);
+  }, [state, inline]);
 
-  // Pulse when ready
+  // Pulse when ready — draws the eye to the actionable state
   useEffect(() => {
     if (state === 'ready') {
       const loop = Animated.loop(
@@ -84,36 +97,36 @@ export function OtaBadge() {
     return () => { pulseLoopRef.current?.stop(); };
   }, [state]);
 
-  // OTA check + download flow
+  // OTA check + auto-download flow
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const Updates = await import('expo-updates');
         if (!Updates.isEnabled) {
-          // No expo-updates → stay hidden silently
+          // No expo-updates available (Expo Go / dev) → idle
+          if (!cancelled) setState('idle');
           return;
         }
         const result = await Updates.checkForUpdateAsync();
         if (cancelled) return;
         if (!result.isAvailable) {
-          // No update → stay hidden silently
+          setState('idle');
           return;
         }
-        // Update available → make visible immediately as "downloading"
         setState('downloading');
         await Updates.fetchUpdateAsync();
         if (cancelled) return;
         setState('ready');
       } catch {
-        // Network / OTA error → stay hidden (don't bother user)
+        if (!cancelled) setState('error');
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
   const handlePress = () => {
-    if (state === 'ready' || state === 'pending') setModalOpen(true);
+    if (state === 'ready') setModalOpen(true);
   };
 
   const handleApply = async () => {
@@ -123,24 +136,36 @@ export function OtaBadge() {
       const Updates = await import('expo-updates');
       setTimeout(() => Updates.reloadAsync(), 400);
     } catch {
-      setState('hidden');
+      setState('error');
     }
   };
 
   const handleLater = () => {
     setModalOpen(false);
-    setState('pending');
+    // stays in 'ready' — user can tap again later
   };
 
-  if (state === 'hidden') return null;
+  // Floating mode: hide entirely when nothing actionable
+  if (!inline && (state === 'idle' || state === 'checking' || state === 'error')) {
+    return null;
+  }
 
   // Visual config per state
-  let dotColor = COLORS.dotAmber;
+  let dotColor = COLORS.dotGreen;
   let label = '';
   let showSpinner = false;
   let interactive = false;
 
   switch (state) {
+    case 'checking':
+      dotColor = COLORS.dotGrey;
+      label = 'Checking for updates';
+      showSpinner = true;
+      break;
+    case 'idle':
+      dotColor = COLORS.dotGreen;
+      label = 'Up to date';
+      break;
     case 'downloading':
       dotColor = COLORS.dotBlue;
       label = 'Downloading update';
@@ -148,27 +173,27 @@ export function OtaBadge() {
       break;
     case 'ready':
       dotColor = COLORS.dotAmber;
-      label = 'Update available';
+      label = 'Update ready · tap to restart';
       interactive = true;
       break;
     case 'applying':
       dotColor = COLORS.dotBlue;
-      label = 'Applying';
+      label = 'Restarting';
       showSpinner = true;
       break;
-    case 'pending':
-      dotColor = COLORS.dotAmber;
-      label = 'Update pending';
-      interactive = true;
+    case 'error':
+      dotColor = COLORS.dotGrey;
+      label = 'Update check failed';
       break;
   }
 
+  const wrapStyle = inline
+    ? [styles.wrapInline, { opacity: fade, transform: [{ scale: pulse }] }]
+    : [styles.wrapFloating, { top: topOffset, opacity: fade, transform: [{ scale: pulse }] }];
+
   return (
     <>
-      <Animated.View
-        style={[styles.wrap, { top: topOffset, opacity: fade, transform: [{ scale: pulse }] }]}
-        pointerEvents="box-none"
-      >
+      <Animated.View style={wrapStyle} pointerEvents="box-none">
         <TouchableOpacity
           style={styles.badge}
           onPress={handlePress}
@@ -197,16 +222,16 @@ export function OtaBadge() {
               <View style={[styles.modalIconDot, { backgroundColor: COLORS.dotAmber, opacity: 0.5 }]} />
               <View style={[styles.modalIconDot, { backgroundColor: COLORS.dotAmber, opacity: 0.25 }]} />
             </View>
-            <Text style={styles.modalTitle}>New version ready</Text>
+            <Text style={styles.modalTitle}>Update ready</Text>
             <Text style={styles.modalBody}>
-              A small update has been downloaded. Restart now to apply — it only takes a second.
+              The update has finished downloading. Restart now to apply — it only takes a second.
             </Text>
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.btnSecondary} onPress={handleLater} activeOpacity={0.7}>
                 <Text style={styles.btnSecondaryText}>Later</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.btnPrimary} onPress={handleApply} activeOpacity={0.85}>
-                <Text style={styles.btnPrimaryText}>Update now</Text>
+                <Text style={styles.btnPrimaryText}>Restart now</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -217,10 +242,13 @@ export function OtaBadge() {
 }
 
 const styles = StyleSheet.create({
-  wrap: {
+  wrapFloating: {
     position: 'absolute',
     right: 12,
     zIndex: 1000,
+  },
+  wrapInline: {
+    alignSelf: 'flex-start',
   },
   badge: {
     flexDirection: 'row',
@@ -312,4 +340,3 @@ const styles = StyleSheet.create({
     color: COLORS.ctaText,
   },
 });
-
