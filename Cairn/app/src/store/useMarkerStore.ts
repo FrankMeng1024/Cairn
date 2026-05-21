@@ -14,6 +14,7 @@ import { storage } from './storage';
 import { generateId } from '../utils/geo';
 import { authenticatedFetch } from '../services/apiService';
 import { debugLogger } from '../services/debugLogger';
+import { crashLogger } from '../services/crashLogger';
 import type { MarkerType } from '../data/mockData';
 
 export type MarkerPermission = 'personal' | 'group' | 'public';
@@ -178,6 +179,7 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
   },
 
   deleteMarker: async (id) => {
+    crashLogger.breadcrumb(`marker:delete:start id=${id}`);
     set((s) => {
       const next = s.markers.filter((m) => m.id !== id);
       if (s.userId) storage.setItem(storageKey(s.userId), JSON.stringify(next));
@@ -185,9 +187,10 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
     });
 
     try {
-      await authenticatedFetch(`/api/markers/${id}`, { method: 'DELETE' });
-    } catch {
-      // Network failure — deleted locally, backend sync deferred
+      const res = await authenticatedFetch(`/api/markers/${id}`, { method: 'DELETE' });
+      crashLogger.breadcrumb(`marker:delete:remote ok=${res.ok} id=${id}`);
+    } catch (err) {
+      crashLogger.breadcrumb(`marker:delete:remote-error ${String(err).slice(0, 80)}`);
     }
   },
 

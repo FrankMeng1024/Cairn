@@ -15,6 +15,7 @@ import { storage } from './storage';
 import type { Coordinate } from '../utils/geo';
 import { authenticatedFetch } from '../services/apiService';
 import { deleteRemoteSession } from '../services/sessionService';
+import { crashLogger } from '../services/crashLogger';
 
 export type ActivityMode = 'hiking' | 'running';
 
@@ -121,6 +122,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   deleteSession: (id) => {
     const userId = get().currentUserId;
     const session = get().sessions.find((s) => s.id === id);
+    crashLogger.breadcrumb(`session:delete:start id=${id} hasRemoteId=${!!session?.remoteId}`);
     set((s) => {
       const next = s.sessions.filter((sess) => sess.id !== id);
       const summaries = next.map(({ trackPoints: _, ...rest }) => rest);
@@ -128,9 +130,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       storage.removeItem(trackPointsKey(userId, id));
       return { sessions: next };
     });
-    // Mirror deletion to backend (fire-and-forget)
-    if (session?.remoteId) {
-      deleteRemoteSession(session.remoteId).catch(() => {});
+    // Mirror deletion to backend. Use remoteId if present (sessions
+    // pulled from /api/sessions); otherwise the local string id IS the
+    // backend row id (since hydrate now stores remoteId, this branch
+    // covers legacy sessions that pre-date the fix).
+    const targetId = session?.remoteId ?? Number(id);
+    if (Number.isFinite(targetId)) {
+      deleteRemoteSession(targetId)
+        .then((ok) => crashLogger.breadcrumb(`session:delete:remote ok=${ok} target=${targetId}`))
+        .catch((err) => crashLogger.breadcrumb(`session:delete:remote-error ${String(err).slice(0, 80)}`));
+    } else {
+      crashLogger.breadcrumb(`session:delete:skipped-remote id=${id}`);
     }
   },
 

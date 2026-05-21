@@ -130,6 +130,12 @@ export const useAppStore = create<AppState>((set) => ({
             const remote = await fetchSessions();
             const sessions = remote.map((r) => ({
               id: String(r.id),
+              // Mirror the backend row id so future delete / update calls
+              // can target the correct backend record. Without this,
+              // deleteSession's "fire-and-forget DELETE" was a no-op for
+              // every session that came from the server, leaving zombie
+              // rows in the DB after a user "deletes" an activity.
+              remoteId: r.id,
               activityMode: r.type as SessionActivityMode,
               regionCode: 'nz',
               startedAt: new Date(r.start_time).getTime(),

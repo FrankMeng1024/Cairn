@@ -13,6 +13,7 @@ import {
   deleteRoute as apiDeleteRoute,
   incrementRouteRunCount,
 } from '../services/routeService';
+import { crashLogger } from '../services/crashLogger';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -142,11 +143,17 @@ export const useRouteStore = create<RouteStore>((set, get) => ({
   },
 
   deleteRoute: async (id) => {
+    crashLogger.breadcrumb(`route:delete:start id=${id}`);
     set((s) => ({
       routes: s.routes.filter(r => r.id !== id),
       activeRouteId: s.activeRouteId === id ? null : s.activeRouteId,
     }));
-    await apiDeleteRoute(id);
+    try {
+      await apiDeleteRoute(id);
+      crashLogger.breadcrumb(`route:delete:remote-ok id=${id}`);
+    } catch (err) {
+      crashLogger.breadcrumb(`route:delete:remote-error ${String(err).slice(0, 80)}`);
+    }
   },
 
   addWaypoint: (routeId, waypointData) => {
