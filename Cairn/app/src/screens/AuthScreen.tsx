@@ -617,8 +617,6 @@ export function AuthScreen() {
         return;
       }
 
-      setLoggedIn(true);
-      if (result.user) setUser(result.user);
       // Persist or clear remember-me credentials based on the checkbox.
       // Only on Sign In path (register flow does verify→welcome→home and
       // the user can tick the box on next sign-in if they want).
@@ -636,8 +634,15 @@ export function AuthScreen() {
           // Storage failure is non-fatal — the user is signed in either way.
         }
       }
-      // Re-hydrate stores with new user's data (sessions, markers)
+      // Re-hydrate stores with new user's data (sessions, markers) BEFORE
+      // flipping isLoggedIn / navigating. If we navigated first, Home
+      // would render with sessions=[] then re-render once the fetch
+      // returned, causing a visible content jitter (RecentRow appearing,
+      // stats row appearing, cards reflowing). Waiting here keeps the
+      // first paint of Home in its terminal state.
+      if (result.user) setUser(result.user);
       await hydrate();
+      setLoggedIn(true);
       if (isRegister) {
         setUIMode('beginner');
         setWelcomeName(result.user?.name || name.trim() || 'Explorer');

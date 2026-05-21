@@ -439,6 +439,22 @@ export function RouteEditorScreen() {
                 />
               </ShapeSource>
             )}
+            {/* Current user location — blue dot with white ring + soft
+                glow. Visually distinct from waypoint pins so the user
+                always knows "this is where I am right now" while
+                planning. Position comes from useTrackingStore which
+                we already prime with getCurrentPositionAsync on
+                mount. */}
+            {PointAnnotation && userCoord && (
+              <PointAnnotation
+                id="user-location"
+                coordinate={[userCoord.lng, userCoord.lat]}
+              >
+                <View style={styles.userPinOuter}>
+                  <View style={styles.userPinInner} />
+                </View>
+              </PointAnnotation>
+            )}
             {/* Numbered waypoint pins */}
             {PointAnnotation && waypoints.map((wp, i) => (
               <PointAnnotation
@@ -594,6 +610,20 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: '#fff', ...Shadow.card,
   },
   waypointDotText: { fontSize: 11, fontWeight: '800', color: '#fff' },
+  // User location pin — outer translucent ring + inner solid blue dot,
+  // matches the iOS "Find My" / Mapbox UserLocationComponent visual
+  // language. White center ring separates the dot from the map at any
+  // basemap colour.
+  userPinOuter: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: 'rgba(58,134,237,0.25)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#fff',
+  },
+  userPinInner: {
+    width: 12, height: 12, borderRadius: 6,
+    backgroundColor: '#3a86ed',
+  },
 
   topOverlay: { position: 'absolute', top: 0, left: 0, right: 0 },
   topRow: {
