@@ -66,11 +66,16 @@ function TrackPolyline({ session }: { session: TrackingSession }) {
   const color = session.activityMode === 'running' ? Colors.running : Colors.primary;
 
   if (pts.length < 2) {
-    // No GPS data — show a dashed placeholder line
+    // Too short to render a path. Distinguish "we got no fix at all"
+    // from "the activity ended before we could record more than one
+    // sample" — both are common for very short sessions.
+    const label = pts.length === 0
+      ? 'Activity too short to record path'
+      : 'Only one GPS sample — keep moving longer to record a path';
     return (
       <View style={trackStyles.noGpsWrap}>
         <View style={[trackStyles.noGpsLine, { borderColor: color }]} />
-        <Text style={trackStyles.noGpsLabel}>No GPS data recorded</Text>
+        <Text style={trackStyles.noGpsLabel}>{label}</Text>
       </View>
     );
   }
@@ -554,8 +559,15 @@ export function MapHistoryScreen() {
             </View>
           </View>
           <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+            {/* Disable Save as Route when the session has fewer than 2
+                track points — there's no path to save. */}
             <TouchableOpacity
-              style={[cardStyles.deleteBtn, { flex: 1, borderColor: Colors.primary, backgroundColor: Colors.primaryBg }]}
+              style={[
+                cardStyles.deleteBtn,
+                { flex: 1, borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+                selectedSession.trackPoints.length < 2 && { opacity: 0.4 },
+              ]}
+              disabled={selectedSession.trackPoints.length < 2}
               onPress={() => {
                 (nav as any).navigate('RouteEditor', { fromSessionId: selectedSession.id });
               }}
@@ -769,7 +781,10 @@ const styles = StyleSheet.create({
 
   singleSessionPanel: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    // Was 0.95 alpha — 5% transparency was leaking the previous screen's
+    // content through, which the user reported as a "ghost" of the
+    // Routes hike sheet showing under Activity Detail.
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     padding: Spacing.xl, paddingBottom: Spacing.xxl,
     shadowColor: '#000', shadowOffset: { width: 0, height: -4 },

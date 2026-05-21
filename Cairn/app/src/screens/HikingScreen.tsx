@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -460,6 +460,7 @@ export function HikingScreen() {
   const nav = useNavigation<Nav>();
   const { uiMode } = useAppStore();
   const isExpert = uiMode === 'expert';
+  const insets = useSafeAreaInsets();
 
   // Real tracking store
   const status = useTrackingStore(s => s.status);
@@ -583,8 +584,11 @@ export function HikingScreen() {
       <View style={styles.container}>
         <HikingMap markers={[]} trackPoints={[]} onMarkerPress={() => {}} />
 
-        {/* Top overlay */}
-        <SafeAreaView style={styles.topOverlay} edges={['top']} pointerEvents="box-none">
+        {/* Top overlay — uses safe-area inset directly so the chips
+            never sit under the Dynamic Island / status bar regardless
+            of the device. SafeAreaView inside an absolute parent
+            doesn't reliably report insets, so we add them ourselves. */}
+        <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
           <View style={styles.topRow}>
             <BackButton variant="pill" onPress={() => nav.goBack()} />
             <View style={[styles.gpsChip, styles.gpsChipAmber]}>
@@ -592,10 +596,10 @@ export function HikingScreen() {
               <Text style={[styles.gpsText, styles.gpsTextAmber]}>Enable GPS</Text>
             </View>
           </View>
-        </SafeAreaView>
+        </View>
 
         {/* Bottom: route selector pill + start button */}
-        <SafeAreaView style={styles.bottomOverlay} edges={['bottom']} pointerEvents="box-none">
+        <View style={[styles.bottomOverlay, { paddingBottom: insets.bottom + 8 }]} pointerEvents="box-none">
           <View style={styles.bottomPanel}>
             {/* Route selector pill — single row, card style */}
             <TouchableOpacity style={styles.routePill} onPress={openRoutePicker} activeOpacity={0.85}>
@@ -609,34 +613,24 @@ export function HikingScreen() {
               <Icon name="ChevronUp" size={16} color={Colors.primary} strokeWidth={2.5} />
             </TouchableOpacity>
 
-            {/* Start + FAB row */}
-            <View style={styles.bottomRow}>
-              <Animated.View style={[{ flex: 1, height: 56 }, { transform: [{ scale: trackBtnScale }] }]}>
-                <TouchableOpacity
-                  style={styles.trackBtn}
-                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); startTracking(); setPhase('tracking'); }}
-                  activeOpacity={1}
-                  onPressIn={() => springIn(trackBtnScale)}
-                  onPressOut={() => springOut(trackBtnScale)}
-                >
-                  <Icon name="Play" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
-                  <Text style={styles.trackBtnText}>Start Hiking</Text>
-                </TouchableOpacity>
-              </Animated.View>
-              <Animated.View style={{ transform: [{ scale: fabScale }] }}>
-                <TouchableOpacity
-                  style={styles.fab}
-                  onPress={() => nav.navigate('AR')}
-                  activeOpacity={1}
-                  onPressIn={() => springIn(fabScale)}
-                  onPressOut={() => springOut(fabScale)}
-                >
-                  <Icon name="Flag" size={IconSize.md} color="#fff" strokeWidth={2} />
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
+            {/* Start button — full-width before tracking begins. The
+                Place Flag FAB only makes sense once a session is live
+                (you can't drop a flag at "your current GPS" if the
+                session hasn't started recording yet). */}
+            <Animated.View style={[{ height: 56 }, { transform: [{ scale: trackBtnScale }] }]}>
+              <TouchableOpacity
+                style={styles.trackBtn}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); startTracking(); setPhase('tracking'); }}
+                activeOpacity={1}
+                onPressIn={() => springIn(trackBtnScale)}
+                onPressOut={() => springOut(trackBtnScale)}
+              >
+                <Icon name="Play" size={IconSize.sm} color={Colors.primary} strokeWidth={2.5} />
+                <Text style={styles.trackBtnText}>Start Hiking</Text>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
-        </SafeAreaView>
+        </View>
 
         {/* Route picker sheet — non-fullscreen, slides up from bottom */}
         {showRoutePicker && (
@@ -706,8 +700,10 @@ export function HikingScreen() {
         onMarkerPress={(id) => { setSelectedMarkerId(id); setUi('detail'); }}
       />
 
-      {/* Top overlay: back button (left) + GPS chip (right) */}
-      <SafeAreaView style={styles.topOverlay} edges={['top']} pointerEvents="box-none">
+      {/* Top overlay: back button (left) + GPS chip (right). Uses
+          inset-aware paddingTop so chips never touch the Dynamic
+          Island. */}
+      <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
         <View style={styles.topRow}>
           <BackButton variant="pill" onPress={() => nav.goBack()} />
           <View style={[
@@ -778,10 +774,10 @@ export function HikingScreen() {
             </PressBtn>
           </View>
         )}
-      </SafeAreaView>
+      </View>
 
       {/* Bottom FABs */}
-      <SafeAreaView style={styles.bottomOverlay} edges={['bottom']} pointerEvents="box-none">
+      <View style={[styles.bottomOverlay, { paddingBottom: insets.bottom + 8 }]} pointerEvents="box-none">
         {/* SOS Button — visible during tracking */}
         {isTracking && lastCoordinate && (
           <View style={{ alignItems: 'center', marginBottom: Spacing.sm }}>
@@ -827,7 +823,7 @@ export function HikingScreen() {
             </TouchableOpacity>
           </Animated.View>
         </View>
-      </SafeAreaView>
+      </View>
 
       {/* Marker Detail Sheet */}
       {ui === 'detail' && selectedMarker && (

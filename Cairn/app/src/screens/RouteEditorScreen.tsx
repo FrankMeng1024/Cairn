@@ -11,9 +11,9 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Platform, FlatList,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Platform, FlatList, KeyboardAvoidingView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useRouteStore } from '../store/useRouteStore';
@@ -57,6 +57,7 @@ interface WaypointDraft {
 
 export function RouteEditorScreen() {
   const nav = useNavigation();
+  const insets = useSafeAreaInsets();
   const route = useRoute<any>();
   const routeId = route.params?.routeId as string | undefined;
   const fromSessionId = route.params?.fromSessionId as string | undefined;
@@ -296,8 +297,9 @@ export function RouteEditorScreen() {
         )}
       </View>
 
-      {/* Top bar */}
-      <SafeAreaView style={styles.topOverlay} edges={['top']}>
+      {/* Top bar — explicit safe-area inset so the back/save chips
+          never overlap the Dynamic Island. */}
+      <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
         <View style={styles.topRow}>
           <BackButton variant="pill" />
           <TouchableOpacity style={styles.saveTopBtn} onPress={handleSave}>
@@ -305,10 +307,17 @@ export function RouteEditorScreen() {
             <Text style={styles.saveTopBtnText}>Save</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
 
-      {/* Bottom panel */}
-      <SafeAreaView style={styles.bottomPanel} edges={['bottom']}>
+      {/* Bottom panel — wrapped in KeyboardAvoidingView so the route
+          name input + tool buttons rise above the keyboard instead of
+          being hidden under it. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.bottomPanelWrap}
+        keyboardVerticalOffset={0}
+      >
+      <View style={[styles.bottomPanel, { paddingBottom: insets.bottom + Spacing.md }]}>
         {/* Error banner */}
         {errorMsg && (
           <View style={styles.errorBanner}>
@@ -379,7 +388,8 @@ export function RouteEditorScreen() {
             <Text style={[styles.toolBtnText, { color: waypoints.length > 0 ? Colors.danger : Colors.textMuted }]}>Clear</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -409,9 +419,13 @@ const styles = StyleSheet.create({
   },
   saveTopBtnText: { fontSize: FontSize.small, fontWeight: '700', color: '#fff' },
 
-  bottomPanel: {
+  // KeyboardAvoidingView wrapper sits at the bottom of the screen and
+  // pushes its child up when the keyboard appears.
+  bottomPanelWrap: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  bottomPanel: {
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     padding: Spacing.base, paddingTop: Spacing.md,
     ...Shadow.overlay,
