@@ -423,45 +423,41 @@ export function AuthScreen() {
   const googleFlowActive = useRef(false);
   const submitAttempted = useRef(false);  // STORY-00133: only validate on blur after first submit
 
-  // Google OAuth hook — TEMPORARILY DISABLED for diagnostic build.
-  // Suspected as cause of sign-out crash. Will be re-enabled via OTA after
-  // we confirm sign-out works without it. Hook call commented out to avoid
-  // any native ASWebAuthenticationSession init at AuthScreen mount.
-  //
-  // const [googleRequest, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
-  //   webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
-  //   redirectUri: makeRedirectUri(),
-  //   prompt: Prompt.SelectAccount,
-  // });
-  const googleRequest: any = null;
-  const googleResponse: any = null;
-  const promptGoogleAsync = async () => {
-    Alert.alert('Google Sign In', 'Temporarily disabled for diagnostic build. Use email sign-in.');
-    return { type: 'dismiss' as const };
-  };
+  // Google OAuth hook — RE-ENABLED via OTA on 2026-05-21 to test if it
+  // was the sign-out crash root cause. AnimatedCairn still in staticMode.
+  // Wrapped breadcrumbs around mount so if it crashes the last breadcrumb
+  // tells us exactly where.
+  crashLogger.breadcrumb('AuthScreen:before_google_hook');
+  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useIdTokenAuthRequest({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+    redirectUri: makeRedirectUri(),
+    prompt: Prompt.SelectAccount,
+  });
+  crashLogger.breadcrumb('AuthScreen:after_google_hook');
   void googleRequest;
 
-  // Handle Google OAuth response — DISABLED (no hook = no response).
-  // useEffect(() => {
-  //   if (googleResponse?.type !== 'success') return;
-  //   const idToken = googleResponse.params?.id_token ?? (googleResponse.authentication as any)?.idToken;
-  //   if (!idToken) {
-  //     setApiError('Google sign-in failed. Please try again.');
-  //     setGoogleLoading(false);
-  //     return;
-  //   }
-  //   setLoading(true);
-  //   setApiError('');
-  //   loginWithGoogle(idToken).then(async (result) => {
-  //     setLoading(false);
-  //     setGoogleLoading(false);
-  //     if (result.error) { setApiError(result.error); return; }
-  //     setLoggedIn(true);
-  //     if (result.user) setUser(result.user);
-  //     await hydrate();
-  //     nav.replace('Home');
-  //   });
-  // }, [googleResponse]);
+  // Handle Google OAuth response
+  useEffect(() => {
+    if (googleResponse?.type !== 'success') return;
+    crashLogger.breadcrumb('google:success_response');
+    const idToken = googleResponse.params?.id_token ?? (googleResponse.authentication as any)?.idToken;
+    if (!idToken) {
+      setApiError('Google sign-in failed. Please try again.');
+      setGoogleLoading(false);
+      return;
+    }
+    setLoading(true);
+    setApiError('');
+    loginWithGoogle(idToken).then(async (result) => {
+      setLoading(false);
+      setGoogleLoading(false);
+      if (result.error) { setApiError(result.error); return; }
+      setLoggedIn(true);
+      if (result.user) setUser(result.user);
+      await hydrate();
+      nav.replace('Home');
+    });
+  }, [googleResponse]);
 
   const splashFade = useRef(new Animated.Value(0)).current;
   const splashTranslate = useRef(new Animated.Value(8)).current;
