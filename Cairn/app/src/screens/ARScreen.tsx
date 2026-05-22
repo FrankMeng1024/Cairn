@@ -1053,14 +1053,29 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
       cairnLng = anchor.lng + dE / (111000 * Math.cos(anchor.lat * Math.PI / 180));
     }
 
-    // Spacing check intentionally REMOVED in v17 — users can plant
-    // cairns wherever they want, including right at their feet or
-    // adjacent to an existing one. Per product decision: only the MAX
-    // distance (30m via DragCairnPicker distance ring) is enforced;
-    // there is no MIN distance.
+    // Spacing check restored in v18.2 with a 50m radius — preventing
+    // multiple cairns from stacking at the same spot. Without it,
+    // users planting consecutive cairns at the same location made all
+    // 4 type-coloured spheres render at the exact same world position,
+    // and only the last-drawn one was visible (z-fighting).
     //
-    // (`checkMarkerSpacing` from utils/geo is preserved for any other
-    // caller that may want it — it's just no longer applied here.)
+    // 50m is generous (was 20m pre-v17) so users still feel free to
+    // mark several distinct spots within a hike, but two cairns can
+    // no longer occupy the same patch of trail. Future product work
+    // may relax or tighten this.
+    const spacing = checkMarkerSpacing(
+      { lat: cairnLat, lng: cairnLng },
+      markers.map(m => ({ id: m.id, lat: m.lat, lng: m.lng })),
+      50,
+    );
+    if (!spacing.allowed) {
+      Alert.alert(
+        'Cairn nearby',
+        `There's already a cairn ~${Math.round(spacing.nearestDistM)}m away. Each spot can only hold one cairn within 50m.`,
+      );
+      crashLogger.breadcrumb(`ar:plant:rejected nearest=${Math.round(spacing.nearestDistM)}`);
+      return;
+    }
 
     if (approximate) {
       const ageText = age < 60 ? `${age}s` : age < 3600 ? `${Math.round(age / 60)}min` : `${Math.round(age / 3600)}h`;

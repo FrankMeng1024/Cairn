@@ -71,10 +71,12 @@ const HEADING_ALPHA = 0.3;
 // user looks straight at them instead of having to tilt the phone down.
 const EYE_HEIGHT = 1.5;
 
-// Minimum forward distance for a "right at my feet" cairn. If the marker
-// is closer than 0.5m to the user, we still push it 0.5m in front so it
-// renders just ahead of the camera instead of overlapping with it.
-const MIN_FORWARD_DIST = 0.5;
+// Animation tuning for the "rise from ground" effect when a cairn is
+// freshly planted. The mesh starts at y=0 (ground) and lerps up to
+// y=EYE_HEIGHT over RISE_DURATION_MS using an ease-out cubic so the
+// motion feels physical (fast at first, settling at the top).
+const RISE_DURATION_MS = 800;
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
 /**
  * Convert a marker's lat/lng into a Three.js world position relative
@@ -83,6 +85,20 @@ const MIN_FORWARD_DIST = 0.5;
  *
  * The cairn sits at EYE_HEIGHT so it matches the camera height —
  * critical for the user to actually see it without tilting the phone.
+ *
+ * v18.2 change: removed the MIN_FORWARD_DIST guard. Previously, when
+ * the marker was within 0.5m of the user, gpsToWorld returned a fixed
+ * (0, EYE_HEIGHT, -0.5) — i.e. "always 0.5m in front of camera". This
+ * was visible to users as: (a) cairns appearing to follow the camera
+ * around, (b) all 4 colour types stacking at the same screen position
+ * so only the last-rendered one was visible.
+ *
+ * Without the guard, a freshly-planted "at my feet" cairn lands at
+ * (0, EYE_HEIGHT, 0) — the same point as the camera. The user can't
+ * see it from where they're standing (camera is INSIDE the sphere),
+ * but as soon as they step away the cairn appears at its true world
+ * location. Combined with the rise animation (y lerps from 0→1.5 over
+ * 800ms) the user sees the cairn "stay in place" while they walk.
  */
 function gpsToWorld(
   user: { lat: number; lng: number },
@@ -92,16 +108,6 @@ function gpsToWorld(
   const dLng = marker.lng - user.lng;
   const northM = dLat * 111000;
   const eastM = dLng * 111000 * Math.cos(user.lat * Math.PI / 180);
-
-  // If the marker is essentially at the user's feet (default plant-at-
-  // user behaviour), nudge it forward so it doesn't sit inside the
-  // camera. The forward direction is "north" (-Z) by default — heading
-  // rotation will swing the whole scene group later so the bias ends
-  // up in front of the user regardless of which way they're facing.
-  const horizontalDist = Math.hypot(northM, eastM);
-  if (horizontalDist < MIN_FORWARD_DIST) {
-    return new THREE.Vector3(0, EYE_HEIGHT, -MIN_FORWARD_DIST);
-  }
   return new THREE.Vector3(eastM, EYE_HEIGHT, -northM);
 }
 
@@ -191,17 +197,29 @@ export function AR3DCairnOverlay({ markers, userPos, userHeading }: Props) {
       // Sphere radius — closer = bigger, but never below 0.25m so even
       // far cairns stay visible. At 0m we get ~0.45m diameter spheres.
       const r = Math.max(0.25, 0.5 - horizontal / 400);
-      const geom = new THREE.SphereGeometry(r, 24, 18);
+      const geom = new THREE.SphereGeometry(r, 32, 24);
+      // v18.2: emissiveIntensity dropped from 0.25 to 0.05. The old
+      // value made every sphere glow uniformly, killing the lighting
+      // gradient that creates 3D depth perception. Combined with the
+      // stronger directional + rim lights below, the surface now
+      // shows a clear bright top-left highlight, mid-tone band, and
+      // shadowed underside — reads as a proper 3D ball.
       const mat = new THREE.MeshStandardMaterial({
         color: colorHex,
-        metalness: 0.2,
-        roughness: 0.4,
+        metalness: 0.1,
+        roughness: 0.35,
         emissive: colorHex,
-        emissiveIntensity: 0.25,
+        emissiveIntensity: 0.05,
       });
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.copy(pos);
       (mesh as any).__marker = m;
+      // Stash plant time from the marker's createdAt (persisted in the
+      // marker store) so the rise animation only fires for genuinely
+      // new cairns. Older cairns that were planted before this AR
+      // session opened skip the animation — their elapsed time is
+      // already past RISE_DURATION_MS.
+      (mesh as any).__plantedAt = m.createdAt;
       group.add(mesh);
       added += 1;
     }
@@ -236,12 +254,29 @@ export function AR3DCairnOverlay({ markers, userPos, userHeading }: Props) {
       camera.lookAt(0, EYE_HEIGHT, -1); // look horizontally toward -Z
       cameraRef.current = camera;
 
-      // Lighting — ambient + a sun-from-above directional. Without
-      // these, MeshStandardMaterial renders pure black.
-      scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-      const sun = new THREE.DirectionalLight(0xffffff, 0.9);
-      sun.position.set(3, 8, 3);
+      // Lighting — three-light rig that produces a clear sphere
+      // shading gradient (bright top-left highlight, mid-tone wrap,
+      // shadowed underside). v18.2 rebalance: ambient was 0.7 (too
+      // washed out), directional 0.9 (too weak); rim added.
+      //
+      //   - Ambient 0.3:    ensures shadowed side isn't pitch black,
+      //                     just darker than the lit side.
+      //   - Sun 1.6:        primary directional light from up + right
+      //                     + slightly forward, drives the main
+      //                     highlight on top-left of the sphere from
+      //                     the user's perspective.
+      //   - Rim 0.5 cool:   secondary light from the opposite side
+      //                     with a slight blue tint, gives the
+      //                     shadowed edge a subtle highlight (the
+      //                     "rim light" effect that makes things look
+      //                     3D and detached from the background).
+      scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+      const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+      sun.position.set(5, 10, 3);
       scene.add(sun);
+      const rim = new THREE.DirectionalLight(0xddeeff, 0.5);
+      rim.position.set(-3, 2, -2);
+      scene.add(rim);
 
       // Cairn group — rotated by -heading every frame so the world
       // spins relative to the user, not the camera.
@@ -260,10 +295,27 @@ export function AR3DCairnOverlay({ markers, userPos, userHeading }: Props) {
         // Always re-compute world positions from smoothed user pos.
         const userP = smoothedPosRef.current;
         if (userP && cairnGroupRef.current) {
+          const now = Date.now();
           cairnGroupRef.current.children.forEach((child: THREE.Object3D) => {
             const m = (child as any).__marker as Marker | undefined;
             if (!m) return;
             const pos = gpsToWorld(userP, { lat: m.lat, lng: m.lng });
+
+            // Rise-from-ground animation: for the first RISE_DURATION_MS
+            // after a cairn is planted, lerp its y from 0 (ground) up to
+            // EYE_HEIGHT. After that, the cairn sits at its resting
+            // hover position. We use the marker's persisted createdAt
+            // (not Date.now() at mesh creation) so the animation only
+            // plays for genuinely-new cairns — re-entering the AR
+            // screen with old cairns won't re-trigger it.
+            const plantedAt = (child as any).__plantedAt as number | undefined;
+            if (plantedAt != null) {
+              const elapsed = now - plantedAt;
+              if (elapsed < RISE_DURATION_MS) {
+                const t = easeOutCubic(elapsed / RISE_DURATION_MS);
+                pos.y = t * EYE_HEIGHT;
+              }
+            }
             child.position.copy(pos);
           });
           // Rotate the entire group by -heading. This spins the world

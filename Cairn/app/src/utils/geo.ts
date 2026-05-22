@@ -450,13 +450,13 @@ export function isWithinRadius(
  *
  * @param position     Where the user wants to place a marker
  * @param existingMarkers  User's existing markers (lat/lng pairs)
- * @param minSpacingM  Minimum distance between markers in meters (default 20)
+ * @param minSpacingM  Minimum distance between markers in meters (default 50)
  * @returns { allowed: boolean, nearestDistM: number, conflictId?: string }
  */
 export function checkMarkerSpacing(
   position: Coordinate,
   existingMarkers: Array<{ id: string; lat: number; lng: number }>,
-  minSpacingM = 20,
+  minSpacingM = 50,
 ): { allowed: boolean; nearestDistM: number; conflictId?: string } {
   let nearestDist = Infinity;
   let conflictId: string | undefined;
