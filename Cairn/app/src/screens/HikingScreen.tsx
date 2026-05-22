@@ -622,6 +622,182 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
   );
 }
 
+// ── Stop summary sheet ─────────────────────────────────────────────────
+// Surfaced when the user taps Stop. Shows the just-completed activity's
+// stats (distance, time, elevation, point count) and lets them name it
+// before it's saved. Skipping the name uses the default "Hike — DD/MM/YYYY"
+// format so the Activities list always has a recognisable label.
+function StopSummarySheet({
+  summary,
+  onCancel,
+  onConfirm,
+}: {
+  summary: {
+    distanceM: number; durationS: number; elevationGainM: number;
+    activityMode: 'hiking' | 'running'; trackPoints: Array<{ lat: number; lng: number }>;
+    startedAt: number;
+  };
+  onCancel: () => void;
+  onConfirm: (name: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const insets = useSafeAreaInsets();
+  const slideY = useRef(new Animated.Value(500)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const dismiss = (then?: () => void) => {
+    Animated.parallel([
+      Animated.timing(slideY, { toValue: 500, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: 200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ]).start(() => then?.());
+  };
+
+  const isRun = summary.activityMode === 'running';
+  const accent = isRun ? Colors.running : Colors.primary;
+  const label = isRun ? 'Run' : 'Hike';
+  const date = new Date(summary.startedAt);
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  const defaultName = `${label} — ${dd}/${mm}/${yyyy}`;
+
+  return (
+    <Animated.View style={[stopSheetStyles.scrim, { opacity }]} pointerEvents="auto">
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => dismiss(onCancel)} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ width: '100%' }}>
+        <Animated.View style={[stopSheetStyles.sheet, { transform: [{ translateY: slideY }], paddingBottom: Math.max(insets.bottom, Spacing.xl) }]}>
+          <View style={stopSheetStyles.handle} />
+
+          <View style={stopSheetStyles.header}>
+            <Text style={[stopSheetStyles.title, { color: accent }]}>{label} complete</Text>
+            <Text style={stopSheetStyles.subtitle}>Save with a name to find it later, or skip for the default.</Text>
+          </View>
+
+          {/* Stats row */}
+          <View style={stopSheetStyles.statsRow}>
+            <View style={stopSheetStyles.stat}>
+              <Icon name="Milestone" size={14} color={accent} strokeWidth={2} />
+              <Text style={[stopSheetStyles.statValue, { color: accent }]}>
+                {(summary.distanceM / 1000).toFixed(2)} km
+              </Text>
+            </View>
+            <View style={stopSheetStyles.statDivider} />
+            <View style={stopSheetStyles.stat}>
+              <Icon name="Timer" size={14} color={accent} strokeWidth={2} />
+              <Text style={[stopSheetStyles.statValue, { color: accent }]}>
+                {formatDuration(summary.durationS)}
+              </Text>
+            </View>
+            <View style={stopSheetStyles.statDivider} />
+            <View style={stopSheetStyles.stat}>
+              <Icon name="TrendingUp" size={14} color={accent} strokeWidth={2} />
+              <Text style={[stopSheetStyles.statValue, { color: accent }]}>
+                {Math.round(summary.elevationGainM)} m
+              </Text>
+            </View>
+          </View>
+
+          {/* Track point count — quick sanity for the user */}
+          <Text style={stopSheetStyles.points}>
+            {summary.trackPoints.length} GPS samples recorded
+          </Text>
+
+          {/* Name input */}
+          <View style={stopSheetStyles.inputWrap}>
+            <Text style={stopSheetStyles.inputLabel}>Name (optional)</Text>
+            <TextInput
+              style={stopSheetStyles.input}
+              placeholder={defaultName}
+              placeholderTextColor={Colors.textMuted}
+              value={name}
+              onChangeText={(t) => setName(t.slice(0, 60))}
+              autoFocus={false}
+              returnKeyType="done"
+            />
+            <Text style={stopSheetStyles.inputHint}>Leave blank to use the default name above.</Text>
+          </View>
+
+          {/* Actions: Discard left, Save right */}
+          <View style={stopSheetStyles.actions}>
+            <TouchableOpacity
+              style={stopSheetStyles.cancelBtn}
+              onPress={() => dismiss(onCancel)}
+              activeOpacity={0.7}
+            >
+              <Text style={stopSheetStyles.cancelText}>Resume</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[stopSheetStyles.saveBtn, { backgroundColor: accent }]}
+              onPress={() => dismiss(() => onConfirm(name))}
+              activeOpacity={0.85}
+            >
+              <Icon name="Save" size={14} color="#fff" strokeWidth={2.5} />
+              <Text style={stopSheetStyles.saveText}>Save & End</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </KeyboardAvoidingView>
+    </Animated.View>
+  );
+}
+
+const stopSheetStyles = StyleSheet.create({
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+    zIndex: 200,
+  },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.sheet, borderTopRightRadius: Radius.sheet,
+    padding: Spacing.xl, gap: Spacing.md,
+    ...Shadow.overlay,
+  },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center' },
+  header: { gap: 4 },
+  title: { fontSize: FontSize.h2, fontWeight: '800' },
+  subtitle: { fontSize: FontSize.small, color: Colors.textSecondary },
+  statsRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.bg, borderRadius: Radius.card,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  stat: { flex: 1, alignItems: 'center', gap: 4 },
+  statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
+  statValue: { fontSize: FontSize.body, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  points: { fontSize: FontSize.caption, color: Colors.textMuted, textAlign: 'center', marginTop: -Spacing.xs },
+  inputWrap: { gap: 4 },
+  inputLabel: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textPrimary },
+  input: {
+    backgroundColor: Colors.bg, borderRadius: Radius.button,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    fontSize: FontSize.body, color: Colors.textPrimary,
+    borderWidth: 1.5, borderColor: Colors.border,
+  },
+  inputHint: { fontSize: FontSize.tiny, color: Colors.textMuted, marginTop: 2 },
+  actions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
+  cancelBtn: {
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+    borderRadius: Radius.button, borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
+  },
+  cancelText: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textSecondary },
+  saveBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: Spacing.md, borderRadius: Radius.button,
+  },
+  saveText: { fontSize: FontSize.body, fontWeight: '700', color: '#fff' },
+});
+
 // ── Main HikingScreen ──────────────────────────────────────────────────────
 type UIState = 'map' | 'plant' | 'detail';
 
@@ -654,6 +830,17 @@ export function HikingScreen() {
   const [ui, setUi] = useState<UIState>('map');
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
   const [showSavedToast, setShowSavedToast] = useState(false);
+  // Stop-summary sheet state. We don't call stopTracking immediately
+  // when the user hits Stop — instead we capture a snapshot of the
+  // current stats and surface a summary sheet so the user can name
+  // the activity (or skip and use the default Type+Date name). Only
+  // when the sheet is confirmed do we actually call stopTracking with
+  // the chosen name.
+  const [stopSummary, setStopSummary] = useState<null | {
+    distanceM: number; durationS: number; elevationGainM: number;
+    activityMode: 'hiking' | 'running'; trackPoints: Array<{ lat: number; lng: number }>;
+    startedAt: number;
+  }>(null);
   // Initialize phase from current tracking status — if user has an active hike
   // and re-enters this screen (Home → Hiking again), jump straight to the
   // tracking UI instead of forcing the route picker.
@@ -1065,7 +1252,30 @@ export function HikingScreen() {
             )}
             <PressBtn
               style={styles.stopBtn}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); stopTracking(); }}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                // Capture a snapshot of the live session for the
+                // summary sheet. We do NOT call stopTracking here —
+                // tracking continues in the background until the user
+                // names+confirms (or cancels). This lets the user see
+                // the run "frozen" while deciding what to call it,
+                // and keeps the data live in case they cancel and
+                // resume.
+                const ts = useTrackingStore.getState();
+                if (!ts.startedAt) {
+                  // Fallback: malformed state, just stop.
+                  stopTracking();
+                  return;
+                }
+                setStopSummary({
+                  distanceM: ts.distanceM,
+                  durationS: ts.durationS,
+                  elevationGainM: ts.elevationGainM,
+                  activityMode: ts.activityMode,
+                  trackPoints: ts.trackPoints.map(p => ({ lat: p.lat, lng: p.lng })),
+                  startedAt: ts.startedAt,
+                });
+              }}
               scaleTo={0.95}
             >
               <Icon name="Square" size={12} color="#fff" strokeWidth={3} />
@@ -1161,6 +1371,27 @@ export function HikingScreen() {
       {/* Flag Saved Toast */}
       {showSavedToast && (
         <FlagSavedToast onHide={() => setShowSavedToast(false)} />
+      )}
+
+      {/* Stop summary sheet — shown after user taps Stop, before
+          the session is actually written to the store. Lets the user
+          name the activity (or skip and accept the default Type+Date
+          name). Cancelling here keeps tracking running. */}
+      {stopSummary && (
+        <StopSummarySheet
+          summary={stopSummary}
+          onCancel={() => setStopSummary(null)}
+          onConfirm={(name) => {
+            // We pass the name through stopTracking; useTrackingStore
+            // forwards it to the saved session. Falsy / empty name
+            // → store falls back to the default "Hike — DD/MM/YYYY".
+            stopTracking(name);
+            setStopSummary(null);
+            // Phase reset back to selection screen on next render
+            // is already handled by the existing status === idle
+            // observer in HikingScreen's useEffect.
+          }}
+        />
       )}
     </View>
   );

@@ -78,7 +78,10 @@ interface TrackingState {
   // Actions
   setActivityMode: (mode: ActivityMode) => void;
   startTracking: () => Promise<void>;
-  stopTracking: () => void;
+  // Optional sessionName: when supplied (from the post-stop summary sheet)
+  // the saved session is tagged with this name; otherwise the session
+  // gets a default name on the consumer side ("Hike — DD/MM/YYYY").
+  stopTracking: (sessionName?: string) => void;
   pauseTracking: () => void;
   resumeTracking: () => void;
   addTrackPoint: (coord: Coordinate, timestamp?: number) => void;
@@ -293,7 +296,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     }
   },
 
-  stopTracking: () => {
+  stopTracking: (sessionName?: string) => {
     // App-state subscription
     try { appStateSubscription?.remove(); } catch { /* no-op */ }
     appStateSubscription = null;
@@ -341,6 +344,21 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     const s = get();
     if (s.sessionId && s.startedAt) {
       const region = getCurrentRegion();
+      // Default name: "Hike — DD/MM/YYYY" / "Run — DD/MM/YYYY". Used
+      // when the user skipped the post-stop name input. Keeps the
+      // Activities list legible — every entry is at minimum
+      // recognisable by type + date.
+      const defaultName = (() => {
+        const d = new Date(s.startedAt);
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        const label = s.activityMode === 'running' ? 'Run' : 'Hike';
+        return `${label} — ${dd}/${mm}/${yyyy}`;
+      })();
+      const finalName = (sessionName && sessionName.trim().length > 0)
+        ? sessionName.trim().slice(0, 60)
+        : defaultName;
       useSessionStore.getState().addSession({
         id: s.sessionId,
         activityMode: s.activityMode,
@@ -353,6 +371,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
         trackPoints: s.trackPoints,
         markerIds: s.markerIds,
         pausePins: s.pausePins.length > 0 ? s.pausePins : undefined,
+        name: finalName,
       });
     }
 

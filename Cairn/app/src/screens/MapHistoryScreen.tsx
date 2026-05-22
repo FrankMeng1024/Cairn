@@ -84,7 +84,7 @@ function PressRow({
 // Renders the session track as a polyline on top of a real Mapbox map.
 // Used in place of the SVG-on-coloured-panel TrackPolyline when
 // @rnmapbox/maps is available (i.e. on a real device, not web).
-function NativeTrackMap({ session }: { session: TrackingSession }) {
+function NativeTrackMap({ session, markers }: { session: TrackingSession; markers: Marker[] }) {
   const pts = session.trackPoints;
   const color = session.activityMode === 'running' ? Colors.running : Colors.primary;
   if (!MapView || pts.length < 2) return null;
@@ -99,6 +99,17 @@ function NativeTrackMap({ session }: { session: TrackingSession }) {
 
   const start = pts[0];
   const end = pts[pts.length - 1];
+
+  // Filter markers to only those that fall inside the track bounding
+  // box (with a small buffer). Showing every marker on every activity
+  // map is misleading — they only matter if they're geographically
+  // near the track. Buffer = ~200m so cairns just off the trail still
+  // render. (1° lat ≈ 111km, so 0.002° ≈ 220m).
+  const BUFFER = 0.002;
+  const trackMarkers = markers.filter(m =>
+    m.lat >= minLat - BUFFER && m.lat <= maxLat + BUFFER &&
+    m.lng >= minLng - BUFFER && m.lng <= maxLng + BUFFER
+  );
 
   return (
     <MapView
@@ -154,6 +165,25 @@ function NativeTrackMap({ session }: { session: TrackingSession }) {
           <PointAnnotation id="track-end" coordinate={[end.lng, end.lat]}>
             <View style={[trackStyles.nativeEndDot, { borderColor: color }]} />
           </PointAnnotation>
+          {/* Real marker pins anchored to GPS coords. Each pin is
+              positioned by the map at its true lat/lng so it pans/
+              zooms with the basemap — replaces the previous bug where
+              markers were rendered as absolute-positioned Views in a
+              hardcoded grid (60+i*75, 120+i*70) that ignored geography. */}
+          {trackMarkers.map(m => {
+            const meta = MARKER_META[m.type as keyof typeof MARKER_META] || MARKER_META.free;
+            return (
+              <PointAnnotation
+                key={`marker-${m.id}`}
+                id={`marker-${m.id}`}
+                coordinate={[m.lng, m.lat]}
+              >
+                <View style={[trackStyles.nativeMarkerPin, { borderColor: meta.color, backgroundColor: meta.bg }]}>
+                  <Icon name={meta.iconName as IconName} size={12} color={meta.color} strokeWidth={2} />
+                </View>
+              </PointAnnotation>
+            );
+          })}
         </>
       )}
     </MapView>
@@ -545,7 +575,7 @@ export function MapHistoryScreen() {
             map; web/Expo Go falls back to the SVG-on-panel rendering. */}
         {sessionForDisplay ? (
           MapView && sessionForDisplay.trackPoints.length >= 2
-            ? <NativeTrackMap session={sessionForDisplay} />
+            ? <NativeTrackMap session={sessionForDisplay} markers={markers} />
             : <TrackPolyline session={sessionForDisplay} />
         ) : (
           // Decorative lines when no session selected
@@ -592,8 +622,14 @@ export function MapHistoryScreen() {
           </View>
         )}
 
-        {/* Real marker pins */}
-        {mapMarkers.map((m, i) => {
+        {/* Real marker pins.
+            ⚠️ When NativeTrackMap is rendering, markers are drawn INSIDE
+            the map (anchored to true GPS coords via PointAnnotation).
+            This outer hardcoded-grid layer is only meaningful as a
+            decorative pin band on the SVG fallback path; on the real
+            map it would float on top in random positions. So we skip
+            it whenever a session is selected and the native map is up. */}
+        {!(sessionForDisplay && MapView && sessionForDisplay.trackPoints.length >= 2) && mapMarkers.map((m, i) => {
           const meta = MARKER_META[m.type as keyof typeof MARKER_META] || MARKER_META.free;
           return (
             <View
@@ -1122,6 +1158,17 @@ const trackStyles = StyleSheet.create({
   nativeEndDot: {
     width: 18, height: 18, borderRadius: 9,
     backgroundColor: '#fff', borderWidth: 3,
+  },
+  // Marker pin used inside NativeTrackMap PointAnnotation. White inner
+  // surface with type-coloured 2px ring + small icon — mirrors the
+  // styles.markerPin look used in the SVG fallback so the visual
+  // language is the same regardless of map renderer.
+  nativeMarkerPin: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 4, elevation: 3,
   },
 });
 
