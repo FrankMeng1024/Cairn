@@ -72,7 +72,7 @@ function MarkerPin({ type, x, y, onPress, approximate }: {
         onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 300, friction: 8 }).start()}
         style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}
       >
-        <Icon name={iconName as IconName} size={14} color={meta.color} strokeWidth={2.5} />
+        <Icon name={iconName as IconName} size={11} color={meta.color} strokeWidth={2.5} />
         {approximate && (
           <View style={styles.approxBadge}>
             <Text style={styles.approxBadgeText}>~</Text>
@@ -280,7 +280,7 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
             ? { centerCoordinate: [userPos.lng, userPos.lat], zoomLevel: 15 }
             : undefined}
         />
-        <UserLocationComponent visible={true} renderMode="native" />
+        <UserLocationComponent visible={true} renderMode="normal" />
 
         {/* Track polyline */}
         {trackPoints.length >= 2 && (
@@ -289,7 +289,7 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
               id="track-line-layer"
               style={{
                 lineColor: Colors.primary,
-                lineWidth: 3,
+                lineWidth: 5,
                 lineCap: 'round',
                 lineJoin: 'round',
               }}
@@ -324,7 +324,7 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
                 id="approach-line-layer"
                 style={{
                   lineColor: Colors.severityCaution,
-                  lineWidth: 3,
+                  lineWidth: 5,
                   lineOpacity: 0.85,
                   lineDasharray: [2, 2],
                   lineCap: 'round',
@@ -359,7 +359,7 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
             }]}>
               <Icon
                 name={(FLAG_TYPES.find(f => f.id === m.type)?.icon || 'Flag') as IconName}
-                size={14}
+                size={11}
                 color={MARKER_META[m.type]?.color ?? Colors.textSecondary}
                 strokeWidth={2.5}
               />
@@ -1346,11 +1346,6 @@ export function HikingScreen() {
                   onPressOut={() => springOut(fabScale)}
                 >
                   <Icon name="Flag" size={22} color="#fff" strokeWidth={2} />
-                  {markers.length > 0 && (
-                    <View style={styles.fabBadge}>
-                      <Text style={styles.fabBadgeText}>{markers.length}</Text>
-                    </View>
-                  )}
                 </TouchableOpacity>
               </Animated.View>
             </View>
@@ -1454,8 +1449,8 @@ const styles = StyleSheet.create({
   },
   downloadBtnText: { fontSize: FontSize.small, fontWeight: '700', color: Colors.primary },
   markerPin: {
-    position: 'absolute', width: 32, height: 32, borderRadius: 16,
-    borderWidth: 2.5, alignItems: 'center', justifyContent: 'center',
+    position: 'absolute', width: 24, height: 24, borderRadius: 12,
+    borderWidth: 2, alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.surface, ...Shadow.card,
   },
   // Route start pin — distinct from regular markers so users can spot

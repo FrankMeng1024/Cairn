@@ -19,6 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, FontSize, Radius } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { PressBtn } from '../components/PressBtn';
+import { BackButton } from '../components/BackButton';
 import { GlassPanel, Elevation } from '../components/GlassPanel';
 import { useMarkerStore, type Marker } from '../store/useMarkerStore';
 import { useTrackingStore } from '../store/useTrackingStore';
@@ -262,17 +263,22 @@ function ARCairnOverlay({
         if (inView) {
           // Project to screen X by FOV, screen Y by depth proxy.
           const screenX = SCREEN_W / 2 + (relative / halfFov) * (SCREEN_W / 2);
-          // Anchor stone pile at the "ground" Y position. Closer = lower
-          // (foreground), further = higher (toward horizon).
-          const groundY = SCREEN_H * (0.78 - 0.42 * t);
-          // Orb floats 1.5m above the ground. We approximate this in
-          // screen space by raising the orb by a fraction of the pile-
-          // size — roughly the same vertical pixel offset whether near
-          // or far, but capped so far-away orbs don't fly off-screen.
-          const pileSize = Math.max(12, 30 - t * 18);
-          const orbOffsetY = Math.max(28, 64 - t * 36);
+          // v17 anchor change: ground point at ~62% of screen at
+          // distance=0 (was 78%). 62% is roughly eye-level for someone
+          // holding the phone vertically; previous 78% put the cairn
+          // below the user's feet, forcing them to tilt down to see it.
+          const groundY = SCREEN_H * (0.62 - 0.32 * t);
+          // Stone pile: bigger and fuller — 5 stones in a pyramid
+          // arrangement instead of 3, with a wider base. Pile size
+          // 18-40 (was 12-30) so the cairn reads as a real cairn, not
+          // a few pebbles.
+          const pileSize = Math.max(18, 40 - t * 22);
+          // Orb floats clearly above the pile — 110-160px (was 28-64)
+          // so it's unambiguously "raised", not "stuck on the rocks".
+          // No connector line per product decision (visual clutter).
+          const orbOffsetY = Math.max(110, 160 - t * 50);
           const orbY = groundY - orbOffsetY;
-          const orbSize = Math.max(20, 44 - t * 24);
+          const orbSize = Math.max(34, 64 - t * 30);
           // Halo radius encodes uncertainty — farther markers get a
           // more diffuse glow so the user reads it as "approximate".
           const haloSize = orbSize + 18 + t * 20;
@@ -289,24 +295,14 @@ function ARCairnOverlay({
                     width: haloSize, height: haloSize,
                     borderRadius: haloSize / 2,
                     backgroundColor: config.color,
-                    opacity: 0.14 - 0.06 * t,
+                    opacity: 0.18 - 0.06 * t,
                   },
                 ]}
               />
-              {/* Vertical connector pile → orb */}
-              <View
-                style={[
-                  arOverlayStyles.connector,
-                  {
-                    left: screenX - 1,
-                    top: orbY + orbSize / 2,
-                    height: groundY - (orbY + orbSize / 2),
-                    backgroundColor: config.color,
-                    opacity: 0.55 - 0.25 * t,
-                  },
-                ]}
-              />
-              {/* Floating orb */}
+              {/* Floating orb — type-coloured 3D ball with strong
+                  shadow + inner highlight to read as a sphere, not a
+                  flat disc. Connector line removed in v17 per product
+                  decision. */}
               <View
                 style={[
                   arOverlayStyles.orb,
@@ -316,24 +312,51 @@ function ARCairnOverlay({
                     width: orbSize, height: orbSize,
                     borderRadius: orbSize / 2,
                     backgroundColor: config.color,
-                    opacity: 0.92 - 0.32 * t,
+                    opacity: 0.95 - 0.25 * t,
                   },
                 ]}
               >
-                <View style={[arOverlayStyles.orbHighlight, { width: orbSize * 0.4, height: orbSize * 0.25 }]} />
+                {/* Top-left highlight = subtle 3D light from upper left */}
+                <View
+                  style={[
+                    arOverlayStyles.orbHighlight,
+                    {
+                      width: orbSize * 0.42,
+                      height: orbSize * 0.28,
+                      top: orbSize * 0.14,
+                      left: orbSize * 0.18,
+                    },
+                  ]}
+                />
               </View>
-              {/* Stone pile — three small ovals stacked pyramid-style */}
+              {/* Stone pile — 5-stone fuller cairn (v17). Bottom row
+                  of 3 wide stones, then 2 narrower mid stones, capped
+                  by 1 round top stone with subtle white highlight to
+                  read as light hitting from above. Colours stagger
+                  warm grey tones for variation. */}
               <View
                 style={[
                   arOverlayStyles.pileWrap,
-                  { left: screenX - pileSize, top: groundY - pileSize * 0.5, width: pileSize * 2 },
+                  { left: screenX - pileSize, top: groundY - pileSize * 0.6, width: pileSize * 2 },
                 ]}
               >
-                {/* Bottom row of two */}
-                <View style={[arOverlayStyles.stone, { width: pileSize * 0.7, height: pileSize * 0.45, left: 0, top: pileSize * 0.4, backgroundColor: '#7a7166' }]} />
-                <View style={[arOverlayStyles.stone, { width: pileSize * 0.65, height: pileSize * 0.4, right: 0, top: pileSize * 0.45, backgroundColor: '#8a8073' }]} />
-                {/* Top stone */}
-                <View style={[arOverlayStyles.stone, { width: pileSize * 0.6, height: pileSize * 0.42, left: pileSize * 0.65, top: pileSize * 0.05, backgroundColor: '#a39684' }]} />
+                {/* Bottom row — 3 stones */}
+                <View style={[arOverlayStyles.stone, { width: pileSize * 0.6, height: pileSize * 0.40, left: 0, top: pileSize * 0.85, backgroundColor: '#6b6258' }]} />
+                <View style={[arOverlayStyles.stone, { width: pileSize * 0.7, height: pileSize * 0.45, left: pileSize * 0.55, top: pileSize * 0.80, backgroundColor: '#7a7166' }]} />
+                <View style={[arOverlayStyles.stone, { width: pileSize * 0.55, height: pileSize * 0.38, left: pileSize * 1.30, top: pileSize * 0.88, backgroundColor: '#8a8073' }]} />
+                {/* Mid row — 2 stones offset for natural stack */}
+                <View style={[arOverlayStyles.stone, { width: pileSize * 0.55, height: pileSize * 0.40, left: pileSize * 0.30, top: pileSize * 0.45, backgroundColor: '#928773' }]} />
+                <View style={[arOverlayStyles.stone, { width: pileSize * 0.55, height: pileSize * 0.38, left: pileSize * 0.95, top: pileSize * 0.40, backgroundColor: '#a39684' }]} />
+                {/* Top capstone — slightly rounder, with subtle white
+                    light highlight to suggest 3D form */}
+                <View style={[arOverlayStyles.stone, { width: pileSize * 0.50, height: pileSize * 0.42, left: pileSize * 0.70, top: 0, backgroundColor: '#b8aa97' }]}>
+                  <View style={{
+                    position: 'absolute', top: 2, left: 4,
+                    width: pileSize * 0.18, height: pileSize * 0.10,
+                    borderRadius: pileSize * 0.10,
+                    backgroundColor: 'rgba(255,255,255,0.35)',
+                  }} />
+                </View>
               </View>
               {/* Distance chip */}
               <View style={[arOverlayStyles.distChip, { left: screenX - 24, top: groundY + pileSize * 0.7 }]}>
@@ -373,19 +396,23 @@ function ARCairnOverlay({
 }
 
 const arOverlayStyles = StyleSheet.create({
-  // Floating orb — main visible "marker is here" element. Type-coloured,
-  // semi-transparent so it doesn't dominate the AR view. Positioned
-  // absolutely (left/top set per-marker by ARCairnOverlay).
+  // Floating orb — type-coloured 3D ball that reads as a sphere
+  // hovering above the stone pile. Strong shadow + inner highlight
+  // give it physical depth, so users see "raised marker" not "flat
+  // disc". v17: stronger shadow, brighter border, no padding-based
+  // "highlight at top" — highlight is now a separate child positioned
+  // absolutely for proper sphere lighting.
   orb: {
     position: 'absolute',
-    alignItems: 'center', justifyContent: 'flex-start',
-    paddingTop: 4,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.85)',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
+    alignItems: 'flex-start', justifyContent: 'flex-start',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.95)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5, shadowRadius: 10, elevation: 10,
+    overflow: 'hidden',
   },
   orbHighlight: {
-    backgroundColor: 'rgba(255,255,255,0.45)',
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.55)',
     borderRadius: 999,
   },
   // Soft halo behind the orb — visualizes positional uncertainty.
@@ -393,13 +420,10 @@ const arOverlayStyles = StyleSheet.create({
   halo: {
     position: 'absolute',
   },
-  // Vertical line connecting stone pile (ground) to floating orb.
-  connector: {
-    position: 'absolute',
-    width: 2,
-  },
-  // Stone pile container — three small ovals stacked pyramid-style
-  // to read as a literal cairn. Sized per distance.
+  // Stone pile container — 5 stacked stones, pyramid-arranged.
+  // (Connector line removed in v17 per product decision; was a
+  // visually noisy element trying to bridge the orb-to-ground gap
+  // that doesn't actually exist in real-world physics.)
   pileWrap: {
     position: 'absolute',
     height: 0, // children are absolutely positioned
@@ -409,7 +433,7 @@ const arOverlayStyles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1, borderColor: 'rgba(0,0,0,0.25)',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3, shadowRadius: 3, elevation: 4,
+    shadowOpacity: 0.35, shadowRadius: 4, elevation: 4,
   },
   distChip: {
     position: 'absolute',
@@ -600,7 +624,7 @@ const CAIRN_TYPES: { id: 'danger' | 'scenic' | 'supply' | 'junction'; color: str
 ];
 
 const DISTANCE_STEPS = [0, 5, 10, 20, 30] as const;
-const TARGET_RADIUS = 70; // px — radius of the centre target ring
+const TARGET_RADIUS = 100; // px — radius of the centre target ring (was 70 in v16; bumped so the drop zone is forgiving and easier to land on)
 
 function DragCairnPicker({
   onPlant,
@@ -737,6 +761,18 @@ function DragCairnPicker({
 
   return (
     <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+      {/* Drag-state dim overlay — black 35% wash that hides the
+          CompassDial and any other UI noise while the user is
+          dragging an anchor toward the centre. CompassDial is
+          rendered behind us in z-order, so dimming our background
+          is enough — no need to lift activeType up to ARScreen. */}
+      {activeType && (
+        <View
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.35)' }]}
+          pointerEvents="none"
+        />
+      )}
+
       {/* Centre target ring — visible always, highlights when an
           anchor is being dragged in. */}
       <View
@@ -806,8 +842,8 @@ function DragCairnPicker({
                 top: anc.y,
                 backgroundColor: t.color,
                 transform: isActive
-                  ? [{ scale: 1.18 }, { translateX: dragX }, { translateY: dragY }]
-                  : [{ scale: 1 }, { translateX: 0 }, { translateY: 0 }],
+                  ? [{ translateX: dragX }, { translateY: dragY }, { scale: 1.18 }]
+                  : [{ translateX: 0 }, { translateY: 0 }, { scale: 1 }],
                 opacity: disabled ? 0.4 : isActive ? 1 : 0.85,
                 shadowOpacity: isActive ? 0.6 : 0.35,
               },
@@ -1016,19 +1052,14 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
       cairnLng = anchor.lng + dE / (111000 * Math.cos(anchor.lat * Math.PI / 180));
     }
 
-    // Spacing check — reject if too close to an existing cairn
-    const spacing = checkMarkerSpacing(
-      { lat: cairnLat, lng: cairnLng },
-      markers.map(m => ({ id: m.id, lat: m.lat, lng: m.lng })),
-    );
-    if (!spacing.allowed) {
-      Alert.alert(
-        'Too Close',
-        `You have a cairn ${Math.round(spacing.nearestDistM)}m away. Cairns must be at least 20m apart.`,
-      );
-      crashLogger.breadcrumb(`ar:plant:rejected:too-close nearest=${Math.round(spacing.nearestDistM)}`);
-      return;
-    }
+    // Spacing check intentionally REMOVED in v17 — users can plant
+    // cairns wherever they want, including right at their feet or
+    // adjacent to an existing one. Per product decision: only the MAX
+    // distance (30m via DragCairnPicker distance ring) is enforced;
+    // there is no MIN distance.
+    //
+    // (`checkMarkerSpacing` from utils/geo is preserved for any other
+    // caller that may want it — it's just no longer applied here.)
 
     if (approximate) {
       const ageText = age < 60 ? `${age}s` : age < 3600 ? `${Math.round(age / 60)}min` : `${Math.round(age / 3600)}h`;
@@ -1135,12 +1166,12 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
         </GlassPanel>
       </View>
 
-      {/* Top controls — uses safe-area inset so X button clears the
-          status bar / Dynamic Island on every device. */}
-      <View style={[styles.topBar, { top: insets.top + 8 }]}>
-        <PressBtn style={styles.closeBtn} onPress={() => onClose ? onClose() : nav.goBack()} scaleTo={0.92}>
-          <Icon name="X" size={20} color="#fff" />
-        </PressBtn>
+      {/* Top controls — pill BackButton matching Hiking / Settings /
+          Routes screens for consistent navigation language. The X icon
+          previously used here felt like a modal-close, but AR is a
+          regular nav screen, not a modal. */}
+      <View style={[styles.topBar, { top: insets.top + 2 }]}>
+        <BackButton variant="pill" onPress={() => onClose ? onClose() : nav.goBack()} />
       </View>
 
       {/* Drag-to-plant cairn picker — replaces the previous Place Flag FAB

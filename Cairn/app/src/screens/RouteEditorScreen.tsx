@@ -74,6 +74,11 @@ export function RouteEditorScreen() {
   const session = useSessionStore(s => fromSessionId ? s.sessions.find(x => x.id === fromSessionId) : null);
   const [name, setName] = useState('');
   const [waypoints, setWaypoints] = useState<WaypointDraft[]>([]);
+  // True when snapToRoadAndTrim couldn't align the trace to road data
+  // — typical indoors / sparse-OSM areas. We honestly tell the user
+  // we're showing raw GPS, which prevents the "why are 7 waypoints
+  // stacked on top of each other?" confusion seen in v16.
+  const [snapWarning, setSnapWarning] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ name: string; subtitle?: string | null; lat: number; lng: number }>>([]);
   const [showSearch, setShowSearch] = useState(false);
@@ -166,6 +171,11 @@ export function RouteEditorScreen() {
           tp.map(p => ({ lat: p.lat, lng: p.lng })),
           profile,
         );
+        // Surface a banner when snapping fell back to raw GPS (indoors,
+        // no nearby OSM road, or matcher confidence below threshold).
+        // Otherwise the user sees raw clustered points on the map and
+        // assumes the editor is broken.
+        setSnapWarning(!matched.isSnapped);
         // Sample whichever polyline we have (snapped or fallback) down
         // to ~20 waypoints so the editor's draggable pins stay
         // manageable.
@@ -539,6 +549,19 @@ export function RouteEditorScreen() {
             <Text style={styles.errorText}>{errorMsg}</Text>
           </View>
         )}
+        {/* Snap-to-road fallback banner — appears when Mapbox couldn't
+            align the trace to a road (indoors, no nearby OSM road, or
+            track points cluster too tightly to match). Tells the user
+            we're showing raw GPS so they don't think the editor is
+            broken when waypoints overlap. */}
+        {snapWarning && (
+          <View style={styles.snapWarnBanner}>
+            <Icon name="Info" size={14} color={Colors.severityCaution} strokeWidth={2} />
+            <Text style={styles.snapWarnText}>
+              Snap-to-road unavailable — track points cluster too tightly to match a road. Showing raw GPS.
+            </Text>
+          </View>
+        )}
         {/* Route name */}
         <TextInput
           style={styles.nameInput}
@@ -671,6 +694,17 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.danger ?? '#c53d2e',
   },
   errorText: { fontSize: FontSize.small, color: Colors.danger ?? '#c53d2e', fontWeight: '600', flex: 1 },
+  // Yellow caution banner used when snap-to-road fell back to raw GPS.
+  // Same shape as errorBanner but caution palette so users read it as
+  // "heads up" not "error".
+  snapWarnBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.severityWarningBg ?? '#fef3e2', borderRadius: Radius.button,
+    paddingHorizontal: Spacing.md, paddingVertical: 8,
+    marginBottom: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.severityCaution ?? '#f59e0b',
+  },
+  snapWarnText: { fontSize: FontSize.small, color: Colors.severityCaution ?? '#b36b00', fontWeight: '600', flex: 1 },
   nameInput: {
     backgroundColor: Colors.bg, borderRadius: Radius.button,
     padding: Spacing.md, fontSize: FontSize.body, color: Colors.textPrimary,

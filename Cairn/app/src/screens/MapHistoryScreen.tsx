@@ -17,6 +17,7 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useSessionStore, loadTrackPoints } from '../store/useSessionStore';
 import { useRouteStore } from '../store/useRouteStore';
 import { useMarkerStore } from '../store/useMarkerStore';
+import { crashLogger } from '../services/crashLogger';
 import { getCurrentRegion } from '../config/regions';
 import { formatDistance, formatDuration, formatDate, getRelativeTime } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
@@ -730,58 +731,66 @@ export function MapHistoryScreen() {
                 selectedSession.trackPoints.length < 2 && { opacity: 0.4 },
               ]}
               disabled={selectedSession.trackPoints.length < 2}
-              onPress={() => {
-                // Two-path Save as Route: Quick Save preserves the raw
-                // GPS trace as a free route (philosophy: "you walked
-                // it = it's real"); Edit & Save jumps into the route
-                // editor where the trace snaps to the road network
-                // (Mapbox Map Matching) and the user can adjust nodes.
-                // This honours route-rules.md §1 — GPS Free is the
-                // foundation, Edit is an optional aid, neither is
-                // imposed.
-                Alert.alert(
-                  'Save as Route',
-                  'How do you want to save this hike as a route?',
-                  [
-                    {
-                      text: 'Quick Save',
-                      onPress: async () => {
-                        const ts = selectedSession;
-                        try {
-                          const points = ts.trackPoints.map(p => ({ lat: p.lat, lng: p.lng, alt: p.alt ?? null }));
-                          const id = await useRouteStore.getState().addRoute({
-                            name: ts.name || `${ts.activityMode === 'running' ? 'Run' : 'Hike'} — ${new Date(ts.startedAt).toLocaleDateString()}`,
-                            points,
-                            // Free route: original = current, no segments
-                            // classified yet (Phase 2 will run async).
-                            originalPoints: points,
-                            waypoints: [],
-                            distanceM: ts.distanceM,
-                            elevationGainM: ts.elevationGainM,
-                          });
-                          if (id) {
-                            Alert.alert('Saved', 'Your route is saved as-is. Find it in Routes.');
-                          } else {
-                            Alert.alert('Save failed', 'Could not save route. Try again.');
-                          }
-                        } catch {
-                          Alert.alert('Save failed', 'Could not save route. Try again.');
-                        }
-                      },
-                    },
-                    {
-                      text: 'Edit & Save',
-                      onPress: () => {
-                        (nav as any).navigate('RouteEditor', { fromSessionId: selectedSession.id });
-                      },
-                    },
-                    { text: 'Cancel', style: 'cancel' },
-                  ],
-                );
+              onPress={async () => {
+                // Save as Route: directly persist the raw GPS trace as
+                // a free route (no editor dialog). Honours route-rules.md
+                // §1 — "GPS Free is the foundation, Edit is an optional
+                // aid". Edit path is a separate sibling button.
+                //
+                // No `originalPoints` field — backend doesn't accept it
+                // yet (Phase 1 dual-line storage will land server-side
+                // later). Adding it here previously triggered the v16
+                // "Save failed" 500 error users reported.
+                const ts = selectedSession;
+                crashLogger.breadcrumb(`saveroute:start session=${ts.id} pts=${ts.trackPoints.length}`);
+                try {
+                  const points = ts.trackPoints.map(p => ({ lat: p.lat, lng: p.lng, alt: p.alt ?? null }));
+                  const id = await useRouteStore.getState().addRoute({
+                    name: ts.name || `${ts.activityMode === 'running' ? 'Run' : 'Hike'} — ${new Date(ts.startedAt).toLocaleDateString()}`,
+                    points,
+                    waypoints: [],
+                    distanceM: ts.distanceM,
+                    elevationGainM: ts.elevationGainM,
+                  });
+                  if (id) {
+                    crashLogger.breadcrumb(`saveroute:ok id=${id}`);
+                    // Navigate straight to the Routes screen — no Alert,
+                    // no intermediate dialog. Matches user expectation
+                    // ("Save = save and show me where it landed").
+                    (nav as any).navigate('Routes');
+                  } else {
+                    crashLogger.breadcrumb(`saveroute:no-id-returned`);
+                    Alert.alert('Save failed', 'Server returned no ID. Check connection and try again.');
+                  }
+                } catch (err: any) {
+                  // Surface the actual error so we can debug from logs
+                  // instead of the generic "Try again" message.
+                  const msg = String(err?.message ?? err).slice(0, 120);
+                  crashLogger.breadcrumb(`saveroute:error ${msg}`);
+                  Alert.alert('Save failed', msg || 'Could not save route. Try again.');
+                }
               }}
             >
               <Icon name="Route" size={IconSize.sm} color={Colors.primary} strokeWidth={2} />
               <Text style={[cardStyles.deleteBtnText, { color: Colors.primary }]}>Save as Route</Text>
+            </TouchableOpacity>
+            {/* Edit & Save — secondary smaller button, opens RouteEditor
+                with the session pre-loaded (snap to roads + adjustable
+                waypoints). Distinct from the primary Save which preserves
+                the raw GPS trace. */}
+            <TouchableOpacity
+              style={[
+                cardStyles.deleteBtn,
+                { borderColor: Colors.border, backgroundColor: Colors.surface, paddingHorizontal: Spacing.md },
+                selectedSession.trackPoints.length < 2 && { opacity: 0.4 },
+              ]}
+              disabled={selectedSession.trackPoints.length < 2}
+              onPress={() => {
+                (nav as any).navigate('RouteEditor', { fromSessionId: selectedSession.id });
+              }}
+            >
+              <Icon name="Pencil" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2} />
+              <Text style={[cardStyles.deleteBtnText, { color: Colors.textSecondary }]}>Edit</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[cardStyles.deleteBtn, { flex: 1 }, deleteConfirm && { backgroundColor: Colors.danger }]}
