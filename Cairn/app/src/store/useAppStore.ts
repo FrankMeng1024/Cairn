@@ -128,6 +128,18 @@ export const useAppStore = create<AppState>((set) => ({
           try { await useMarkerStore.getState().hydrate(user.id); } catch { /* swallow */ }
           try {
             const remote = await fetchSessions();
+            // Pre-load any locally-stored sessions so we can preserve
+            // names the user just typed in the post-stop summary —
+            // the backend may not have returned them yet (network race
+            // condition), and we don't want hydrate to wipe out a
+            // freshly-named activity.
+            const localSessionStore = useSessionStore.getState();
+            const localByRemoteId = new Map<number, string>();
+            for (const s of localSessionStore.sessions) {
+              if (s.remoteId != null && s.name) {
+                localByRemoteId.set(s.remoteId, s.name);
+              }
+            }
             const sessions = remote.map((r) => ({
               id: String(r.id),
               // Mirror the backend row id so future delete / update calls
@@ -145,6 +157,10 @@ export const useAppStore = create<AppState>((set) => ({
               elevationGainM: 0,
               trackPoints: [] as TrackPoint[],
               markerIds: [] as string[],
+              // Prefer backend-stored name; fall back to whatever was
+              // in the local cache (covers the race where backend
+              // hadn't persisted name yet at fetch time).
+              name: r.name ?? localByRemoteId.get(r.id) ?? undefined,
             }));
             useSessionStore.setState({ sessions, currentUserId: user.id });
           } catch {

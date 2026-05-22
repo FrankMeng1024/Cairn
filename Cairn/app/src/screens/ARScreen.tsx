@@ -20,6 +20,7 @@ import { Colors, Spacing, FontSize, Radius } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { PressBtn } from '../components/PressBtn';
 import { BackButton } from '../components/BackButton';
+import { AR3DCairnOverlay } from '../components/AR3DCairnOverlay';
 import { GlassPanel, Elevation } from '../components/GlassPanel';
 import { useMarkerStore, type Marker } from '../store/useMarkerStore';
 import { useTrackingStore } from '../store/useTrackingStore';
@@ -1125,10 +1126,13 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
         />
       )}
 
-      {/* AR cairn overlay — projects nearby cairns onto screen-space
-          as ground-anchored stone piles + floating orbs. Renders above
-          camera, below UI controls. */}
-      <ARCairnOverlay
+      {/* AR cairn overlay — true 3D rendering via Three.js + expo-gl.
+          Cairns render as proper lit spheres anchored to absolute GPS
+          coordinates, so they stay glued to a real-world place even
+          as the user moves around. The legacy 2D ARCairnOverlay is
+          retained in this file as fallback / reference but no longer
+          mounted. */}
+      <AR3DCairnOverlay
         markers={nearbyMarkers}
         userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng } : null}
         userHeading={userHeading}
@@ -1236,7 +1240,11 @@ const styles = StyleSheet.create({
   markerDist: { fontSize: FontSize.caption, color: 'rgba(255,255,255,0.6)' },
   topBar: {
     position: 'absolute', left: Spacing.md, right: Spacing.md,
-    flexDirection: 'row', justifyContent: 'flex-end',
+    // Left-aligned to match HikingScreen / RoutesScreen / SettingsScreen
+    // (consistent navigation pattern across the app — back button on
+    // the left, like every native iOS/Android nav bar). Was flex-end
+    // (right side) in v17 which felt foreign on AR.
+    flexDirection: 'row', justifyContent: 'flex-start',
   },
   closeBtn: {
     width: 40, height: 40, borderRadius: 20,

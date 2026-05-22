@@ -87,6 +87,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         end_time: new Date(session.endedAt).toISOString(),
         distance_m: session.distanceM,
         duration_s: session.durationS,
+        // User-assigned name (or our synthesised default). Without this
+        // the backend stores null → on next hydrate the activity list
+        // shows "Hike" generic instead of what the user typed in the
+        // post-stop summary sheet. Reported as v17 bug "I named it 1
+        // but Activities still shows Hike".
+        name: session.name ?? null,
         route_points: session.trackPoints.length > 0 ? session.trackPoints : null,
         flags: session.markerIds.length > 0 ? session.markerIds : null,
       }),

@@ -399,7 +399,7 @@ function ActivitySheet({
 
         {/* Header */}
         <View style={sheetStyles.headerRow}>
-          <Text style={sheetStyles.title}>{isRun ? 'Run' : 'Hike'}</Text>
+          <Text style={sheetStyles.title}>{data.name || (isRun ? 'Run' : 'Hike')}</Text>
           <PressBtn style={sheetStyles.closeBtn} onPress={() => dismiss()} scaleTo={0.9}>
             <Icon name="X" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2.5} />
           </PressBtn>
@@ -599,7 +599,11 @@ function ActivitiesTab() {
                 }
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{isRun ? 'Run' : 'Hike'}</Text>
+                {/* Show the user-assigned name when present, falling
+                    back to the activity type. Previously this was
+                    hardcoded to 'Run' / 'Hike' which silently dropped
+                    whatever the user typed in the stop-summary sheet. */}
+                <Text style={styles.cardTitle}>{item.name || (isRun ? 'Run' : 'Hike')}</Text>
                 <Text style={styles.cardMeta}>{dateStr} · {formatDistance(item.distanceM, 'km', 1)} km · {formatDuration(item.durationS)}</Text>
               </View>
               <Icon name="ChevronRight" size={16} color={Colors.textMuted} strokeWidth={2} />

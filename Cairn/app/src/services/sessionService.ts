@@ -10,6 +10,9 @@ export interface SessionPayload {
   end_time: string;     // ISO date string
   distance_m: number;
   duration_s: number;
+  // User-assigned activity name. Optional. When absent, the client will
+  // synthesise a "Hike — DD/MM/YYYY" default at display time.
+  name?: string | null;
   route_points?: Array<{ lat: number; lng: number; timestamp: string }>;
   flags?: Array<{ lat: number; lng: number; note: string; timestamp: string }>;
 }
@@ -22,6 +25,10 @@ export interface RemoteSession {
   end_time: string;
   distance_m: number;
   duration_s: number;
+  // Returned by the backend. May be null on legacy rows or when the
+  // user never named the activity. Caller should fall back to a
+  // type+date default in that case.
+  name?: string | null;
   created_at: string;
 }
 

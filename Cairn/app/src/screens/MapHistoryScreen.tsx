@@ -312,7 +312,10 @@ function SessionCard({ session, isSelected, isExpanded, onPress, onViewOnMap }: 
 }) {
   const isRun = session.activityMode === 'running';
   const dateStr = formatDate(session.startedAt);
-  const actLabel = isRun ? 'Run' : 'Hike';
+  // Display label prefers the user-assigned name; falls back to type
+  // when no name was set. Earlier versions hardcoded 'Run' / 'Hike'
+  // here, dropping whatever the user typed in the stop-summary sheet.
+  const actLabel = session.name || (isRun ? 'Run' : 'Hike');
   const actColor = isRun ? Colors.running : Colors.primary;
   const actLightBg = isRun ? Colors.runningLight : Colors.primaryLight;
   const actDeepBg = isRun
