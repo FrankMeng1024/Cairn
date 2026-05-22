@@ -32,13 +32,40 @@ export interface RoutePoint {
   alt?: number | null;
 }
 
+// Per-segment classification (Phase 1 of route-rules.md).
+// A route is a list of contiguous segments. `road` segments map to
+// OSM/DOC roads (snap rate ≥ 0.8), `free` segments don't (snap rate
+// < 0.3), `mixed` is the transitional middle band. Classification
+// happens lazily after a hike completes — when the field is absent
+// the entire route is treated as a single 'free' segment by callers.
+export type RouteSegmentType = 'road' | 'free' | 'mixed';
+export interface RouteSegment {
+  type: RouteSegmentType;
+  // Inclusive [startIndex, endIndex] into the route's points array.
+  // Storing indices (not duplicated coords) keeps the route data flat
+  // and makes editing trivial — corridor / trim algorithms reference
+  // the same source array.
+  startIndex: number;
+  endIndex: number;
+  // Optional snap-success rate from Map Matching when classification ran.
+  snapRate?: number;
+}
+
 export interface Route {
   id: string;
   name: string;
   description?: string;
   createdAt: number;       // timestamp (ms)
   updatedAt: number;
-  points: RoutePoint[];    // the route polyline
+  points: RoutePoint[];    // the route polyline (current/edited version)
+  // Phase 1: original GPS trace, set once at save-as-route and never
+  // mutated by edit operations. Edit corridors are computed against
+  // this baseline forever (route-rules.md §4.4 "original is forever").
+  // Optional during migration — pre-Phase-1 routes have only `points`.
+  originalPoints?: RoutePoint[];
+  // Phase 1: per-segment classification. Absent on legacy routes;
+  // callers should treat absence as a single free segment.
+  segments?: RouteSegment[];
   waypoints: Waypoint[];   // interactive points along route
   distanceM: number;       // total route distance in meters
   elevationGainM: number;  // total elevation gain

@@ -23,6 +23,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTrackingStore } from '../store/useTrackingStore';
 import { useRouteStore } from '../store/useRouteStore';
+import { useMarkerStore } from '../store/useMarkerStore';
+import { getCurrentRegion } from '../config/regions';
 import { formatDistance, formatDuration } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
@@ -110,9 +112,17 @@ export function RunningScreen() {
   const durationS = useTrackingStore(s => s.durationS);
   const distanceM = useTrackingStore(s => s.distanceM);
   const locationAvailable = useTrackingStore(s => s.locationAvailable);
+  const lastCoordinate = useTrackingStore(s => s.lastCoordinate);
+  const sessionId = useTrackingStore(s => s.sessionId);
+  const linkMarker = useTrackingStore(s => s.linkMarker);
   const setActivityMode = useTrackingStore(s => s.setActivityMode);
   const startTracking = useTrackingStore(s => s.startTracking);
   const stopTracking = useTrackingStore(s => s.stopTracking);
+  const addMarker = useMarkerStore(s => s.addMarker);
+  // Toast for the "cairn planted" feedback shown after the user uses
+  // the unlock-protected plant button. Only relevant in the unlocked
+  // running state — in pre-/post-run states this stays null.
+  const [plantToast, setPlantToast] = useState<string | null>(null);
 
   // Keep screen awake when running
   useRunKeepAwake();
@@ -204,6 +214,43 @@ export function RunningScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     stopTracking();
     setRunState('stopped');
+  }
+
+  // Plant a cairn at the user's current GPS position.
+  //
+  // Running cairns are intentionally lower-friction than Hiking ones:
+  // a runner on the move can't choose type / write a note without
+  // breaking stride, so a single tap (only available AFTER unlock)
+  // drops a 'scenic' cairn — the implicit "this is worth stopping for"
+  // type. Per route-rules.md §7.3 the unlock barrier is the friction
+  // that ensures running cairns are meaningful.
+  async function handlePlantCairn() {
+    if (!lastCoordinate) {
+      // Should be rare — locked mode keeps GPS active. Don't throw,
+      // just bail out silently with a haptic to acknowledge press.
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    const region = getCurrentRegion();
+    try {
+      const marker = await addMarker({
+        type: 'scenic',
+        regionCode: region.code,
+        lat: lastCoordinate.lat,
+        lng: lastCoordinate.lng,
+        note: '',
+        authorId: 'local',
+        permission: 'personal',
+        sessionId: sessionId ?? undefined,
+      });
+      if (sessionId) linkMarker(marker.id);
+      setPlantToast('Cairn planted');
+      setTimeout(() => setPlantToast(null), 1500);
+    } catch {
+      setPlantToast('Failed to plant cairn');
+      setTimeout(() => setPlantToast(null), 2000);
+    }
   }
 
   const activeRouteName = routes.find(r => r.id === selectedRoute)?.name;
@@ -492,14 +539,30 @@ export function RunningScreen() {
                   <Icon name="Square" size={IconSize.sm} color="#fff" strokeWidth={2.5} />
                   <Text style={runStyles.stopBtnText}>Stop</Text>
                 </TouchableOpacity>
+                {/* Plant Cairn — middle position. Only reachable after
+                    unlock, which is the deliberate friction that keeps
+                    running cairns meaningful (see route-rules.md §7.3). */}
+                <TouchableOpacity
+                  style={runStyles.plantBtn}
+                  onPress={handlePlantCairn}
+                  disabled={!locationAvailable}
+                >
+                  <Icon name="MapPin" size={IconSize.sm} color="#fff" strokeWidth={2.5} />
+                  <Text style={runStyles.plantBtnText}>Plant</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={runStyles.relockBtn}
                   onPress={() => setIsLocked(true)}
                 >
                   <Icon name="Lock" size={IconSize.sm} color="rgba(255,255,255,0.8)" strokeWidth={2} />
-                  <Text style={runStyles.relockText}>Lock Screen</Text>
+                  <Text style={runStyles.relockText}>Lock</Text>
                 </TouchableOpacity>
               </View>
+              {plantToast && (
+                <View style={runStyles.plantToast}>
+                  <Text style={runStyles.plantToastText}>{plantToast}</Text>
+                </View>
+              )}
             </SafeAreaView>
           </Animated.View>
         </View>
@@ -746,4 +809,23 @@ const runStyles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.07)',
   },
   relockText: { color: 'rgba(255,255,255,0.7)', fontWeight: '700', fontSize: FontSize.caption },
+  // Plant cairn button — middle of the unlocked row, primary running
+  // accent. Sits between Stop (danger) and Lock (subtle).
+  plantBtn: {
+    flex: 1.4, backgroundColor: Colors.running, borderRadius: Radius.button,
+    paddingVertical: Spacing.lg, alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: Spacing.xs,
+    ...Shadow.fab,
+  },
+  plantBtnText: { color: '#fff', fontWeight: '800', fontSize: FontSize.body },
+  // Toast confirmation after plant. Floats above the bottom safe area
+  // so users see it without obscuring the controls.
+  plantToast: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
+    marginBottom: Spacing.sm,
+  },
+  plantToastText: { color: '#fff', fontWeight: '700', fontSize: FontSize.small },
 });
