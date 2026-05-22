@@ -92,10 +92,30 @@ function NativeTrackMap({ session, markers }: { session: TrackingSession; marker
   // Bounding box of the track for camera fit.
   const lats = pts.map(p => p.lat);
   const lngs = pts.map(p => p.lng);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
+  let minLat = Math.min(...lats);
+  let maxLat = Math.max(...lats);
+  let minLng = Math.min(...lngs);
+  let maxLng = Math.max(...lngs);
+
+  // Guard against degenerate bounding boxes — if the track is very
+  // short or stationary (user paused/idle GPS), the bbox can be only
+  // a few metres across, which makes Mapbox fit at maximum zoom and
+  // shows just a single dot with no surrounding context. Expand the
+  // bbox to a minimum ~600m visual span so users always see the
+  // surrounding road network.
+  const MIN_SPAN_DEG = 0.005; // ~555m at NZ latitudes
+  const latSpan = maxLat - minLat;
+  const lngSpan = maxLng - minLng;
+  if (latSpan < MIN_SPAN_DEG) {
+    const cLat = (minLat + maxLat) / 2;
+    minLat = cLat - MIN_SPAN_DEG / 2;
+    maxLat = cLat + MIN_SPAN_DEG / 2;
+  }
+  if (lngSpan < MIN_SPAN_DEG) {
+    const cLng = (minLng + maxLng) / 2;
+    minLng = cLng - MIN_SPAN_DEG / 2;
+    maxLng = cLng + MIN_SPAN_DEG / 2;
+  }
 
   const start = pts[0];
   const end = pts[pts.length - 1];
@@ -711,7 +731,53 @@ export function MapHistoryScreen() {
               ]}
               disabled={selectedSession.trackPoints.length < 2}
               onPress={() => {
-                (nav as any).navigate('RouteEditor', { fromSessionId: selectedSession.id });
+                // Two-path Save as Route: Quick Save preserves the raw
+                // GPS trace as a free route (philosophy: "you walked
+                // it = it's real"); Edit & Save jumps into the route
+                // editor where the trace snaps to the road network
+                // (Mapbox Map Matching) and the user can adjust nodes.
+                // This honours route-rules.md §1 — GPS Free is the
+                // foundation, Edit is an optional aid, neither is
+                // imposed.
+                Alert.alert(
+                  'Save as Route',
+                  'How do you want to save this hike as a route?',
+                  [
+                    {
+                      text: 'Quick Save',
+                      onPress: async () => {
+                        const ts = selectedSession;
+                        try {
+                          const points = ts.trackPoints.map(p => ({ lat: p.lat, lng: p.lng, alt: p.alt ?? null }));
+                          const id = await useRouteStore.getState().addRoute({
+                            name: ts.name || `${ts.activityMode === 'running' ? 'Run' : 'Hike'} — ${new Date(ts.startedAt).toLocaleDateString()}`,
+                            points,
+                            // Free route: original = current, no segments
+                            // classified yet (Phase 2 will run async).
+                            originalPoints: points,
+                            waypoints: [],
+                            distanceM: ts.distanceM,
+                            elevationGainM: ts.elevationGainM,
+                          });
+                          if (id) {
+                            Alert.alert('Saved', 'Your route is saved as-is. Find it in Routes.');
+                          } else {
+                            Alert.alert('Save failed', 'Could not save route. Try again.');
+                          }
+                        } catch {
+                          Alert.alert('Save failed', 'Could not save route. Try again.');
+                        }
+                      },
+                    },
+                    {
+                      text: 'Edit & Save',
+                      onPress: () => {
+                        (nav as any).navigate('RouteEditor', { fromSessionId: selectedSession.id });
+                      },
+                    },
+                    { text: 'Cancel', style: 'cancel' },
+                  ],
+                );
               }}
             >
               <Icon name="Route" size={IconSize.sm} color={Colors.primary} strokeWidth={2} />

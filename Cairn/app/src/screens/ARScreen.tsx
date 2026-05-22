@@ -234,7 +234,14 @@ function ARCairnOverlay({
   userPos: { lat: number; lng: number } | null;
   userHeading: number | null;
 }) {
-  if (!userPos || userHeading == null || markers.length === 0) return null;
+  if (!userPos || markers.length === 0) return null;
+  // Heading fallback: when the device can't lock a magnetic heading
+  // (indoors, in a building's metal cage, low-power state), we still
+  // need to project markers somewhere — treating heading as North=0
+  // means everything renders "ahead of you" until the compass kicks
+  // in. Better than rendering nothing; user still sees their own
+  // freshly-planted cairn on screen even before the compass settles.
+  const headingForProjection = userHeading ?? 0;
 
   return (
     <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
@@ -243,7 +250,7 @@ function ARCairnOverlay({
         if (distM > AR_MAX_RANGE_M) return null;
 
         const bearing = bearingTo(userPos, { lat: m.lat, lng: m.lng });
-        let relative = bearing - userHeading;
+        let relative = bearing - headingForProjection;
         while (relative > 180) relative -= 360;
         while (relative < -180) relative += 360;
 
@@ -449,7 +456,7 @@ function CompassDial({
   }, [markers, userPos, userHeading]);
 
   return (
-    <View style={dialStyles.wrap}>
+    <View style={dialStyles.wrap} pointerEvents="none">
       {/* Dial face — rotates so N stays pointing to true north */}
       <View style={[dialStyles.dial, { transform: [{ rotate: `${rotateDeg}deg` }] }]}>
         {/* Cardinal direction marks */}
@@ -592,7 +599,7 @@ const CAIRN_TYPES: { id: 'danger' | 'scenic' | 'supply' | 'junction'; color: str
   { id: 'junction', color: '#f59e0b', iconName: 'Navigation2',   label: 'Junction', corner: 'br' },
 ];
 
-const DISTANCE_STEPS = [5, 10, 20, 30] as const;
+const DISTANCE_STEPS = [0, 5, 10, 20, 30] as const;
 const TARGET_RADIUS = 70; // px — radius of the centre target ring
 
 function DragCairnPicker({
@@ -642,8 +649,15 @@ function DragCairnPicker({
   // so we know which type the user grabbed without extra hit-testing.
   const buildResponder = useCallback((typeId: string, corner: 'tl' | 'tr' | 'bl' | 'br') => {
     return PanResponder.create({
-      onStartShouldSetPanResponder: () => !disabled,
-      onMoveShouldSetPanResponder: () => !disabled,
+      // Drag is ALWAYS enabled — GPS availability is checked at plant
+      // time (handlePlantCairn alerts if no GPS). Earlier we gated the
+      // gesture on `!disabled` (lastCoord && trackPoints), which made
+      // the picker unresponsive when the user opened AR from Home
+      // without an active tracking session — even though the screen
+      // looked alive. Better UX: let the user start dragging, then
+      // give a clear error if GPS isn't ready when they try to plant.
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         setActiveType(typeId);
@@ -695,16 +709,10 @@ function DragCairnPicker({
         if (!distancePhase) {
           // Phase 1 release: only commit if released inside target ring
           if (dist <= TARGET_RADIUS) {
-            // Enter distance phase. The user keeps holding? They've
-            // already lifted their finger here, so we open the ring
-            // and accept the next discrete tap. To make this feel
-            // continuous we instead plant at default 5m on first release
-            // and let the user re-drag for a different distance.
-            //
-            // Simpler model (what we ship): drop = plant at 5m. If user
-            // wants 10/20/30m, they drag past centre and pause on a
-            // distance step — that's the "continue holding" path.
-            onPlant(typeId, 5);
+            // Phase 1 release inside ring → plant at default 0m (at user's feet).
+            // Same as Hiking screen plant button. Want a different distance?
+            // Drag past centre and pause on a distance step before releasing.
+            onPlant(typeId, 0);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           } else {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -798,8 +806,8 @@ function DragCairnPicker({
                 top: anc.y,
                 backgroundColor: t.color,
                 transform: isActive
-                  ? [{ translateX: dragX }, { translateY: dragY }, { scale: 1.18 }]
-                  : [{ translateX: 0 }, { translateY: 0 }, { scale: 1 }],
+                  ? [{ scale: 1.18 }, { translateX: dragX }, { translateY: dragY }]
+                  : [{ scale: 1 }, { translateX: 0 }, { translateY: 0 }],
                 opacity: disabled ? 0.4 : isActive ? 1 : 0.85,
                 shadowOpacity: isActive ? 0.6 : 0.35,
               },
@@ -891,6 +899,25 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
           const heading = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
           if (heading >= 0) setUserHeading(heading);
         });
+        // Also seed lastCoordinate with a one-shot position fetch so
+        // users who opened AR from Home (no active tracking session)
+        // still have a coord to anchor cairns to. We don't subscribe
+        // continuously — useTrackingStore owns the long-running watch
+        // when a session is active. This is just a one-shot fix to
+        // avoid the "GPS not available" alert when planting from a
+        // fresh AR open.
+        if (!useTrackingStore.getState().lastCoordinate) {
+          try {
+            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            if (cancelled) return;
+            useTrackingStore.setState({
+              lastCoordinate: { lat: pos.coords.latitude, lng: pos.coords.longitude, alt: pos.coords.altitude ?? null },
+              lastCoordinateTime: pos.timestamp ?? Date.now(),
+            } as any);
+          } catch {
+            /* ignore — handlePlantCairn will surface a "no GPS" alert */
+          }
+        }
       } catch {
         // Heading unavailable — UI shows static dial
       }
@@ -1061,6 +1088,9 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
         <CameraView
           style={StyleSheet.absoluteFillObject}
           facing="back"
+          onMountError={(e: any) => {
+            crashLogger.breadcrumb(`ar:camera:mount-error ${String(e?.message ?? e).slice(0, 80)}`);
+          }}
         />
       )}
 
@@ -1082,8 +1112,10 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
         userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng } : null}
       />
 
-      {/* Nearby markers directional list */}
-      <GlassPanel intensity={16} tint="dark" style={styles.markerPanel} borderRadius={16}>
+      {/* Nearby markers panel — pointerEvents none so it never
+          intercepts the drag-to-plant gesture passing over it. */}
+      <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+        <GlassPanel intensity={16} tint="dark" style={styles.markerPanel} borderRadius={16}>
         <Text style={styles.panelTitle}>
           {nearbyMarkers.length} marker{nearbyMarkers.length !== 1 ? 's' : ''} nearby
         </Text>
@@ -1100,7 +1132,8 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
             </View>
           );
         })}
-      </GlassPanel>
+        </GlassPanel>
+      </View>
 
       {/* Top controls — uses safe-area inset so X button clears the
           status bar / Dynamic Island on every device. */}
