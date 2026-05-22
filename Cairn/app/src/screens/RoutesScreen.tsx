@@ -844,40 +844,48 @@ function FlagsTab() {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Single filter bar: type pills left, permission toggles right */}
-      <View style={styles.filterRow}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: Spacing.xs }} style={{ flex: 1 }}>
+      {/* Two-row filter bar — type chips on row 1, permission toggles
+          on row 2. The original single-row layout pushed perm toggles
+          off-screen on narrower devices ("一行放不下"). Splitting
+          horizontally lets each row breathe. */}
+      <View style={styles.filterColumn}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterChipsScroll}
+        >
           {FLAG_FILTERS.map(f => (
             <TouchableOpacity key={f.id} style={[styles.filterChip, typeFilter === f.id && styles.filterChipActive]} onPress={() => setTypeFilter(f.id)}>
               <Text style={[styles.filterChipText, typeFilter === f.id && styles.filterChipTextActive]}>{f.label}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
-        <View style={styles.permToggleGroup}>
-          {PERM_FILTERS.map(p => {
-            const active = permFilter === p.id;
-            return (
-              <TouchableOpacity
-                key={p.id}
-                style={[styles.permToggle, active && styles.permToggleActive]}
-                onPress={() => setPermFilter(active ? 'all' : p.id)}
-              >
-                <Icon name={p.icon} size={13} color={active ? Colors.primary : Colors.textMuted} strokeWidth={active ? 2.5 : 1.8} />
-              </TouchableOpacity>
-            );
-          })}
+        <View style={styles.permRow}>
+          <View style={styles.permToggleGroup}>
+            {PERM_FILTERS.map(p => {
+              const active = permFilter === p.id;
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[styles.permToggle, active && styles.permToggleActive]}
+                  onPress={() => setPermFilter(active ? 'all' : p.id)}
+                >
+                  <Icon name={p.icon} size={13} color={active ? Colors.primary : Colors.textMuted} strokeWidth={active ? 2.5 : 1.8} />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {/* Sort chip moved into the same row as perm toggles to keep
+              vertical compactness — was on its own third row before. */}
+          <TouchableOpacity
+            style={filterBarStyles.sortChip}
+            onPress={() => setSort(sort === 'recent' ? 'nearest' : 'recent')}
+            activeOpacity={0.7}
+          >
+            <Icon name="ArrowUpDown" size={12} color={Colors.primary} strokeWidth={2} />
+            <Text style={filterBarStyles.sortText}>{sort === 'recent' ? 'Recent' : 'Nearest'}</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-      {/* Sort chip — toggles between Recent / Nearest. Tap to cycle. */}
-      <View style={filterBarStyles.flagSortRow}>
-        <TouchableOpacity
-          style={filterBarStyles.sortChip}
-          onPress={() => setSort(sort === 'recent' ? 'nearest' : 'recent')}
-          activeOpacity={0.7}
-        >
-          <Icon name="ArrowUpDown" size={12} color={Colors.primary} strokeWidth={2} />
-          <Text style={filterBarStyles.sortText}>{sort === 'recent' ? 'Recent' : 'Nearest'}</Text>
-        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -977,6 +985,20 @@ const styles = StyleSheet.create({
   flagName: { fontSize: FontSize.body, fontWeight: '600', color: Colors.textPrimary },
   distanceText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary, marginRight: 2 },
   filterRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm },
+  // Two-row filter container — replaces filterRow on FlagsTab where
+  // the type chip count + perm toggles + sort can't fit on a single row.
+  filterColumn: {
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
+    gap: Spacing.xs,
+  },
+  filterChipsScroll: { gap: Spacing.xs, paddingRight: Spacing.sm },
+  // Row 2: perm toggle group (left) + sort chip (right).
+  permRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
   filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.pill, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
   filterChipActive: { backgroundColor: Colors.primaryBg, borderColor: Colors.primary },
   filterChipText: { fontSize: FontSize.small, fontWeight: '600', color: Colors.textSecondary },

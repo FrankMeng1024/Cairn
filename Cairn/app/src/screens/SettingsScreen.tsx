@@ -65,7 +65,11 @@ const MODE_META: Record<UIMode, {
     gradientStart: Colors.primaryLight,
     gradientEnd: Colors.primaryLight.replace('0.15', '0.28'),
     title: 'Explorer',
-    desc: 'Simplified view · Guided prompts',
+    // Kept short and parallel with Navigator so the two cards render at
+    // identical heights — uneven desc length used to make the right card
+    // wrap to 2 lines while the left stayed at 1, producing a visible
+    // size mismatch on the home of Settings.
+    desc: 'Simple view · Guided',
   },
   expert: {
     icon: 'Compass',
@@ -73,7 +77,7 @@ const MODE_META: Record<UIMode, {
     gradientStart: Colors.flagLight,
     gradientEnd: Colors.flagLight.replace('0.12', '0.24'),
     title: 'Navigator',
-    desc: 'Full data · Dense interface · Expert controls',
+    desc: 'Full data · Dense view',
   },
 };
 
@@ -423,47 +427,8 @@ export function SettingsScreen() {
                 </View>
                 <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />
               </PressBtn>
-              <View style={styles.divider} />
             </>
           )}
-          <ActionRow
-            iconName="LogOut"
-            iconColor={Colors.danger}
-            iconBg={Colors.dangerBg}
-            label="Sign Out"
-            labelColor={Colors.danger}
-            hideChevron
-            onPress={async () => {
-              // Web uses window.confirm (Alert.alert is no-op on web).
-              // React Native polyfills `window` but does NOT provide window.confirm,
-              // so checking `typeof window` was a misleading bug — guard via Platform.
-              const confirmed = Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function'
-                ? window.confirm('Are you sure you want to sign out?')
-                : await new Promise<boolean>((resolve) =>
-                    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-                      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-                      { text: 'Sign Out', style: 'destructive', onPress: () => resolve(true) },
-                    ])
-                  );
-              if (!confirmed) return;
-              crashLogger.breadcrumb('signout:confirmed');
-              // Always clear local state, even if backend logout fails (e.g. offline).
-              // Otherwise user thinks they signed out but locally remain logged in.
-              try {
-                await logout();
-                crashLogger.breadcrumb('signout:backend_logout_done');
-              } catch {
-                crashLogger.breadcrumb('signout:backend_logout_failed');
-                /* ignore — local state must clear regardless */
-              }
-              crashLogger.breadcrumb('signout:before_appLogout');
-              // Clear remember-me credentials so the next launch shows
-              // the empty Sign In form (the user explicitly signed out).
-              try { await storage.removeItem('cairn_remember_me'); } catch { /* swallow */ }
-              appLogout();
-              crashLogger.breadcrumb('signout:after_appLogout');
-            }}
-          />
         </View>
 
         {/* Emergency Section */}
@@ -623,6 +588,54 @@ export function SettingsScreen() {
           )}
         </PressBtn>
 
+        {/* Sign Out — pinned to the bottom of all settings, after Save.
+            Destructive actions live at the very bottom of a settings
+            screen by convention; nesting Sign Out inside Account made it
+            sit visually mid-page and felt disordered. Only rendered for
+            logged-in users. */}
+        {isLoggedIn && user && (
+          <View style={[styles.card, { marginTop: Spacing.xl }]}>
+            <ActionRow
+              iconName="LogOut"
+              iconColor={Colors.danger}
+              iconBg={Colors.dangerBg}
+              label="Sign Out"
+              labelColor={Colors.danger}
+              hideChevron
+              onPress={async () => {
+                // Web uses window.confirm (Alert.alert is no-op on web).
+                // React Native polyfills `window` but does NOT provide window.confirm,
+                // so checking `typeof window` was a misleading bug — guard via Platform.
+                const confirmed = Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function'
+                  ? window.confirm('Are you sure you want to sign out?')
+                  : await new Promise<boolean>((resolve) =>
+                      Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+                        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                        { text: 'Sign Out', style: 'destructive', onPress: () => resolve(true) },
+                      ])
+                    );
+                if (!confirmed) return;
+                crashLogger.breadcrumb('signout:confirmed');
+                // Always clear local state, even if backend logout fails (e.g. offline).
+                // Otherwise user thinks they signed out but locally remain logged in.
+                try {
+                  await logout();
+                  crashLogger.breadcrumb('signout:backend_logout_done');
+                } catch {
+                  crashLogger.breadcrumb('signout:backend_logout_failed');
+                  /* ignore — local state must clear regardless */
+                }
+                crashLogger.breadcrumb('signout:before_appLogout');
+                // Clear remember-me credentials so the next launch shows
+                // the empty Sign In form (the user explicitly signed out).
+                try { await storage.removeItem('cairn_remember_me'); } catch { /* swallow */ }
+                appLogout();
+                crashLogger.breadcrumb('signout:after_appLogout');
+              }}
+            />
+          </View>
+        )}
+
         {/* Te Reo acknowledgment — PRD3 E-014 */}
         <Text style={{
           textAlign: 'center',
@@ -750,6 +763,10 @@ const modeStyles = StyleSheet.create({
     flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.card,
     padding: Spacing.sm, borderWidth: 1, borderColor: Colors.border,
     alignItems: 'center', gap: 4,
+    // Hard minHeight to lock the two cards at identical visual size.
+    // Without this, desc-line-count differences make Explorer/Navigator
+    // visually unequal — see uneven heights reported on v14.
+    minHeight: 110,
   },
   cardSelected: {
     borderWidth: 2, borderColor: Colors.primary, backgroundColor: Colors.primaryBg,

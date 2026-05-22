@@ -11,7 +11,7 @@
  * expo-keep-awake: activates when status === 'tracking'
  * Real stores: useTrackingStore (GPS), useMarkerStore (flags)
  */
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView,
   TextInput, Alert, Animated, Easing, KeyboardAvoidingView, Platform,
@@ -115,13 +115,24 @@ if (Platform.OS !== 'web') {
 // device frame, even when the needle is wobbling.
 function CompassNeedle({ heading, size = 22 }: { heading: number | null; size?: number }) {
   const angle = heading != null ? -heading : 0;
+  // Cardinal label common style — small, bold, letter-spaced. North is
+  // emphasised (full opacity), the other three are slightly muted so
+  // North still reads as primary while user gets a full bearing reference.
+  const cardinal = {
+    position: 'absolute' as const,
+    fontSize: 8, fontWeight: '800' as const, color: Colors.textPrimary, letterSpacing: 0.5,
+  };
+  const cardinalMuted = { ...cardinal, color: Colors.textMuted };
   return (
     <View style={{ width: size + 8, height: size + 8, alignItems: 'center', justifyContent: 'center' }}>
-      {/* Static N marker — never rotates, anchored to top of button */}
-      <Text style={{
-        position: 'absolute', top: -2,
-        fontSize: 8, fontWeight: '800', color: Colors.textPrimary, letterSpacing: 0.5,
-      }}>N</Text>
+      {/* Static N/E/S/W markers — never rotate, anchored to bezel.
+          Previously only N was shown, which made it impossible to read
+          a bearing once the device was off-axis. Adding E/S/W gives a
+          full directional reference matching the AR compass dial. */}
+      <Text style={[cardinal, { top: -2 }]}>N</Text>
+      <Text style={[cardinalMuted, { right: -2, top: '50%' as any, marginTop: -4 }]}>E</Text>
+      <Text style={[cardinalMuted, { bottom: -2 }]}>S</Text>
+      <Text style={[cardinalMuted, { left: -2, top: '50%' as any, marginTop: -4 }]}>W</Text>
       {/* Rotating two-colour needle */}
       <View style={{ transform: [{ rotate: `${angle}deg` }] }}>
         <Svg width={size} height={size} viewBox="0 0 24 24">
