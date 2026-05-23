@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cairn AR 3D Test — same lighting/material/geometry as the production component</title>
+<style>
+  body { margin: 0; background: #1a1a1a; color: #ccc; font-family: -apple-system, sans-serif; }
+  #info {
+    position: absolute; top: 12px; left: 12px; z-index: 10;
+    background: rgba(0,0,0,0.7); padding: 12px 16px; border-radius: 8px;
+    font-size: 13px; max-width: 360px; line-height: 1.5;
+  }
+  #info h1 { margin: 0 0 8px; font-size: 15px; color: #fff; }
+  #info code { background: #333; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  #info button {
+    margin-top: 8px; padding: 6px 12px; background: #5d7c46; color: #fff;
+    border: none; border-radius: 4px; cursor: pointer;
+  }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="info">
+  <h1>Cairn AR 3D Preview</h1>
+  Same SphereGeometry, MeshStandardMaterial, three-light rig as
+  <code>AR3DCairnOverlay.tsx</code>.<br><br>
+  4 cairns laid out: <span style="color:#c53d2e">danger</span> /
+  <span style="color:#3b82f6">scenic</span> /
+  <span style="color:#22c55e">supply</span> /
+  <span style="color:#f59e0b">junction</span>.
+  Drag to orbit, scroll to zoom.<br><br>
+  <button id="rise">▶ Replay rise animation</button>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.166.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.166.1/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Constants — must match AR3DCairnOverlay.tsx ─────────────────
+const CAMERA_FOV_DEG = 65;
+const EYE_HEIGHT = 1.5;
+const RISE_DURATION_MS = 800;
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+// ── Scene + Camera ──────────────────────────────────────────────
+const w = window.innerWidth;
+const h = window.innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(w, h);
+renderer.setClearColor(0x1a1a1a, 1);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(CAMERA_FOV_DEG, w / h, 0.1, 200);
+camera.position.set(0, EYE_HEIGHT, 1);
+camera.lookAt(0, EYE_HEIGHT, -1);
+
+// Allow orbit so we can verify the sphere reads as 3D from all angles.
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, EYE_HEIGHT, -3);
+controls.update();
+
+// ── Lighting (matches AR3DCairnOverlay v18.2) ───────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(5, 10, 3);
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0xddeeff, 0.5);
+rim.position.set(-3, 2, -2);
+scene.add(rim);
+
+// Floor for spatial reference (only in this preview, not in the real component).
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.95 }),
+);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+// ── Cairns — 4 types laid out in a row at z = -3..-9 ────────────
+const TYPES = [
+  { id: 'danger',   color: 0xc53d2e, x: -3 },
+  { id: 'scenic',   color: 0x3b82f6, x: -1 },
+  { id: 'supply',   color: 0x22c55e, x:  1 },
+  { id: 'junction', color: 0xf59e0b, x:  3 },
+];
+
+const cairns = TYPES.map((t) => {
+  const geom = new THREE.SphereGeometry(0.45, 32, 24);
+  const mat = new THREE.MeshStandardMaterial({
+    color: t.color,
+    metalness: 0.1,
+    roughness: 0.35,
+    emissive: t.color,
+    emissiveIntensity: 0.05,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.position.set(t.x, EYE_HEIGHT, -5);
+  mesh.userData.plantedAt = performance.now(); // replay-on-load
+  scene.add(mesh);
+  return mesh;
+});
+
+// ── Witness sphere (matches v19.1 debug helper) ────────────────
+const witness = new THREE.Mesh(
+  new THREE.SphereGeometry(0.3, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xff00ff }),
+);
+witness.position.set(0, EYE_HEIGHT, -2);
+scene.add(witness);
+
+// ── Replay button ───────────────────────────────────────────────
+document.getElementById('rise').addEventListener('click', () => {
+  const now = performance.now();
+  cairns.forEach((c) => { c.userData.plantedAt = now; });
+});
+
+// ── Animate ────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  cairns.forEach((c) => {
+    const elapsed = now - c.userData.plantedAt;
+    if (elapsed < RISE_DURATION_MS) {
+      const t = easeOutCubic(elapsed / RISE_DURATION_MS);
+      c.position.y = t * EYE_HEIGHT;
+    } else {
+      c.position.y = EYE_HEIGHT;
+    }
+  });
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

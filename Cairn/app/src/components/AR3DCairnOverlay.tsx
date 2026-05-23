@@ -250,7 +250,21 @@ export function AR3DCairnOverlay({ markers, userPos, userHeading }: Props) {
         0.1,
         AR_MAX_RANGE_M * 2,
       );
-      camera.position.set(0, EYE_HEIGHT, 0);
+      // v19.1 fix: camera offset 1m back from origin so a cairn planted
+      // exactly at the user's GPS position (world 0,EYE,0) lands 1m in
+      // front of the camera and is visible. Without this, a freshly
+      // planted "at my feet" cairn shares the camera origin → user sees
+      // black until they walk away. The 1m offset matches a typical
+      // arm's-length view of a marker.
+      //
+      // Why we don't put it back as a marker-position bias (the v18 way
+      // before v18.2): biasing markers means ALL cairns near the user
+      // shift forward together as the user walks toward them, which
+      // looked like cairns following the camera. Biasing the CAMERA
+      // instead is just a fixed 1m offset — cairns stay locked to GPS
+      // while the camera sits 1m behind their world position when at
+      // 0 distance.
+      camera.position.set(0, EYE_HEIGHT, 1);
       camera.lookAt(0, EYE_HEIGHT, -1); // look horizontally toward -Z
       cameraRef.current = camera;
 
@@ -285,6 +299,22 @@ export function AR3DCairnOverlay({ markers, userPos, userHeading }: Props) {
       cairnGroupRef.current = group;
       readyRef.current = true;
       crashLogger.breadcrumb(`ar3d:context-ready w=${w} h=${h}`);
+
+      // ── Debug witness sphere ───────────────────────────────────
+      // Always-visible reference sphere at (0, EYE_HEIGHT, -2): 2m
+      // straight ahead of the camera, magenta, no lighting effects.
+      // If the user opens AR and CANNOT see this sphere at all, the
+      // GL pipeline itself is broken (context creation, render loop,
+      // endFrameEXP, transparency clear). If they CAN see it but
+      // can't see real cairns, the bug is in marker → world position
+      // logic. This pinpoints the issue without another OTA cycle.
+      // Will be removed in a later OTA once AR is confirmed working.
+      const witnessGeom = new THREE.SphereGeometry(0.3, 16, 12);
+      const witnessMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+      const witness = new THREE.Mesh(witnessGeom, witnessMat);
+      witness.position.set(0, EYE_HEIGHT, -2);
+      scene.add(witness);
+      crashLogger.breadcrumb(`ar3d:witness-added`);
 
       // Populate with whatever markers are currently in props — this
       // catches the initial set that the markers/userPos effect tried
