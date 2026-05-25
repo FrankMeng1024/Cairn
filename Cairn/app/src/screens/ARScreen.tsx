@@ -1198,11 +1198,15 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   return (
     <View style={styles.container}>
       {/* Camera background — live rear camera feed at the very bottom
-          of the z-stack. All AR overlays + compass dial + sheets layer
-          on top. If expo-camera is unavailable or permission denied,
+          of the z-stack. Only used for the r3f path (USE_VIRO=false).
+          When USE_VIRO=true, ViroARSceneNavigator owns the camera feed
+          via ARKit's ARSession — rendering expo-camera's CameraView at
+          the same time would steal AVCaptureSession from ARKit and
+          break the AR view (cairn renders but on black background).
+          If expo-camera is unavailable or permission denied,
           the existing dark backdrop shows instead (CompassDial + UI
           read fine against either). */}
-      {CameraView && cameraPerm?.granted && (
+      {!USE_VIRO && CameraView && cameraPerm?.granted && (
         <CameraView
           style={StyleSheet.absoluteFillObject}
           facing="back"
