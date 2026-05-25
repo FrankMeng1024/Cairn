@@ -7,7 +7,7 @@
  */
 import React, { useRef, useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, LayoutChangeEvent, useWindowDimensions,
+  View, Text, StyleSheet, TouchableOpacity, StatusBar, Animated, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';

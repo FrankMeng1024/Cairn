@@ -21,11 +21,28 @@ import { Icon } from '../components/Icon';
 import { PressBtn } from '../components/PressBtn';
 import { BackButton } from '../components/BackButton';
 import { AR3DCairnOverlay } from '../components/AR3DCairnOverlay';
+// v57 (build #21): ARKit/Viro 重新启用. v50-v55 的崩溃根因已锁定:
+// React 19.2 (viro 2.55) vs RN 0.81.5 的 react-native-renderer 19.1
+// 不匹配. 已降 viro 到 2.53.1 (require react ~19.1.0), 删 npm overrides,
+// 顶层 react 19.1.0 与 viro 内部要求一致. build #21 native 含 ViroReact pods.
+// 如果 ARKit 仍崩 → ErrorBoundary fallback 自动切回 AR3DCairnOverlay (r3f),
+// 用户体验受损但 app 不崩, 给我们时间通过 OTA 修.
+import { ViroAROverlay } from '../components/ViroAROverlay';
+import { PlantSheet, AimReticle, type PlantType } from '../components/PlantSheet';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { ARDebugOverlay } from '../components/ARDebugOverlay';
 import { GlassPanel, Elevation } from '../components/GlassPanel';
+
+// USE_VIRO=true (build #21+): 走 ViroAROverlay (ARKit) 路径.
+// ErrorBoundary 兜底 → 如崩则自动切到 AR3DCairnOverlay (r3f).
+// 紧急情况下可通过 OTA 改回 false 跳过 Viro 路径 (ViroAROverlay 仍 import,
+// 因为 OTA 不能改 native binary; import 不调用就不触发 native).
+const USE_VIRO = true;
 import { useMarkerStore, type Marker } from '../store/useMarkerStore';
 import { useTrackingStore } from '../store/useTrackingStore';
 import { haversineM, type Coordinate } from '../utils/geo';
 import { crashLogger } from '../services/crashLogger';
+import { API_BASE_URL } from '../config/api';
 import { filterContent, type ContentLevel } from '../services/contentFilter';
 import { checkMarkerSpacing } from '../utils/geo';
 
@@ -908,6 +925,23 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   const linkMarker = useTrackingStore(s => s.linkMarker);
 
   const [degradedToast, setDegradedToast] = useState<string | null>(null);
+  // Shared reticle scale for the v22 PlantSheet aim animation. Owned here
+  // so both the reticle (visible at all times) and the sheet (drives the
+  // squeeze) reference the same Animated.Value.
+  const reticleScale = useRef(new Animated.Value(1)).current;
+  // v24 diagnostic: AR overlay reports its internal state up so the
+  // ARDebugOverlay can show GL-ready + cairn count on screen.
+  const [arStatus, setArStatus] = useState<{ glReady: boolean; cairnCount: number }>({ glReady: false, cairnCount: 0 });
+
+  // v25: upload diagnostic breadcrumb when AR screen unmounts so we capture
+  // the full session — buildCairn / populate / first-frame outcomes.
+  useEffect(() => {
+    crashLogger.breadcrumb(`ar:screen:mount`);
+    return () => {
+      crashLogger.breadcrumb(`ar:screen:unmount`);
+      crashLogger.uploadDiagnostic(API_BASE_URL, 'unmount').catch(() => undefined);
+    };
+  }, []);
   const [savedToast, setSavedToast] = useState(false);
   // Live compass heading from expo-location (0=N, 90=E, etc).
   // null until first heading update or if heading unavailable.
@@ -918,7 +952,8 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   // returns no events on iOS. Falls back gracefully if denied or unavailable.
   useEffect(() => {
     let cancelled = false;
-    let sub: { remove: () => void } | null = null;
+    let headingSub: { remove: () => void } | null = null;
+    let posSub: { remove: () => void } | null = null;
     (async () => {
       try {
         const Location = await import('expo-location');
@@ -929,39 +964,47 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
           // Heading stays null → CompassDial shows "Heading unavailable" hint.
           return;
         }
-        sub = await Location.watchHeadingAsync((h) => {
+        headingSub = await Location.watchHeadingAsync((h) => {
           if (cancelled) return;
           // trueHeading is most accurate but may be -1 on simulator;
           // fall back to magHeading.
           const heading = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
           if (heading >= 0) setUserHeading(heading);
         });
-        // Also seed lastCoordinate with a one-shot position fetch so
-        // users who opened AR from Home (no active tracking session)
-        // still have a coord to anchor cairns to. We don't subscribe
-        // continuously — useTrackingStore owns the long-running watch
-        // when a session is active. This is just a one-shot fix to
-        // avoid the "GPS not available" alert when planting from a
-        // fresh AR open.
-        if (!useTrackingStore.getState().lastCoordinate) {
-          try {
-            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        // v44: continuously watch position while AR screen is open.
+        // Earlier we relied on a one-shot getCurrentPositionAsync, which
+        // meant lastCoordinate never updated as the user walked. Telemetry
+        // sample breadcrumbs in v42/v43 confirmed userLat was frozen for
+        // 26+ seconds, making cairns appear glued to the camera (the
+        // gpsToWorld delta stayed at the initial offset forever). Now we
+        // get continuous updates whenever the AR screen is open, even
+        // without an active tracking session.
+        posSub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 1000, // ms
+            distanceInterval: 0.5, // metres
+          },
+          (pos) => {
             if (cancelled) return;
             useTrackingStore.setState({
-              lastCoordinate: { lat: pos.coords.latitude, lng: pos.coords.longitude, alt: pos.coords.altitude ?? null },
+              lastCoordinate: {
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                alt: pos.coords.altitude ?? null,
+              },
               lastCoordinateTime: pos.timestamp ?? Date.now(),
             } as any);
-          } catch {
-            /* ignore — handlePlantCairn will surface a "no GPS" alert */
-          }
-        }
+          },
+        );
       } catch {
         // Heading unavailable — UI shows static dial
       }
     })();
     return () => {
       cancelled = true;
-      try { sub?.remove(); } catch { /* no-op */ }
+      try { headingSub?.remove(); } catch { /* no-op */ }
+      try { posSub?.remove(); } catch { /* no-op */ }
     };
   }, []);
 
@@ -995,6 +1038,10 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   // ~3 seconds of GPS in the trackPoints buffer so a single noisy
   // reading doesn't determine the cairn's location. For instant
   // releases at default distance we use the live coord as-is.
+  // v22: title captured by PlantSheet, consumed by handlePlantCairn when
+  // it builds the addMarker payload. Ref so we don't churn handlePlantCairn's
+  // useCallback deps every keystroke.
+  const pendingTitleRef = useRef<string>('');
   const handlePlantCairn = useCallback(async (type: string, distanceM: number) => {
     crashLogger.breadcrumb(`ar:plant:start type=${type} distance=${distanceM}`);
 
@@ -1085,13 +1132,16 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    crashLogger.breadcrumb(`ar:plant:before-addMarker lat=${cairnLat.toFixed(5)} lng=${cairnLng.toFixed(5)}`);
     try {
       const marker = await addMarker({
         type: type as any,
         regionCode: 'nz',
         lat: cairnLat,
         lng: cairnLng,
-        note: '',
+        // v22: title from PlantSheet is captured into pendingTitleRef before
+        // handlePlantCairn runs. Falls back to '' for legacy callers.
+        note: pendingTitleRef.current || '',
         authorId: 'local',
         permission: 'personal',
         sessionId: sessionId ?? undefined,
@@ -1099,8 +1149,16 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
         gpsAgeS: approximate ? age : undefined,
         alt: anchor.alt ?? undefined,
       });
+      crashLogger.breadcrumb(`ar:plant:after-addMarker id=${marker.id}`);
       if (sessionId) linkMarker(marker.id);
       crashLogger.breadcrumb(`ar:plant:saved id=${marker.id}`);
+      // v25 diagnostic: 1.5s after plant, push current breadcrumb buffer
+      // to backend telemetry. This captures the buildCairn / populate /
+      // first-frame events triggered by the new marker so we can debug
+      // why the cairn isn't showing where expected.
+      setTimeout(() => {
+        crashLogger.uploadDiagnostic(API_BASE_URL, 'plant').catch(() => undefined);
+      }, 1500);
       setSavedToast(true);
       if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
       savedToastTimerRef.current = setTimeout(() => setSavedToast(false), 1200);
@@ -1109,6 +1167,19 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
       Alert.alert('Error', 'Failed to plant cairn. Please try again.');
     }
   }, [lastCoord, lastCoordTime, trackPoints, userHeading, markers, sessionId, addMarker, linkMarker]);
+
+  // v22 PlantSheet adapter: PlantSheet returns (type, distanceM, title);
+  // handlePlantCairn currently doesn't accept a title, so we capture it
+  // separately and feed it as the note via pendingTitleRef. Keeping
+  // handlePlantCairn unchanged minimises the diff and keeps the legacy
+  // flow callable from elsewhere if needed.
+  const handlePlantFromSheet = useCallback(
+    async (type: PlantType, distanceM: number, title: string) => {
+      pendingTitleRef.current = title;
+      await handlePlantCairn(type, distanceM);
+    },
+    [handlePlantCairn],
+  );
 
   // Camera permission — request on mount when expo-camera is present.
   // Hook is called only if useCameraPermissions exists (conditional
@@ -1141,14 +1212,58 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
         />
       )}
 
-      {/* AR cairn overlay — true 3D rendering via Three.js + expo-gl.
-          Cairns render as proper lit spheres anchored to absolute GPS
-          coordinates, so they stay glued to a real-world place even
-          as the user moves around. The legacy 2D ARCairnOverlay is
-          retained in this file as fallback / reference but no longer
-          mounted. */}
-      <AR3DCairnOverlay
-        markers={nearbyMarkers}
+      {/* AR cairn overlay — ARKit (ViroAROverlay) primary path,
+          r3f (AR3DCairnOverlay) automatic fallback if Viro crashes.
+          Cairns render anchored to absolute GPS coordinates so they
+          stay glued to a real-world place even as the user moves.
+
+          ARKit path (USE_VIRO=true): full VIO + camera tracking,
+          sub-cm precision, "永不飘" core promise.
+
+          r3f fallback: GPS-only projection, drifts with GPS noise but
+          still functional. Triggered automatically by ErrorBoundary if
+          ViroAROverlay throws (e.g. on devices missing ARKit support). */}
+      <ErrorBoundary
+        tag="ARKitOverlay"
+        fallback={
+          <AR3DCairnOverlay
+            markers={nearbyMarkers}
+            userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng } : null}
+            userHeading={userHeading}
+            onStatus={setArStatus}
+            onCairnPress={(id) => {
+              crashLogger.breadcrumb(`ar3d:cairn:press id=${id.slice(-6)} (viro-fallback)`);
+            }}
+          />
+        }
+      >
+        {USE_VIRO ? (
+          <ViroAROverlay
+            markers={nearbyMarkers}
+            userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng, alt: lastCoord.alt ?? null } : null}
+            userHeading={userHeading}
+            onStatus={setArStatus}
+            onCairnPress={(id) => {
+              crashLogger.breadcrumb(`viro:cairn:press id=${id.slice(-6)}`);
+            }}
+          />
+        ) : (
+          <AR3DCairnOverlay
+            markers={nearbyMarkers}
+            userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng } : null}
+            userHeading={userHeading}
+            onStatus={setArStatus}
+            onCairnPress={(id) => {
+              crashLogger.breadcrumb(`ar3d:cairn:press id=${id.slice(-6)}`);
+            }}
+          />
+        )}
+      </ErrorBoundary>
+
+      {/* v24 on-screen diagnostic — GL ready, cairn count, recent breadcrumbs */}
+      <ARDebugOverlay
+        cairnCount={arStatus.cairnCount}
+        glReady={arStatus.glReady}
         userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng } : null}
         userHeading={userHeading}
       />
@@ -1198,10 +1313,19 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
           Junction); user long-presses → drags one to centre to plant.
           Distance defaults to 5m and can be adjusted by continuing to
           hold + sliding vertically (5/10/20/30m, 30m hard cap). */}
-      <DragCairnPicker
-        onPlant={handlePlantCairn}
+      {/* v22: bottom plant sheet — replaces the v18-v21 DragCairnPicker.
+          Two pages: pick type → enter title → tap "Aim & Plant".
+          A small reticle stays at screen centre showing the aim point;
+          when the user taps Aim & Plant, the reticle squeezes for 1.2s
+          then planting fires with a distance computed from the device's
+          pitch (looking down = close, looking forward = up to 30m).
+          Sheet height is ~16% of screen so AR view stays visible. */}
+      <PlantSheet
+        onPlant={handlePlantFromSheet}
         disabled={!lastCoord && trackPoints.length === 0}
+        reticleScale={reticleScale}
       />
+      <AimReticle scale={reticleScale} />
 
       {/* Degraded GPS toast */}
       {degradedToast && (

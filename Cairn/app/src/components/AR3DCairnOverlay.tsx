@@ -1,105 +1,116 @@
 /**
- * AR3DCairnOverlay — true 3D rendering of cairns using Three.js over
- * an expo-gl transparent canvas, painted on top of the live camera feed.
+ * AR3DCairnOverlay — true 3D rendering of cairns using react-three-fiber/native.
  *
- * v18.1 rewrite — fixes the v18 bug where cairns never appeared on
- * screen. Five issues addressed:
+ * v40 — full architectural switch to @react-three/fiber/native.
  *
- *   1. Camera was at world (0,0,0) looking at -Z, but cairns sit at
- *      eye-height (y≈1.5) — the camera was literally pointing AT the
- *      ground, not at the cairns.  Fixed: place camera at eye height
- *      and orient it horizontally; cairns share the same y plane.
+ * Why we switched:
+ *   - v18-v39 used raw expo-gl + manual setTimeout/setInterval/setImmediate
+ *     render loops. Telemetry across 9 OTAs proved that timer scheduling
+ *     inside <GLView>'s onContextCreate is broken on iOS — setTimeout is
+ *     frozen until unmount, setImmediate self-recursion saturates CPU and
+ *     freezes touch/navigation. There is no way to make a stable render
+ *     loop with raw expo-gl + JS timers.
  *
- *   2. The freshly-planted "at my feet" cairn lands at (0, eye, 0)
- *      relative to the user — the same point as the camera itself.
- *      Three.js can't render a sphere at the camera origin.  Fixed:
- *      add a small forward bias when the marker is exactly under the
- *      user, so it appears just in front instead of inside the camera.
+ *   - react-three-fiber's <Canvas> internally manages the render loop and
+ *     handles GLView integration correctly. The useFrame hook fires every
+ *     frame without us touching timers. This is the path Pokemon Go-style
+ *     RN AR apps use; pmndrs and Expo teams have collaborated on it.
  *
- *   3. Scene/group setup happened inside an async onContextCreate, but
- *      the marker-population effect ran synchronously on first mount.
- *      Result: the very first set of markers was silently dropped.
- *      Fixed: the population logic runs at the end of onContextCreate
- *      AND in the markers/userPos effect, with a ready-flag gate.
+ * What we get for free:
+ *   - Working render loop (proven in r3f v8+ for RN since 2022)
+ *   - onClick / onPointerDown 3D raycasting on meshes (for v41 voice memo
+ *     playback when user taps a cairn)
+ *   - Declarative React tree instead of imperative scene.add(...)
  *
- *   4. Heading north was modelled as -Z, but flat-earth ENU has north
- *      as -Z too — fine. Heading rotation needs to spin the world
- *      around the camera in the OPPOSITE direction the user turns
- *      (so a 90° clockwise turn appears to spin the world 90° CCW).
- *      Fixed: scene group rotates by -heading (was rotating camera,
- *      which doesn't change relative orientation when camera also
- *      rotates the same way — net zero).
+ * Architecture:
+ *   <View>                          ← absolute fill, transparent
+ *     <Canvas>                      ← r3f Canvas, transparent over expo-camera
+ *       <PerspectiveCamera />       ← positioned at user eye height
+ *       <ambientLight /> ...        ← lighting rig
+ *       {cairns.map(m => <Cairn .../>)}
+ *       <WorldRotator heading={..}>
+ *         <UserStateBridge .../>    ← invisible, useFrame to update positions
+ *       </WorldRotator>
+ *     </Canvas>
+ *   </View>
  *
- *   5. requestAnimationFrame in expo-gl needs gl.endFrameEXP() at the
- *      end of every frame for the new buffer to swap to screen.
- *      Was already present, but the outer `if` guard sometimes skipped
- *      it on the first frame before refs were ready, leaving a black
- *      canvas. Fixed: always call endFrameEXP, even on no-op frames.
+ * GPS lock: each <Cairn> uses useFrame() to recompute its world position
+ * from gpsToWorld(userPos, marker) every frame. The cairn group rotates
+ * with the user's heading via <WorldRotator>.
  *
- * Position locking: cairn world positions are recomputed every frame
- * from the smoothed user position, but the marker's absolute lat/lng
- * never changes — so cairns appear glued to a real-world place even
- * as the user walks past or turns.
+ * First-view rise animation: same approach as v22+ — when
+ * (Date.now() - marker.createdAt) < TOTAL_RISE_DURATION_MS, run the staged
+ * rise animation. Past that window, return to the resting state.
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { GLView } from 'expo-gl';
-import { Renderer } from 'expo-three';
+import { Canvas, useFrame } from '@react-three/fiber/native';
 import * as THREE from 'three';
 import type { Marker } from '../store/useMarkerStore';
-import { getAR3DConfig } from '../screens/ARScreen';
 import { crashLogger } from '../services/crashLogger';
 
 interface Props {
   markers: Marker[];
   userPos: { lat: number; lng: number } | null;
   userHeading: number | null;
+  /** v24 diagnostic: report internal state to parent (kept for compatibility). */
+  onStatus?: (status: { glReady: boolean; cairnCount: number }) => void;
+  /** v40: tap a cairn — opens detail / plays voice memo (caller-supplied). */
+  onCairnPress?: (markerId: string) => void;
 }
 
-// Camera horizontal field of view (matches the iPhone rear camera at 1×).
+// ── Camera + range constants ────────────────────────────────────
 const CAMERA_FOV_DEG = 65;
-
-// Visible range in metres. Cairns farther than this are hidden.
 const AR_MAX_RANGE_M = 100;
-
-// Smoothing factors — smaller = more inertia, less jitter.
-const POS_ALPHA = 0.2;
+// v41: GPS smoothing removed — was 0.2 which made userPosRef lag by ~5s
+// behind actual position. Cairn world delta computed from a stale userPos
+// stayed near zero for moving users → cairn appeared glued to the camera.
+// Setting alpha=1.0 means we always use the latest GPS reading directly.
+// Apple's GPS already has internal smoothing.
+const POS_ALPHA = 1.0;
 const HEADING_ALPHA = 0.3;
-
-// Eye height: how high above the ground we treat the camera + cairns.
-// 1.5m ≈ phone held at chest level. Cairns share this height so the
-// user looks straight at them instead of having to tilt the phone down.
+// Camera at eye height, cairns sit on the ground (y=0).
 const EYE_HEIGHT = 1.5;
 
-// Animation tuning for the "rise from ground" effect when a cairn is
-// freshly planted. The mesh starts at y=0 (ground) and lerps up to
-// y=EYE_HEIGHT over RISE_DURATION_MS using an ease-out cubic so the
-// motion feels physical (fast at first, settling at the top).
-const RISE_DURATION_MS = 800;
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+// ── Animation timing (ms) ───────────────────────────────────────
+const PHASE1_DURATION = 600;
+const PHASE2_DELAY = 700;
+const PHASE2_DURATION = 900;
+const PHASE3_DELAY = 900;
+const PHASE3_DURATION = 1500;
+const TOTAL_RISE_DURATION_MS = PHASE3_DELAY + PHASE3_DURATION;
 
-/**
- * Convert a marker's lat/lng into a Three.js world position relative
- * to the user. Coordinates are in metres in the local ENU frame:
- *   x = east, y = up, z = -north (so -Z points "forward / north").
- *
- * The cairn sits at EYE_HEIGHT so it matches the camera height —
- * critical for the user to actually see it without tilting the phone.
- *
- * v18.2 change: removed the MIN_FORWARD_DIST guard. Previously, when
- * the marker was within 0.5m of the user, gpsToWorld returned a fixed
- * (0, EYE_HEIGHT, -0.5) — i.e. "always 0.5m in front of camera". This
- * was visible to users as: (a) cairns appearing to follow the camera
- * around, (b) all 4 colour types stacking at the same screen position
- * so only the last-rendered one was visible.
- *
- * Without the guard, a freshly-planted "at my feet" cairn lands at
- * (0, EYE_HEIGHT, 0) — the same point as the camera. The user can't
- * see it from where they're standing (camera is INSIDE the sphere),
- * but as soon as they step away the cairn appears at its true world
- * location. Combined with the rise animation (y lerps from 0→1.5 over
- * 800ms) the user sees the cairn "stay in place" while they walk.
- */
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const easeOutBack = (t: number) => {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+
+// ── Style preset (locked to user's chosen 'classic-c' for now) ───
+// v41: lowered ORB_BASE_Y from 1.8 → 1.0. Camera is at eye height
+// (1.5m); orb at 1.8m put the orb ABOVE the user's eye line, so the
+// user couldn't see the whole cairn without tilting the phone up.
+// 1.0m sits the orb just above the stone tower top, naturally in
+// view when the user is looking forward.
+const STONE_HEIGHT = 1.0; // medium tower
+const ORB_BASE_Y = 1.0;
+const ORB_SCALE = 1.55;
+
+// Per-type colours (3-layer gradient)
+interface TypeColors { inner: number; mid: number; outer: number; }
+const TYPE_COLORS: Record<string, TypeColors> = {
+  danger: { inner: 0xfff0c8, mid: 0xff5a3a, outer: 0x8a2218 },
+  scenic: { inner: 0xeefff4, mid: 0x3ad8a4, outer: 0x186a82 },
+  supply: { inner: 0xf0faff, mid: 0x6ac8f0, outer: 0x2a5878 },
+  junction: { inner: 0xfff4d8, mid: 0xf0a838, outer: 0x8a4a18 },
+};
+function tcFor(type: string): TypeColors {
+  return TYPE_COLORS[type] ?? TYPE_COLORS.junction;
+}
+
+// ── GPS → world (flat-earth ENU) ────────────────────────────────
+// World origin is camera-projection-on-ground (y=0, cairn-feet level).
 function gpsToWorld(
   user: { lat: number; lng: number },
   marker: { lat: number; lng: number },
@@ -107,298 +118,588 @@ function gpsToWorld(
   const dLat = marker.lat - user.lat;
   const dLng = marker.lng - user.lng;
   const northM = dLat * 111000;
-  const eastM = dLng * 111000 * Math.cos(user.lat * Math.PI / 180);
-  return new THREE.Vector3(eastM, EYE_HEIGHT, -northM);
+  const eastM = dLng * 111000 * Math.cos((user.lat * Math.PI) / 180);
+  return new THREE.Vector3(eastM, 0, -northM);
 }
 
-export function AR3DCairnOverlay({ markers, userPos, userHeading }: Props) {
-  // Smoothed copies of position + heading. Refs (not state) so updates
-  // don't re-render the GLView — we mutate the Three.js scene directly
-  // each frame instead.
-  const smoothedPosRef = useRef<{ lat: number; lng: number } | null>(null);
-  const smoothedHeadingRef = useRef<number>(0);
+// ─────────────────────────────────────────────────────────────────
+// Type-specific 3D icons (rendered inside the orb)
+// ─────────────────────────────────────────────────────────────────
 
-  // Three.js handles, all populated inside onContextCreate.
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<Renderer | null>(null);
-  // Group holds all cairn meshes. Rotated by -heading so the whole
-  // world appears to spin around the user as they turn the phone.
-  const cairnGroupRef = useRef<THREE.Group | null>(null);
-  const rafRef = useRef<number | null>(null);
-  // Ready flag — true once onContextCreate has set up scene/camera/group.
-  // The marker-population effect waits for this before adding meshes,
-  // and re-runs as soon as the scene is ready.
-  const readyRef = useRef<boolean>(false);
-  // Latest markers + user position, captured by ref so the population
-  // effect can read them after a delay (when readiness is achieved).
-  const markersRef = useRef<Marker[]>(markers);
-  markersRef.current = markers;
+function DangerIcon({ tc }: { tc: TypeColors }) {
+  // Translucent triangular prism (warning sign feel) + emissive
+  // exclamation mark in the centre.
+  return (
+    <group>
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.26, 0.26, 0.14, 3, 1, false]} />
+        <meshStandardMaterial
+          color={tc.mid}
+          emissive={tc.mid}
+          emissiveIntensity={0.25}
+          roughness={0.35}
+          metalness={0.1}
+          transparent
+          opacity={0.65}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh position={[0, 0.04, 0]}>
+        <cylinderGeometry args={[0.024, 0.024, 0.16, 16]} />
+        <meshStandardMaterial color={tc.inner} emissive={tc.inner} emissiveIntensity={0.6} roughness={0.3} />
+      </mesh>
+      <mesh position={[0, -0.10, 0]}>
+        <sphereGeometry args={[0.034, 18, 14]} />
+        <meshStandardMaterial color={tc.inner} emissive={tc.inner} emissiveIntensity={0.6} roughness={0.3} />
+      </mesh>
+    </group>
+  );
+}
 
-  // Update smoothed position whenever raw inputs change.
+function ScenicIcon({ tc }: { tc: TypeColors }) {
+  // 5-pointed star pyramid built from a custom BufferGeometry.
+  // Custom geometries (created via `new THREE.BufferGeometry()`) bypass
+  // r3f's auto-disposal, so we explicitly dispose on unmount.
+  const geom = useMemo(() => {
+    const outerR = 0.24, innerR = 0.10, depth = 0.08, N = 5;
+    const verts: number[] = [0, 0, depth, 0, 0, -depth];
+    for (let i = 0; i < N * 2; i++) {
+      const r = i % 2 === 0 ? outerR : innerR;
+      const a = (i / (N * 2)) * Math.PI * 2 - Math.PI / 2;
+      verts.push(Math.cos(a) * r, Math.sin(a) * r, 0);
+    }
+    const idx: number[] = [];
+    const P0 = 2;
+    for (let i = 0; i < N * 2; i++) {
+      const a = P0 + i;
+      const b = P0 + ((i + 1) % (N * 2));
+      idx.push(0, b, a);
+      idx.push(1, a, b);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  }, []);
+  useEffect(() => () => { geom.dispose(); }, [geom]);
+  return (
+    <mesh geometry={geom}>
+      <meshStandardMaterial
+        color={tc.mid}
+        emissive={tc.mid}
+        emissiveIntensity={0.4}
+        roughness={0.35}
+        metalness={0.2}
+      />
+    </mesh>
+  );
+}
+
+function SupplyIcon({ tc }: { tc: TypeColors }) {
+  // LatheGeometry (revolved teardrop). Imperative geometry needs explicit dispose.
+  const geom = useMemo(() => {
+    const segs = 24;
+    const TOP_Y = 0.26, BOT_Y = -0.20, MAX_R = 0.18;
+    const pts: THREE.Vector2[] = [];
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const y = TOP_Y + (BOT_Y - TOP_Y) * t;
+      const tEff = Math.pow(t, 1.55);
+      const r = MAX_R * Math.pow(Math.sin(tEff * Math.PI), 0.85);
+      const radius = (i === 0 || i === segs) ? 0 : Math.max(r, 0.0001);
+      pts.push(new THREE.Vector2(radius, y));
+    }
+    return new THREE.LatheGeometry(pts, 28);
+  }, []);
+  useEffect(() => () => { geom.dispose(); }, [geom]);
+  return (
+    <mesh geometry={geom}>
+      <meshStandardMaterial
+        color={tc.mid}
+        emissive={tc.mid}
+        emissiveIntensity={0.35}
+        roughness={0.25}
+        metalness={0.2}
+        transparent
+        opacity={0.78}
+      />
+    </mesh>
+  );
+}
+
+function JunctionIcon({ tc }: { tc: TypeColors }) {
+  // 4-sided pyramid head + diamond shaft + base (signpost).
+  return (
+    <group>
+      <mesh position={[0, -0.02, 0]} rotation={[0, Math.PI / 4, 0]}>
+        <boxGeometry args={[0.10, 0.20, 0.10]} />
+        <meshStandardMaterial color={tc.mid} emissive={tc.mid} emissiveIntensity={0.3} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 0.18, 0]} rotation={[0, Math.PI / 4, 0]}>
+        <coneGeometry args={[0.16, 0.20, 4]} />
+        <meshStandardMaterial color={tc.mid} emissive={tc.mid} emissiveIntensity={0.45} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, -0.16, 0]} rotation={[0, Math.PI / 4, 0]}>
+        <boxGeometry args={[0.16, 0.04, 0.16]} />
+        <meshStandardMaterial color={tc.mid} emissive={tc.mid} emissiveIntensity={0.2} roughness={0.5} />
+      </mesh>
+    </group>
+  );
+}
+
+function Icon({ type, tc }: { type: string; tc: TypeColors }) {
+  if (type === 'danger') return <DangerIcon tc={tc} />;
+  if (type === 'scenic') return <ScenicIcon tc={tc} />;
+  if (type === 'supply') return <SupplyIcon tc={tc} />;
+  return <JunctionIcon tc={tc} />;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Cairn — full assembly. GPS-locks via useFrame on its parent group.
+// ─────────────────────────────────────────────────────────────────
+function Cairn({
+  marker,
+  userPosRef,
+  onPress,
+}: {
+  marker: Marker;
+  userPosRef: React.MutableRefObject<{ lat: number; lng: number } | null>;
+  onPress?: (id: string) => void;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const tc = tcFor(marker.type);
+  // useFrame tick — runs every frame, updates position + animation time.
+  // We store the latest "time" in a ref so the children (Orb, Particles)
+  // can see it without a state update.
+  const timeRef = useRef<number>(0);
+  const elapsedRef = useRef<number>(0);
+  const sampleNowRef = useRef<number>(0);
+
+  useFrame((_state) => {
+    const userP = userPosRef.current;
+    const now = Date.now();
+    timeRef.current = now / 1000;
+    elapsedRef.current = now - marker.createdAt;
+    if (groupRef.current && userP) {
+      const pos = gpsToWorld(userP, { lat: marker.lat, lng: marker.lng });
+      // Distance culling — outside max range, hide entirely
+      const horizontal = Math.hypot(pos.x, pos.z);
+      groupRef.current.visible = horizontal <= AR_MAX_RANGE_M;
+      groupRef.current.position.copy(pos);
+      // v41 diagnostic: every 3s, log one sample so we can verify GPS lock
+      // really works. Throttled by Date.now()/3000 so it fires once per 3s
+      // window per cairn.
+      const sampleNow = Math.floor(now / 3000);
+      if (sampleNow !== sampleNowRef.current) {
+        sampleNowRef.current = sampleNow;
+        crashLogger.breadcrumb(
+          `ar3d:sample id=${marker.id.slice(-6)} userLat=${userP.lat.toFixed(6)},${userP.lng.toFixed(6)} markerLat=${marker.lat.toFixed(6)},${marker.lng.toFixed(6)} cairnPos=(${pos.x.toFixed(2)},${pos.z.toFixed(2)}) dist=${horizontal.toFixed(2)}m`
+        );
+      }
+    }
+  });
+
+  // Top-glow pulse — bell curve during phase 2.
+  const pointLightRef = useRef<THREE.PointLight>(null);
+  useFrame(() => {
+    const elapsed = elapsedRef.current;
+    if (!pointLightRef.current) return;
+    if (elapsed >= PHASE2_DELAY && elapsed < PHASE2_DELAY + PHASE2_DURATION) {
+      const t = (elapsed - PHASE2_DELAY) / PHASE2_DURATION;
+      pointLightRef.current.intensity = Math.sin(t * Math.PI) * 3.0;
+    } else {
+      pointLightRef.current.intensity = 0;
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      {/* Tap target — large invisible sphere wrapping the entire cairn so
+          users can tap the orb-area easily (drei would give us a Bbox helper
+          but a manual mesh keeps drei out of the v40 critical path). */}
+      <mesh
+        position={[0, ORB_BASE_Y, 0]}
+        onClick={onPress ? (e) => { e.stopPropagation(); onPress(marker.id); } : undefined}
+        visible={false}
+      >
+        <sphereGeometry args={[0.6, 8, 8]} />
+        <meshBasicMaterial transparent opacity={0} />
+      </mesh>
+
+      {/* Stones (with rise animation driven by elapsedRef) */}
+      <RiseAnimatedStones elapsedRef={elapsedRef} />
+
+      {/* Top-glow point light — pulses during phase 2 */}
+      <pointLight
+        ref={pointLightRef}
+        position={[0, STONE_HEIGHT, 0]}
+        color={tc.mid}
+        intensity={0}
+        distance={2.0}
+        decay={2}
+      />
+
+      {/* Orb — icon + halos + glow shell */}
+      <RiseAnimatedOrb
+        type={marker.type}
+        tc={tc}
+        elapsedRef={elapsedRef}
+        timeRef={timeRef}
+      />
+
+      {/* Orbiting particles */}
+      <ParticlesAnimated tc={tc} timeRef={timeRef} />
+    </group>
+  );
+}
+
+// Wrappers that read the latest values from refs each frame (avoids
+// re-rendering the whole tree when only the animation values change).
+function RiseAnimatedStones({
+  elapsedRef,
+}: { elapsedRef: React.MutableRefObject<number> }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const stones = useMemo(() => {
+    const N = 7;
+    const heightPer = STONE_HEIGHT / N;
+    return Array.from({ length: N }, (_, i) => {
+      const t = i / (N - 1);
+      return {
+        r: 0.30 - t * 0.16,
+        sx: 1.3 - t * 0.3,
+        sy: 0.6 + t * 0.2,
+        sz: 1.1 - t * 0.2,
+        baseY: heightPer * (i + 0.5),
+        rot: [
+          Math.random() * Math.PI,
+          Math.random() * Math.PI,
+          Math.random() * Math.PI,
+        ] as [number, number, number],
+      };
+    });
+  }, []);
+
+  useFrame(() => {
+    const elapsed = elapsedRef.current;
+    const g = groupRef.current;
+    if (!g) return;
+    for (let i = 0; i < stones.length; i++) {
+      const child = g.children[i];
+      if (!child) continue;
+      const stoneDelay = (i / stones.length) * 200;
+      const stoneElapsed = elapsed - stoneDelay;
+      const baseY = stones[i].baseY;
+      let y = baseY;
+      if (elapsed < TOTAL_RISE_DURATION_MS) {
+        if (stoneElapsed < 0) y = baseY - 1.5;
+        else if (stoneElapsed < PHASE1_DURATION) {
+          const t = easeOutBack(stoneElapsed / PHASE1_DURATION);
+          y = baseY - 1.5 + t * 1.5;
+        }
+      }
+      child.position.y = y;
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      {stones.map((s, i) => (
+        <mesh
+          key={i}
+          position={[0, s.baseY, 0]}
+          scale={[s.sx, s.sy, s.sz]}
+          rotation={s.rot}
+        >
+          <sphereGeometry args={[s.r, 16, 12]} />
+          <meshStandardMaterial color={0x7a7268} roughness={0.85} metalness={0.05} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function RiseAnimatedOrb({
+  type, tc, elapsedRef, timeRef,
+}: {
+  type: string;
+  tc: TypeColors;
+  elapsedRef: React.MutableRefObject<number>;
+  timeRef: React.MutableRefObject<number>;
+}) {
+  const orbRef = useRef<THREE.Group>(null);
+  const iconRef = useRef<THREE.Group>(null);
+
+  useFrame(() => {
+    const elapsed = elapsedRef.current;
+    const time = timeRef.current;
+    const orb = orbRef.current;
+    if (!orb) return;
+
+    // Visibility
+    if (elapsed < PHASE3_DELAY) {
+      orb.visible = false;
+      return;
+    }
+    orb.visible = true;
+
+    // Rise / hover
+    let y = ORB_BASE_Y;
+    let s = ORB_SCALE;
+    if (elapsed < TOTAL_RISE_DURATION_MS) {
+      const phase3Elapsed = elapsed - PHASE3_DELAY;
+      if (phase3Elapsed < PHASE3_DURATION) {
+        const t = easeOutCubic(phase3Elapsed / PHASE3_DURATION);
+        y = STONE_HEIGHT + t * (ORB_BASE_Y - STONE_HEIGHT);
+        s = Math.min(1, t * 1.2) * ORB_SCALE;
+      }
+    } else {
+      y = ORB_BASE_Y + Math.sin(time * 1.5) * 0.06;
+    }
+    orb.position.y = y;
+    orb.scale.set(s, s, s);
+
+    // Icon spin
+    if (iconRef.current) {
+      iconRef.current.rotation.y = time * 0.55;
+      iconRef.current.rotation.x = Math.sin(time * 0.4) * 0.10;
+    }
+  });
+
+  return (
+    <group ref={orbRef}>
+      <group ref={iconRef}>
+        <Icon type={type} tc={tc} />
+      </group>
+      {/* Outer atmospheric glow shell */}
+      <mesh>
+        <sphereGeometry args={[0.32, 24, 18]} />
+        <meshBasicMaterial
+          color={tc.mid}
+          transparent
+          opacity={0.10}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          side={THREE.BackSide}
+        />
+      </mesh>
+      {/* 3-layer halo shells */}
+      <mesh>
+        <sphereGeometry args={[0.275, 16, 12]} />
+        <meshBasicMaterial
+          color={tc.inner} transparent opacity={0.40}
+          blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.BackSide}
+        />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[0.55, 16, 12]} />
+        <meshBasicMaterial
+          color={tc.mid} transparent opacity={0.18}
+          blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.BackSide}
+        />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[0.85, 16, 12]} />
+        <meshBasicMaterial
+          color={tc.outer} transparent opacity={0.08}
+          blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.BackSide}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function ParticlesAnimated({
+  tc, timeRef,
+}: { tc: TypeColors; timeRef: React.MutableRefObject<number> }) {
+  const ref = useRef<THREE.Points>(null);
+  const data = useMemo(() => {
+    const N = 30;
+    const positions = new Float32Array(N * 3);
+    const baseY = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2 + Math.random() * 0.5;
+      const r = 0.22 + Math.random() * 0.14;
+      positions[i * 3] = Math.cos(a) * r;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 0.40;
+      positions[i * 3 + 2] = Math.sin(a) * r;
+      baseY[i] = positions[i * 3 + 1];
+    }
+    return { positions, baseY, N };
+  }, []);
+
+  useFrame(() => {
+    const pts = ref.current;
+    if (!pts) return;
+    const t = timeRef.current;
+    pts.rotation.y = t * 0.6;
+    const attr = pts.geometry.attributes.position as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    for (let i = 0; i < data.N; i++) {
+      arr[i * 3 + 1] = data.baseY[i] + Math.sin(t * 0.9 + i) * 0.10;
+    }
+    attr.needsUpdate = true;
+  });
+
+  return (
+    <points ref={ref} position={[0, ORB_BASE_Y, 0]} scale={[ORB_SCALE, ORB_SCALE, ORB_SCALE]}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          args={[data.positions, 3]}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        color={tc.inner}
+        size={0.022}
+        transparent
+        opacity={0.85}
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+        sizeAttenuation
+      />
+    </points>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// World rotator — rotates the entire cairn world by -heading every
+// frame so cairns appear locked to compass directions as the user
+// turns the phone.
+// ─────────────────────────────────────────────────────────────────
+function WorldRotator({
+  headingRef,
+  children,
+}: {
+  headingRef: React.MutableRefObject<number>;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (ref.current) {
+      // Heading 0 = north. World coord system: +X=east, -Z=north.
+      // User facing north (heading=0): north (-Z) is straight ahead → no rotation.
+      // User facing east (heading=90°): east (+X) should be straight ahead.
+      // Need (+X) → (-Z), which is Y-axis rotation by -π/2 (i.e. -heading).
+      ref.current.rotation.y = -(headingRef.current * Math.PI) / 180;
+    }
+  });
+  return <group ref={ref}>{children}</group>;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Witness function deleted in v50 — the magenta debug sphere was
+// confusing users (they thought it was the cairn glued to their screen).
+// ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────────
+export function AR3DCairnOverlay({
+  markers,
+  userPos,
+  userHeading,
+  onStatus,
+  onCairnPress,
+}: Props) {
+  const userPosRef = useRef<{ lat: number; lng: number } | null>(null);
+  const headingRef = useRef<number>(0);
+
+  // Smooth GPS input
   useEffect(() => {
     if (!userPos) return;
-    if (!smoothedPosRef.current) {
-      smoothedPosRef.current = { ...userPos };
+    if (!userPosRef.current) {
+      userPosRef.current = { ...userPos };
     } else {
-      smoothedPosRef.current = {
-        lat: smoothedPosRef.current.lat * (1 - POS_ALPHA) + userPos.lat * POS_ALPHA,
-        lng: smoothedPosRef.current.lng * (1 - POS_ALPHA) + userPos.lng * POS_ALPHA,
+      userPosRef.current = {
+        lat: userPosRef.current.lat * (1 - POS_ALPHA) + userPos.lat * POS_ALPHA,
+        lng: userPosRef.current.lng * (1 - POS_ALPHA) + userPos.lng * POS_ALPHA,
       };
     }
   }, [userPos?.lat, userPos?.lng]);
 
-  // Update smoothed heading. Handle 359°→1° wraparound.
+  // Smooth heading with 359→1 wraparound
   useEffect(() => {
     if (userHeading == null) return;
-    const prev = smoothedHeadingRef.current;
+    const prev = headingRef.current;
     let delta = userHeading - prev;
     while (delta > 180) delta -= 360;
     while (delta < -180) delta += 360;
-    smoothedHeadingRef.current = (prev + delta * HEADING_ALPHA + 360) % 360;
+    headingRef.current = (prev + delta * HEADING_ALPHA + 360) % 360;
   }, [userHeading]);
 
-  // Re-populate the cairn group whenever markers change. Re-runs
-  // automatically once the scene is ready (the population function
-  // also runs at the end of onContextCreate to catch the initial
-  // markers that were dropped before readiness).
-  useEffect(() => {
-    populateCairns();
+  // Filter markers to those within range — culling at the React level so
+  // we don't even create meshes for far-away markers.
+  const inRangeMarkers = useMemo(() => {
+    if (!userPos) return [];
+    return markers.filter((m) => {
+      const w = gpsToWorld(userPos, { lat: m.lat, lng: m.lng });
+      return Math.hypot(w.x, w.z) <= AR_MAX_RANGE_M;
+    });
   }, [markers, userPos?.lat, userPos?.lng]);
 
-  function populateCairns() {
-    const group = cairnGroupRef.current;
-    if (!group || !readyRef.current) return;
-    const userP = smoothedPosRef.current ?? userPos;
-    if (!userP) return;
-
-    // Remove old children with cleanup.
-    while (group.children.length > 0) {
-      const c = group.children[0];
-      group.remove(c);
-      const mesh = c as THREE.Mesh;
-      if (mesh.geometry) mesh.geometry.dispose();
-      if (mesh.material) {
-        if (Array.isArray(mesh.material)) mesh.material.forEach((mm: THREE.Material) => mm.dispose());
-        else (mesh.material as THREE.Material).dispose();
-      }
-    }
-
-    // Add new meshes.
-    let added = 0;
-    for (const m of markersRef.current) {
-      const pos = gpsToWorld(userP, { lat: m.lat, lng: m.lng });
-      // Cull distant cairns (xy plane only — y is fixed at eye height).
-      const horizontal = Math.hypot(pos.x, pos.z);
-      if (horizontal > AR_MAX_RANGE_M) continue;
-
-      const cfg = getAR3DConfig(m.type);
-      const colorHex = parseInt(cfg.color.replace('#', ''), 16);
-      // Sphere radius — closer = bigger, but never below 0.25m so even
-      // far cairns stay visible. At 0m we get ~0.45m diameter spheres.
-      const r = Math.max(0.25, 0.5 - horizontal / 400);
-      const geom = new THREE.SphereGeometry(r, 32, 24);
-      // v18.2: emissiveIntensity dropped from 0.25 to 0.05. The old
-      // value made every sphere glow uniformly, killing the lighting
-      // gradient that creates 3D depth perception. Combined with the
-      // stronger directional + rim lights below, the surface now
-      // shows a clear bright top-left highlight, mid-tone band, and
-      // shadowed underside — reads as a proper 3D ball.
-      const mat = new THREE.MeshStandardMaterial({
-        color: colorHex,
-        metalness: 0.1,
-        roughness: 0.35,
-        emissive: colorHex,
-        emissiveIntensity: 0.05,
-      });
-      const mesh = new THREE.Mesh(geom, mat);
-      mesh.position.copy(pos);
-      (mesh as any).__marker = m;
-      // Stash plant time from the marker's createdAt (persisted in the
-      // marker store) so the rise animation only fires for genuinely
-      // new cairns. Older cairns that were planted before this AR
-      // session opened skip the animation — their elapsed time is
-      // already past RISE_DURATION_MS.
-      (mesh as any).__plantedAt = m.createdAt;
-      group.add(mesh);
-      added += 1;
-    }
-    crashLogger.breadcrumb(`ar3d:populated count=${added} total=${markersRef.current.length}`);
-  }
-
-  const onContextCreate = (gl: WebGL2RenderingContext) => {
-    try {
-      const { drawingBufferWidth: w, drawingBufferHeight: h } = gl;
-
-      const renderer = new Renderer({ gl, alpha: true, antialias: true } as any) as any;
-      renderer.setSize(w, h);
-      // Fully transparent — the expo-camera CameraView shows behind us.
-      renderer.setClearColor(0x000000, 0);
-      rendererRef.current = renderer;
-
-      const scene = new THREE.Scene();
-      sceneRef.current = scene;
-
-      // PerspectiveCamera at eye height, looking horizontally toward
-      // -Z (north). This matches how a person holding a phone looks
-      // at the world: forward, not down. With the camera at y=EYE_HEIGHT
-      // and cairns also at y=EYE_HEIGHT, the user sees them directly
-      // ahead — no tilting required.
-      const camera = new THREE.PerspectiveCamera(
-        CAMERA_FOV_DEG,
-        w / h,
-        0.1,
-        AR_MAX_RANGE_M * 2,
-      );
-      // v19.1 fix: camera offset 1m back from origin so a cairn planted
-      // exactly at the user's GPS position (world 0,EYE,0) lands 1m in
-      // front of the camera and is visible. Without this, a freshly
-      // planted "at my feet" cairn shares the camera origin → user sees
-      // black until they walk away. The 1m offset matches a typical
-      // arm's-length view of a marker.
-      //
-      // Why we don't put it back as a marker-position bias (the v18 way
-      // before v18.2): biasing markers means ALL cairns near the user
-      // shift forward together as the user walks toward them, which
-      // looked like cairns following the camera. Biasing the CAMERA
-      // instead is just a fixed 1m offset — cairns stay locked to GPS
-      // while the camera sits 1m behind their world position when at
-      // 0 distance.
-      camera.position.set(0, EYE_HEIGHT, 1);
-      camera.lookAt(0, EYE_HEIGHT, -1); // look horizontally toward -Z
-      cameraRef.current = camera;
-
-      // Lighting — three-light rig that produces a clear sphere
-      // shading gradient (bright top-left highlight, mid-tone wrap,
-      // shadowed underside). v18.2 rebalance: ambient was 0.7 (too
-      // washed out), directional 0.9 (too weak); rim added.
-      //
-      //   - Ambient 0.3:    ensures shadowed side isn't pitch black,
-      //                     just darker than the lit side.
-      //   - Sun 1.6:        primary directional light from up + right
-      //                     + slightly forward, drives the main
-      //                     highlight on top-left of the sphere from
-      //                     the user's perspective.
-      //   - Rim 0.5 cool:   secondary light from the opposite side
-      //                     with a slight blue tint, gives the
-      //                     shadowed edge a subtle highlight (the
-      //                     "rim light" effect that makes things look
-      //                     3D and detached from the background).
-      scene.add(new THREE.AmbientLight(0xffffff, 0.3));
-      const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-      sun.position.set(5, 10, 3);
-      scene.add(sun);
-      const rim = new THREE.DirectionalLight(0xddeeff, 0.5);
-      rim.position.set(-3, 2, -2);
-      scene.add(rim);
-
-      // Cairn group — rotated by -heading every frame so the world
-      // spins relative to the user, not the camera.
-      const group = new THREE.Group();
-      scene.add(group);
-      cairnGroupRef.current = group;
-      readyRef.current = true;
-      crashLogger.breadcrumb(`ar3d:context-ready w=${w} h=${h}`);
-
-      // ── Debug witness sphere ───────────────────────────────────
-      // Always-visible reference sphere at (0, EYE_HEIGHT, -2): 2m
-      // straight ahead of the camera, magenta, no lighting effects.
-      // If the user opens AR and CANNOT see this sphere at all, the
-      // GL pipeline itself is broken (context creation, render loop,
-      // endFrameEXP, transparency clear). If they CAN see it but
-      // can't see real cairns, the bug is in marker → world position
-      // logic. This pinpoints the issue without another OTA cycle.
-      // Will be removed in a later OTA once AR is confirmed working.
-      const witnessGeom = new THREE.SphereGeometry(0.3, 16, 12);
-      const witnessMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
-      const witness = new THREE.Mesh(witnessGeom, witnessMat);
-      witness.position.set(0, EYE_HEIGHT, -2);
-      scene.add(witness);
-      crashLogger.breadcrumb(`ar3d:witness-added`);
-
-      // Populate with whatever markers are currently in props — this
-      // catches the initial set that the markers/userPos effect tried
-      // to add before readyRef was true.
-      populateCairns();
-
-      const renderFrame = () => {
-        // Always re-compute world positions from smoothed user pos.
-        const userP = smoothedPosRef.current;
-        if (userP && cairnGroupRef.current) {
-          const now = Date.now();
-          cairnGroupRef.current.children.forEach((child: THREE.Object3D) => {
-            const m = (child as any).__marker as Marker | undefined;
-            if (!m) return;
-            const pos = gpsToWorld(userP, { lat: m.lat, lng: m.lng });
-
-            // Rise-from-ground animation: for the first RISE_DURATION_MS
-            // after a cairn is planted, lerp its y from 0 (ground) up to
-            // EYE_HEIGHT. After that, the cairn sits at its resting
-            // hover position. We use the marker's persisted createdAt
-            // (not Date.now() at mesh creation) so the animation only
-            // plays for genuinely-new cairns — re-entering the AR
-            // screen with old cairns won't re-trigger it.
-            const plantedAt = (child as any).__plantedAt as number | undefined;
-            if (plantedAt != null) {
-              const elapsed = now - plantedAt;
-              if (elapsed < RISE_DURATION_MS) {
-                const t = easeOutCubic(elapsed / RISE_DURATION_MS);
-                pos.y = t * EYE_HEIGHT;
-              }
-            }
-            child.position.copy(pos);
-          });
-          // Rotate the entire group by -heading. This spins the world
-          // around the user: when the user turns 90° clockwise, the
-          // group spins 90° counter-clockwise so the cairn that was on
-          // the left is now in front, etc.
-          const yaw = -(smoothedHeadingRef.current * Math.PI) / 180;
-          cairnGroupRef.current.rotation.y = yaw;
-        }
-        if (rendererRef.current && sceneRef.current && cameraRef.current) {
-          rendererRef.current.render(sceneRef.current, cameraRef.current);
-        }
-        // ALWAYS swap the buffer, even on no-op frames. Skipping this
-        // leaves the GLView showing whatever was on it last (often the
-        // initial black clear), which is exactly the v18 symptom.
-        (gl as any).endFrameEXP();
-        rafRef.current = requestAnimationFrame(renderFrame);
-      };
-      renderFrame();
-    } catch (err) {
-      crashLogger.breadcrumb(`ar3d:context-error ${String(err).slice(0, 100)}`);
-    }
-  };
-
-  // Cleanup on unmount.
+  // Status callback for parent debug overlay
   useEffect(() => {
+    if (onStatus) onStatus({ glReady: true, cairnCount: inRangeMarkers.length });
+  }, [inRangeMarkers.length, onStatus]);
+
+  useEffect(() => {
+    crashLogger.breadcrumb(`ar3d:r3f-mount markers=${markers.length} inRange=${inRangeMarkers.length}`);
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      readyRef.current = false;
-      const group = cairnGroupRef.current;
-      if (group) {
-        group.children.forEach((c: THREE.Object3D) => {
-          const mesh = c as THREE.Mesh;
-          if (mesh.geometry) mesh.geometry.dispose();
-          if (mesh.material) {
-            if (Array.isArray(mesh.material)) mesh.material.forEach((mm: THREE.Material) => mm.dispose());
-            else (mesh.material as THREE.Material).dispose();
-          }
-        });
-      }
+      crashLogger.breadcrumb(`ar3d:r3f-unmount`);
     };
   }, []);
 
-  // Mount the GLView even when there are no markers — we want the
-  // GL context ready as soon as the user opens the AR screen, so the
-  // very first cairn they plant appears immediately. Hiding the
-  // canvas when no userPos is intentional: without GPS we can't
-  // anchor anything anyway.
   if (!userPos) return null;
 
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-      <GLView style={StyleSheet.absoluteFillObject} onContextCreate={onContextCreate} />
+    <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+      <Canvas
+        style={StyleSheet.absoluteFillObject}
+        gl={{ alpha: true, antialias: true }}
+        camera={{
+          fov: CAMERA_FOV_DEG,
+          near: 0.1,
+          far: AR_MAX_RANGE_M * 2,
+          // v42: camera at eye height. Earlier we relied on r3f's default
+          // camera which auto-looks at (0,0,0) — that made the camera tilt
+          // sharply DOWN at the ground origin, putting the cairn's stone
+          // base at screen center and forcing the user to tilt their phone
+          // up to see the orb. We move the camera to (0, EYE_HEIGHT, 0)
+          // and explicitly orient it horizontally in onCreated below so
+          // the user's screen shows what they would see looking forward
+          // through their phone held at eye height.
+          position: [0, EYE_HEIGHT, 0],
+        }}
+        onCreated={(state) => {
+          state.gl.setClearColor(0x000000, 0);
+          // Force camera to look horizontally toward -Z (forward),
+          // overriding r3f's default lookAt(0,0,0) which would tilt down.
+          state.camera.lookAt(0, EYE_HEIGHT, -1);
+          state.camera.updateProjectionMatrix();
+          crashLogger.breadcrumb('ar3d:canvas-created camLookAt=horizontal');
+        }}
+      >
+        {/* Lighting rig (matches v22+ values) */}
+        <ambientLight intensity={0.4} />
+        <directionalLight position={[2.5, 4, 2]} intensity={1.6} color={0xfff0d8} />
+        <directionalLight position={[-2, 3, -1]} intensity={0.5} color={0xa8c8e8} />
+
+        {/* v50: Witness diagnostic removed — was the magenta sphere users
+            saw glued to their screen and thought was the cairn. */}
+
+        {/* Cairns rotate around the camera based on user heading */}
+        <WorldRotator headingRef={headingRef}>
+          {inRangeMarkers.map((m) => (
+            <Cairn
+              key={m.id}
+              marker={m}
+              userPosRef={userPosRef}
+              onPress={onCairnPress}
+            />
+          ))}
+        </WorldRotator>
+      </Canvas>
     </View>
   );
 }
