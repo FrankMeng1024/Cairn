@@ -97,7 +97,8 @@
           },
           "provider": "none"
         }
-      ]
+      ],
+      "./plugins/withViroPodfileFix"
     ],
     "extra": {
       "eas": {
