@@ -37,9 +37,25 @@ const { withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-const VIRO_PODS_BLOCK = `  # ViroReact (injected by withViroPodfileFix to bypass viro's plugin race condition)
+// IMPORTANT: This block must contain text that matches viro's insertLinesHelper
+// idempotency check. Viro's withViroIos.js calls:
+//   insertLinesHelper(viroPods, "post_install do |installer|", data, -1)
+// where viroPods starts with "  # ViroReact with integrated New Architecture..."
+// and contains "pod 'ViroReact', :path => '../node_modules/@reactvision/react-viro/ios'".
+// insertLinesHelper does `if (!contents.includes(insert))` — and `insert` is the
+// MULTI-LINE viroPods string. If our block contains those exact lines, viro's
+// includes() check will pass on a substring of viroPods, blocking duplicate
+// insertion. We use viro's exact comment text + pod lines to ensure this.
+const VIRO_PODS_BLOCK = `  # ViroReact with integrated New Architecture (Fabric) support
+  # Automatically includes Fabric components when RCT_NEW_ARCH_ENABLED=1
   pod 'ViroReact', :path => '../node_modules/@reactvision/react-viro/ios'
   pod 'ViroKit', :path => '../node_modules/@reactvision/react-viro/ios/dist/ViroRenderer/'
+
+  # Enforce New Architecture requirement
+  # ViroReact 2.43.1+ requires React Native New Architecture
+  if ENV['RCT_NEW_ARCH_ENABLED'] != '1'
+    raise "ViroReact requires New Architecture to be enabled. Please set RCT_NEW_ARCH_ENABLED=1 in ios/.xcode.env"
+  end
 
 `;
 
