@@ -3,6 +3,21 @@
  */
 const pool = require('../config/db');
 
+/**
+ * mysql2 returns JSON columns as JS arrays/objects on modern MySQL+driver
+ * combos (the JSON type is auto-parsed). Older driver versions returned
+ * strings. Both are still legal — code that reads route_points/flags
+ * needs to handle either. This helper normalises to a JS value.
+ */
+function parseJsonCol(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') {
+    try { return JSON.parse(v); } catch { return null; }
+  }
+  // Already parsed by the driver — return as-is.
+  return v;
+}
+
 const Session = {
   async create({ userId, routeId, type, startTime, endTime, distanceM, durationS, routePoints, flags, name }) {
     const [result] = await pool.execute(
@@ -46,8 +61,8 @@ const Session = {
     const s = rows[0];
     return {
       ...s,
-      route_points: s.route_points ? JSON.parse(s.route_points) : [],
-      flags: s.flags ? JSON.parse(s.flags) : [],
+      route_points: parseJsonCol(s.route_points) ?? [],
+      flags: parseJsonCol(s.flags) ?? [],
     };
   },
 
@@ -84,8 +99,8 @@ const Session = {
       [id, userId]
     );
     if (!rows[0]) return false;
-    const existing = rows[0].route_points ? JSON.parse(rows[0].route_points) : [];
-    const merged = existing.concat(points);
+    const existing = parseJsonCol(rows[0].route_points) ?? [];
+    const merged = Array.isArray(existing) ? existing.concat(points) : points.slice();
     await pool.execute(
       `UPDATE sessions SET route_points = ? WHERE id = ? AND user_id = ?`,
       [JSON.stringify(merged), id, userId]
