@@ -76,3 +76,13 @@
 | 45 | 旗帜5秒语音memo | E-003 | Should Have | Phase 3 和AR同期 |
 | 46 | "有帮助"反馈+周汇总通知 | E-005 | Should Have | Phase 3 |
 | 47 | 发现密度算法 | E-005 | Should Have | Phase 3 |
+| 48 | AR cairn halo PNG asset | E-003 | Should Have | **Needs native build** — 加 1 张 radial gradient PNG 进 assets/，后续 OTA 启用 ViroSpriteMaterial halo（消除"边缘硬"，加柔光雾化感）。和下一次必要 build 一起捎带，不单独消耗 build 额度。 |
+| 49 | AR cairn 高级视觉（如 Step 1 Viro shader 仍不够好） | E-003 | Could Have | 评估迁移到 SceneKit 或 RealityKit + CustomMaterial Metal shader，得到真 Fresnel/transmission/post-bloom。**工程量大**（5-8 天，几乎重写 AR 层），仅在 Step 1 OTA 路径视觉验收不通过时启动。 |
+| 50 | ARWorldMap 持久化（同 cairn 跨 session 零漂移） | E-003 | Could Have | **Needs native build (Swift)** — 序列化 ARKit 当前 session 的 worldMap 到 device，下次 AR scene 启动时 relocalize 回同一 anchor。当前 v68+ 跨 session 会有 GPS 噪声 ±5-10m 偏移（消费级 GPS 上限），用 ARWorldMap 可消除这个偏移。优先级低：当前 ±10m 偏移可接受。 |
+| 51 | DragCairnPicker 死代码清理 | E-003 | Could Have | ARScreen.tsx 里 ~230 行 DragCairnPicker 早被 PlantSheet 替代但未删。下次有 native build 顺手清。 |
+| 52 | getDistanceScale + AR_SNAP_RANGE_M 死代码 | E-003 | Could Have | ARScreen.tsx 里 export 了但零调用。同上一条一起清。 |
+| 53 | AR plant 模式：精细距离控制 | E-003 | Could Have | 当前 v72 hit-test 自动判断（看哪点哪），但 power user 可能想手动设 5/10/20m 精确距离。如有 user feedback 需要再做（PlantSheet 加距离 chip 选择器）。 |
+| 54 | AR cairn 远距视觉降级 | E-003 | Should Have | 100m+ 的 cairn 在屏幕上几乎是一个点，3D 球细节看不到反而费 GPU。改成距离 > 80m 时只渲染发光 billboard sprite（一个发亮的点），保留颜色和 type。Phase 3 与 AR 优化一起。 |
+| 55 | AR cairn 类型扩展 (cairn / free) | E-003 | Should Have | 当前 v70 把 `cairn` / `free` 这两个 MarkerType fallback 渲染为灰色通用球。两种类型的产品语义还没定义清楚，需要 PO 拍板：留还是删，或给独立视觉。 |
+| 56 | AR 视觉 — 粒子贴图 + Fresnel 强度 | E-003 | Should Have | 配合 #48 加 PNG 贴图后，把 Viro 内置 fresnelExponent 调到 ~3.0 + 加 ViroParticleEmitter 替换当前 30 ViroSphere 粒子（更顺滑、性能更好）。 |
+| 57 | AR cairn note 长文本/语音 | E-003 | Should Have | 当前 v71 在球上方 billboard 显示 note 文字（30m 内）。后续：> 60 字省略号点击可展开；语音 memo（参考 #45）需要单独 UI 按钮播放。 |

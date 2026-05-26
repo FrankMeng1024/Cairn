@@ -53,11 +53,15 @@ interface TypeMeta {
   color: string;
 }
 
+// v70: colours match canonical markerTypes.ts (and what the 3D AR cairn
+// actually renders — ViroAROverlay's TYPE_COLOR_TRIPLET). Pre-v70 we had
+// scenic=blue and supply=green (ID swap with colour), so a "blue button"
+// produced a "green sphere" in AR. Now they match.
 const TYPES: TypeMeta[] = [
-  { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: '#c53d2e' },
-  { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: '#3b82f6' },
-  { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: '#22c55e' },
-  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: '#f59e0b' },
+  { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: '#ff5a3a' },
+  { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: '#3ad8a4' },
+  { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: '#6ac8f0' },
+  { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: '#f0a838' },
 ];
 
 // Eye height + plant cap — matches AR3DCairnOverlay constants.
@@ -127,6 +131,9 @@ const reticleStyles = StyleSheet.create({
 interface PlantSheetProps {
   /** Called when user confirms plant — parent handles addMarker.  */
   onPlant: (type: PlantType, distanceM: number, title: string) => Promise<void>;
+  /** Called the instant the user taps Aim & Plant (before the squeeze finishes).
+   *  ARScreen uses this to fire the lock-on shutter effect over the viewport. */
+  onAimStart?: () => void;
   /** True when GPS unavailable — disables the plant flow. */
   disabled?: boolean;
   /** Reticle scale Animated.Value — owned by parent so the squeeze
@@ -134,7 +141,7 @@ interface PlantSheetProps {
   reticleScale: Animated.Value;
 }
 
-export function PlantSheet({ onPlant, disabled, reticleScale }: PlantSheetProps) {
+export function PlantSheet({ onPlant, onAimStart, disabled, reticleScale }: PlantSheetProps) {
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState<1 | 2>(1);
   const [selectedType, setSelectedType] = useState<PlantType | null>(null);
@@ -189,6 +196,9 @@ export function PlantSheet({ onPlant, disabled, reticleScale }: PlantSheetProps)
     if (!selectedType || disabled || aiming) return;
     setAiming(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    // v68: trigger viewport-level shutter overlay (scan-ring shockwave).
+    // This is independent of the reticle squeeze below — they play in parallel.
+    onAimStart?.();
 
     // 1.2s squeeze animation — reticle shrinks 1 → 0.5
     Animated.timing(reticleScale, {

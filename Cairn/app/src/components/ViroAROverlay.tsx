@@ -16,13 +16,16 @@
  * at session start (using arkitOriginGPS). ARKit VIO tracks camera movement
  * thereafter; cairns stay locked in world space (sub-cm precision).
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import {
   ViroARScene,
   ViroARSceneNavigator,
   ViroSphere,
+  ViroBox,
   ViroNode,
+  ViroGeometry,
+  ViroText,
   ViroAmbientLight,
   ViroDirectionalLight,
   ViroMaterials,
@@ -34,19 +37,204 @@ import {
 import type { Marker } from '../store/useMarkerStore';
 import { crashLogger } from '../services/crashLogger';
 
-// ── Type colours (matches r3f impl) ─────────────────────────────
+// ── Type colours (matches cairn_icons_3d demo) ───────────────────
+// 3-layer gradient: inner (bright core) → mid (signature colour) → outer (deep rim)
+const TYPE_COLOR_TRIPLET: Record<string, { inner: string; mid: string; outer: string }> = {
+  danger:   { inner: '#fff0c8', mid: '#ff5a3a', outer: '#8a2218' },
+  scenic:   { inner: '#eefff4', mid: '#3ad8a4', outer: '#186a82' },
+  supply:   { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
+  junction: { inner: '#fff4d8', mid: '#f0a838', outer: '#8a4a18' },
+  // v70: catch-all for legacy/non-typed markers (`cairn`, `free`, empty).
+  // Renders a neutral grey orb so the user doesn't see junction-orange
+  // by accident. Geometry falls back to a sphere (no icon shape).
+  generic:  { inner: '#f0f0f0', mid: '#9aa0a6', outer: '#3a3d40' },
+};
+// Legacy single-color map kept for backwards compatibility — same mid colour.
 const TYPE_COLORS: Record<string, string> = {
-  danger: '#ff5a3a',
-  scenic: '#3ad8a4',
-  supply: '#6ac8f0',
-  junction: '#f0a838',
+  danger:   TYPE_COLOR_TRIPLET.danger.mid,
+  scenic:   TYPE_COLOR_TRIPLET.scenic.mid,
+  supply:   TYPE_COLOR_TRIPLET.supply.mid,
+  junction: TYPE_COLOR_TRIPLET.junction.mid,
 };
 
 // ── Constants ──────────────────────────────────────────────────
 const ORB_RADIUS = 0.4;       // 80cm diameter (~2x basketball)
-const ORB_HEIGHT_M = 1.5;     // hover 1.5m above ground
-const ALT_THRESHOLD_M = 5;    // GPS alt noise floor; ignore differences below this
-const VISIBLE_RANGE_M = 100;  // hide cairns farther than this
+// v68: cairn Y is now relative to ARKit camera Y at origin time, not "1.5m
+// above ground". Reason: ARKit Y=0 is wherever the phone was when origin was
+// set — could be 2nd floor, on a hill, in a basement. Anchoring to physical
+// ground requires plane detection (which we don't run). Easiest robust rule:
+// place the cairn slightly BELOW eye level (-0.2m) so user can see it as if
+// it's standing in front of them. Works on flat ground, in buildings, on
+// stairs — visual position always feels natural relative to where they're
+// looking.
+//
+// v70: ORB_EYE_OFFSET_M is now only used as a legacy fallback in
+// gpsToArWorld() when no ARKit plane has been detected yet. The real Y for
+// cairns is computed in cairnNodes useMemo using groundYRef + 1.5m.
+const ORB_EYE_OFFSET_M = -0.2;
+const ALT_THRESHOLD_M = 5;    // GPS alt noise floor (deprecated — kept for safety, unused below)
+// v70: render 3D orb only within 30m. Beyond 30m, off-screen edge arrows
+// (in CairnEdgeArrows) up to 300m. Beyond 300m, marker is hidden entirely.
+// Reason: 5km made the AR view feel cluttered with distant cairns the user
+// couldn't actually see anyway.
+const VISIBLE_RANGE_M = 30;
+const ICON_SCALE = 2.0;        // v70: bumped 1.4 → 2.0 (50% bigger)
+const PARTICLE_COUNT = 50;     // v70: bumped 30 → 50 (denser orbit)
+const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presence
+
+// ── 4 icon geometries ──────────────────────────────────────────
+// Each function returns { vertices, triangleIndices } in the format
+// expected by <ViroGeometry vertices=... triangleIndices=...>.
+// All math runs once at module load (these are constants).
+//
+// Coordinate convention: +Y = up, +Z = front (icon faces +Z).
+function buildDangerGeom() {
+  // Translucent triangular prism, apex up, axis along Z (faces front+back).
+  const R = 0.26, D = 0.10;
+  // Front triangle (z = +D), back triangle (z = -D)
+  const a = -Math.PI / 2;       // start at top
+  const v0: [number, number, number] = [Math.cos(a) * R, Math.sin(a) * R + R * 0.1,  D];
+  const v1: [number, number, number] = [Math.cos(a + 2.094) * R, Math.sin(a + 2.094) * R, D];
+  const v2: [number, number, number] = [Math.cos(a + 4.189) * R, Math.sin(a + 4.189) * R, D];
+  const v3: [number, number, number] = [v0[0], v0[1], -D];
+  const v4: [number, number, number] = [v1[0], v1[1], -D];
+  const v5: [number, number, number] = [v2[0], v2[1], -D];
+  return {
+    vertices: [v0, v1, v2, v3, v4, v5],
+    triangleIndices: [
+      [0, 2, 1], [3, 4, 5],         // front + back
+      [0, 1, 4], [0, 4, 3],         // left side
+      [1, 2, 5], [1, 5, 4],         // bottom side
+      [2, 0, 3], [2, 3, 5],         // right side
+    ] as [number, number, number][],
+  };
+}
+
+function buildScenicGeom() {
+  // True 3D 5-pointed star: front/back centres + 10 perimeter alternating outer/inner
+  const outerR = 0.24, innerR = 0.10, depth = 0.07;
+  const N = 5;
+  const verts: [number, number, number][] = [
+    [0, 0,  depth],
+    [0, 0, -depth],
+  ];
+  for (let i = 0; i < N * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const ang = (i / (N * 2)) * Math.PI * 2 - Math.PI / 2;
+    verts.push([Math.cos(ang) * r, Math.sin(ang) * r, 0]);
+  }
+  const idx: [number, number, number][] = [];
+  const P0 = 2;
+  for (let i = 0; i < N * 2; i++) {
+    const a = P0 + i;
+    const b = P0 + ((i + 1) % (N * 2));
+    idx.push([0, b, a]);
+    idx.push([1, a, b]);
+  }
+  return { vertices: verts, triangleIndices: idx };
+}
+
+function buildSupplyGeom() {
+  // Lathed water droplet — pointed top, fat bottom
+  const segs = 14, sides = 14;
+  const TOP_Y = 0.26, BOT_Y = -0.20, MAX_R = 0.16;
+  const profile: { y: number; r: number }[] = [];
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const y = TOP_Y + (BOT_Y - TOP_Y) * t;
+    const tEff = Math.pow(t, 1.55);
+    const r = MAX_R * Math.pow(Math.sin(tEff * Math.PI), 0.85);
+    profile.push({ y, r: (i === 0 || i === segs) ? 0.0001 : Math.max(r, 0.0001) });
+  }
+  const verts: [number, number, number][] = [];
+  for (let i = 0; i <= segs; i++) {
+    for (let j = 0; j < sides; j++) {
+      const ang = (j / sides) * Math.PI * 2;
+      const p = profile[i];
+      verts.push([Math.cos(ang) * p.r, p.y, Math.sin(ang) * p.r]);
+    }
+  }
+  const idx: [number, number, number][] = [];
+  for (let i = 0; i < segs; i++) {
+    for (let j = 0; j < sides; j++) {
+      const a = i * sides + j;
+      const b = i * sides + (j + 1) % sides;
+      const c = (i + 1) * sides + j;
+      const d = (i + 1) * sides + (j + 1) % sides;
+      idx.push([a, b, d]);
+      idx.push([a, d, c]);
+    }
+  }
+  return { vertices: verts, triangleIndices: idx };
+}
+
+function buildJunctionGeom() {
+  // Combined arrow: foot (rotated box) + shaft (rotated box) + 4-sided pyramid head
+  const verts: [number, number, number][] = [];
+  const idx: [number, number, number][] = [];
+  function pushBoxRot45(cy: number, hw: number, hh: number, hd: number) {
+    const start = verts.length;
+    const c = Math.cos(Math.PI / 4), s = Math.sin(Math.PI / 4);
+    const rot = (x: number, y: number, z: number): [number, number, number] => [x * c - z * s, y, x * s + z * c];
+    verts.push(rot(-hw, cy - hh, -hd));
+    verts.push(rot( hw, cy - hh, -hd));
+    verts.push(rot( hw, cy - hh,  hd));
+    verts.push(rot(-hw, cy - hh,  hd));
+    verts.push(rot(-hw, cy + hh, -hd));
+    verts.push(rot( hw, cy + hh, -hd));
+    verts.push(rot( hw, cy + hh,  hd));
+    verts.push(rot(-hw, cy + hh,  hd));
+    const o = start;
+    idx.push([o, o+1, o+2], [o, o+2, o+3]);
+    idx.push([o+4, o+6, o+5], [o+4, o+7, o+6]);
+    idx.push([o, o+5, o+1], [o, o+4, o+5]);
+    idx.push([o+1, o+6, o+2], [o+1, o+5, o+6]);
+    idx.push([o+2, o+7, o+3], [o+2, o+6, o+7]);
+    idx.push([o+3, o+4, o+0], [o+3, o+7, o+4]);
+  }
+  // Foot — small base block
+  pushBoxRot45(-0.16 + 0.02, 0.08, 0.02, 0.08);
+  // Shaft — narrower box rising
+  pushBoxRot45(-0.04 + 0.10, 0.05, 0.10, 0.05);
+  // Head — pyramid: apex up, square base at y=0.10
+  const baseR = 0.14, headBaseY = 0.10, apexY = 0.30;
+  const o = verts.length;
+  verts.push([0, apexY, 0]);
+  verts.push([baseR, headBaseY, 0]);
+  verts.push([0, headBaseY, baseR]);
+  verts.push([-baseR, headBaseY, 0]);
+  verts.push([0, headBaseY, -baseR]);
+  idx.push([o, o+1, o+2]);
+  idx.push([o, o+2, o+3]);
+  idx.push([o, o+3, o+4]);
+  idx.push([o, o+4, o+1]);
+  idx.push([o+1, o+4, o+3]);
+  idx.push([o+1, o+3, o+2]);
+  return { vertices: verts, triangleIndices: idx };
+}
+
+const ICON_GEOM: Record<string, { vertices: [number, number, number][]; triangleIndices: [number, number, number][] }> = {
+  danger:   buildDangerGeom(),
+  scenic:   buildScenicGeom(),
+  supply:   buildSupplyGeom(),
+  junction: buildJunctionGeom(),
+};
+
+// ── 30-particle classic orbit positions (ViroSphere children of a rotating ViroNode) ──
+// Each particle has a fixed local position; the parent ViroNode runs a
+// rotateY animation so the whole ring spins. Y bob is faked with a small
+// vertical translation animation per-particle (every 3rd particle uses a
+// different phase to avoid sync).
+const PARTICLE_POSITIONS: Array<{ x: number; y: number; z: number }> = (() => {
+  const arr: Array<{ x: number; y: number; z: number }> = [];
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const a = (i / PARTICLE_COUNT) * Math.PI * 2 + (i * 0.137);
+    const r = 0.32 + ((i * 31) % 100) / 100 * 0.18;
+    const y = (((i * 47) % 100) / 100 - 0.5) * 0.40;
+    arr.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r });
+  }
+  return arr;
+})();
 
 // Defensive: NO module top-level Viro NativeModule calls (createMaterials /
 // registerAnimations) — they're done inside ARScene component's useEffect.
@@ -54,20 +242,61 @@ const VISIBLE_RANGE_M = 100;  // hide cairns farther than this
 // calls, but this defensive style is RN best practice anyway.)
 
 // ── GPS → ARKit world conversion ───────────────────────────────
-// ARKit worldAlignment="GravityAndHeading" gives:
-//   +X = East, -Z = North, +Y = Up (gravity-aligned)
+// worldAlignment="GravityAndHeading":
+//   ARKit aligns axes to true north using device compass + gyro fusion.
+//   +X = East, -Z = North, +Y = Up. We do NOT need to rotate ourselves.
+//
+// This is more accurate than worldAlignment="Gravity" + manual rotation
+// because ARKit fuses compass + gyro continuously to correct drift,
+// whereas a single magnetic-heading snapshot at origin-set is whatever
+// the compass reads at that instant (often off by 30-90° before warm-up).
+//
+// DEBUG MODE (FIXED_FORWARD_M > 0): place one test sphere directly in
+// front of the camera at FIXED_FORWARD_M metres. Bypasses GPS entirely.
+const FIXED_FORWARD_M = 0; // set to >0 to force debug fixed-forward placement
+
 function gpsToArWorld(
   origin: { lat: number; lng: number; alt?: number | null },
   target: { lat: number; lng: number; alt?: number | null },
 ): [number, number, number] {
+  if (FIXED_FORWARD_M > 0) {
+    return [0, ORB_EYE_OFFSET_M, -FIXED_FORWARD_M];
+  }
   const dLat = target.lat - origin.lat;
   const dLng = target.lng - origin.lng;
   const cosLat = Math.cos((origin.lat * Math.PI) / 180);
-  const eastM = dLng * 111000 * cosLat;
   const northM = dLat * 111000;
-  const dAlt = (target.alt ?? 0) - (origin.alt ?? 0);
-  const altY = Math.abs(dAlt) < ALT_THRESHOLD_M ? 0 : dAlt;
-  return [eastM, ORB_HEIGHT_M + altY, -northM];
+  const eastM = dLng * 111000 * cosLat;
+  // v68: GPS altitude is unreliable (consumer phones report 5-10m of vertical
+  // jitter on every reading). We previously tried to honor it via dAlt — the
+  // result was cairns appearing at wildly different heights (e.g. y=12m for
+  // markers planted on flat ground). Now we ignore GPS altitude entirely and
+  // anchor every cairn slightly below ARKit camera Y at origin time. This
+  // gives a consistent "in front of me, slightly below eye level" feel
+  // regardless of floor / hill / building.
+  const altY = ORB_EYE_OFFSET_M;
+  // GravityAndHeading: +X=East, -Z=North, +Y=Up — direct mapping.
+  return [eastM, altY, -northM];
+}
+
+interface CairnWorldPos {
+  id: string;
+  type: string;
+  x: number; y: number; z: number;
+  dist: number;
+  note?: string;
+}
+
+interface CameraInfo {
+  position: [number, number, number];
+  forward: [number, number, number];
+}
+
+interface ArOriginInfo {
+  /** GPS lat/lng/alt at the moment ARKit origin was anchored. */
+  lat: number;
+  lng: number;
+  alt: number | null;
 }
 
 interface Props {
@@ -76,39 +305,171 @@ interface Props {
   userHeading: number | null;
   onStatus?: (status: { glReady: boolean; cairnCount: number }) => void;
   onCairnPress?: (markerId: string) => void;
+  /**
+   * Live ARKit camera transform + cairn world positions, emitted on every
+   * camera frame. Lets the parent (ARScreen) draw screen-edge arrows that
+   * point at off-screen cairns using ARKit's true-north-aligned coordinate
+   * system. Independent of any magnetic-heading sensor.
+   *
+   * Also includes the GPS origin so the parent can convert ARKit world
+   * positions back to GPS coordinates for plant flow (avoids drift from
+   * GPS-averaged anchors).
+   *
+   * `groundY` is the lowest detected horizontal plane's Y in ARKit world
+   * space. Null until ARKit detects a horizontal plane (~1-3s indoors with
+   * decent lighting & texture). Used by plant-flow + cairn render to place
+   * the orb at `groundY + 1.5m` (eye-level above floor) regardless of
+   * how the user was holding the phone at scene mount.
+   */
+  onArFrame?: (info: { camera: CameraInfo; cairns: CairnWorldPos[]; origin: ArOriginInfo | null; groundY: number | null }) => void;
+  /**
+   * v70: when set, a tall vertical light shaft renders above this cairn
+   * (helps the user spot where it is from a distance). Cleared by the
+   * parent after a timeout.
+   */
+  beamingId?: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────
 // AR scene — receives arkitOrigin + markers via viroAppProps
 // ─────────────────────────────────────────────────────────────────
 function CairnARScene(props: any) {
-  const sceneProps = (props.sceneNavigator?.viroAppProps ?? {}) as {
-    arkitOrigin: { lat: number; lng: number; alt?: number | null };
+  // viroAppProps is mutated in-place by ViroARSceneNavigator (not via React state),
+  // so we poll it at 500ms to pick up markers/origin changes after scene mount.
+  const [liveProps, setLiveProps] = useState<{
+    arkitOrigin: { lat: number; lng: number; alt?: number | null } | null;
     markers: Marker[];
     onCairnPress?: (id: string) => void;
-  };
-  const { arkitOrigin, markers, onCairnPress } = sceneProps;
+    onArFrame?: (info: { camera: CameraInfo; cairns: CairnWorldPos[]; origin: ArOriginInfo | null; groundY: number | null }) => void;
+    beamingId?: string | null;
+  }>(() => {
+    const p = props.sceneNavigator?.viroAppProps ?? {};
+    return {
+      arkitOrigin: p.arkitOrigin ?? null,
+      markers: p.markers ?? [],
+      onCairnPress: p.onCairnPress,
+      onArFrame: p.onArFrame,
+      beamingId: p.beamingId ?? null,
+    };
+  });
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const p = props.sceneNavigator?.viroAppProps ?? {};
+      setLiveProps(prev => {
+        const nextMarkers: Marker[] = p.markers ?? [];
+        const nextBeamingId = p.beamingId ?? null;
+        if (
+          prev.arkitOrigin === p.arkitOrigin &&
+          prev.markers.length === nextMarkers.length &&
+          prev.onArFrame === p.onArFrame &&
+          prev.beamingId === nextBeamingId
+        ) return prev;
+        return {
+          arkitOrigin: p.arkitOrigin ?? null,
+          markers: nextMarkers,
+          onCairnPress: p.onCairnPress,
+          onArFrame: p.onArFrame,
+          beamingId: nextBeamingId,
+        };
+      });
+    }, 500);
+    return () => clearInterval(id);
+  }, []);
+
+  const { arkitOrigin, markers, onCairnPress, onArFrame, beamingId } = liveProps;
   const [tracking, setTracking] = useState(false);
   const [materialsReady, setMaterialsReady] = useState(false);
+  // Refs for the camera-frame callback so we can throttle without
+  // re-firing the closure on every Viro render.
+  const lastFrameTsRef = useRef(0);
+  const cairnNodesRef = useRef<CairnWorldPos[]>([]);
+  // v70: lowest detected horizontal plane Y in ARKit world. ARKit reports
+  // anchors via onAnchorFound/Updated; we keep the running minimum (lowest
+  // plane = floor, even if ARKit also detects a tabletop higher up).
+  // null until first horizontal plane is detected. Used by plant-flow to
+  // anchor cairns at `groundY + 1.5m` regardless of how the user was
+  // holding the phone.
+  const groundYRef = useRef<number | null>(null);
+  const [groundYTick, setGroundYTick] = useState(0); // bump to force cairn re-render when ground appears
 
   // Register Viro materials + animations on first scene mount.
   // Deliberately NOT at module top-level (defensive RN best practice).
+  //
+  // Material strategy per cairn type — 3-layer "soul wisp" stack:
+  //   1. icon{type}    — solid coloured icon body (lightingModel Constant
+  //                      + bloomThreshold so the colour itself glows in HDR)
+  //   2. core{type}    — bright inner sphere (Constant + Add blend)
+  //   3. shell{type}   — Fresnel rim shell (Lambert + fresnelExponent 2.0
+  //                      so edges glow brighter than centre)
+  //   4. wisp{type}    — outer hazy halo (Constant + Add + cullMode Front
+  //                      so we see the "back wall" of the sphere from inside)
+  //   5. particle{type}— small 30-orbit particles (Constant + Add)
   useEffect(() => {
     try {
-      ViroMaterials.createMaterials({
-        cairnDanger:   { lightingModel: 'Lambert', diffuseColor: TYPE_COLORS.danger },
-        cairnScenic:   { lightingModel: 'Lambert', diffuseColor: TYPE_COLORS.scenic },
-        cairnSupply:   { lightingModel: 'Lambert', diffuseColor: TYPE_COLORS.supply },
-        cairnJunction: { lightingModel: 'Lambert', diffuseColor: TYPE_COLORS.junction },
-      });
+      const types = ['danger', 'scenic', 'supply', 'junction', 'generic'] as const;
+      const matDict: Record<string, any> = {};
+      for (const t of types) {
+        const c = TYPE_COLOR_TRIPLET[t];
+        matDict[`icon${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: c.mid,
+          bloomThreshold: 0.55,    // colour above this brightness blooms
+        };
+        matDict[`core${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: c.inner,
+          blendMode: 'Add',
+          bloomThreshold: 0.40,
+        };
+        matDict[`shell${t}`] = {
+          lightingModel: 'Lambert',
+          diffuseColor: c.mid,
+          fresnelExponent: 2.0,    // edges glow brighter than centre
+          blendMode: 'Add',
+          bloomThreshold: 0.55,
+        };
+        matDict[`wisp${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: c.outer,
+          blendMode: 'Add',
+          cullMode: 'Front',        // render back faces only ("inside-out shell")
+        };
+        matDict[`particle${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: c.inner,
+          blendMode: 'Add',
+          bloomThreshold: 0.30,
+        };
+      }
+      ViroMaterials.createMaterials(matDict);
       ViroAnimations.registerAnimations({
-        pulse: {
-          properties: { scaleX: 1.12, scaleY: 1.12, scaleZ: 1.12 },
-          duration: 1200,
+        // Idle pulse for the icon body
+        iconPulse: {
+          properties: { scaleX: 1.06, scaleY: 1.06, scaleZ: 1.06 },
+          duration: 1400,
           easing: 'EaseInEaseOut',
         },
+        // Slow Y rotation for the icon (so all faces are revealed)
+        iconSpin: {
+          properties: { rotateY: '+=360' },
+          duration: 12000,
+        },
+        // Particle ring spin — the 30 ViroSphere children inherit this
+        particleRing: {
+          properties: { rotateY: '+=360' },
+          duration: 4500,
+        },
+        // Plant rise: cairn jumps in from -1m below ground to its target Y over 1.4s.
+        // We attach this as the orb wrapper's animation when first mounted; once
+        // the rise completes, idle animations take over.
+        riseIn: {
+          properties: { positionY: '+=1.5', opacity: 1.0 },
+          duration: 1400,
+          easing: 'EaseOutQuint',
+        },
       });
-      crashLogger.breadcrumb('viro:materials-registered');
+      crashLogger.breadcrumb('viro:materials-registered v67');
       setMaterialsReady(true);
     } catch (err: any) {
       crashLogger.breadcrumb(`viro:materials-error ${String(err?.message || err).slice(0, 100)}`);
@@ -123,15 +484,69 @@ function CairnARScene(props: any) {
 
   const cairnNodes = useMemo(() => {
     if (!arkitOrigin) return [];
-    return markers
+    // v70: anchor cairn vertical position to detected floor (groundY + EYE_M).
+    // Fallback if no plane detected yet: assume user was standing & holding the
+    // phone at chest height (~1.4m above floor) at scene mount, so groundY ≈
+    // ARKit Y - 1.4. Cairn Y then = (ARKit Y - 1.4) + 1.5 = ARKit Y + 0.1.
+    // Once ARKit detects a real plane, groundY is overwritten and the cairn Y
+    // re-snaps to the accurate value.
+    const EYE_M = 1.5;
+    const FALLBACK_HOLD_HEIGHT_M = 1.4;
+    const ground = groundYRef.current;
+    const cairnY = ground !== null
+      ? ground + EYE_M
+      : -FALLBACK_HOLD_HEIGHT_M + EYE_M; // ≈ +0.1 above ARKit origin
+    const nodes = markers
       .map((m) => {
-        const [x, y, z] = gpsToArWorld(arkitOrigin, m);
+        const [x, _y, z] = gpsToArWorld(arkitOrigin, m);
         const horizontal = Math.hypot(x, z);
         if (horizontal > VISIBLE_RANGE_M) return null;
-        return { id: m.id, type: m.type, x, y, z, dist: horizontal };
+        const y = cairnY;
+        crashLogger.breadcrumb(`viro:cairn-pos id=${m.id.slice(-4)} x=${x.toFixed(2)} y=${y.toFixed(2)} z=${z.toFixed(2)} ground=${ground === null ? 'null' : ground.toFixed(2)}`);
+        return { id: m.id, type: m.type, x, y, z, dist: horizontal, note: m.note ?? '' };
       })
       .filter((c): c is NonNullable<typeof c> => c !== null);
-  }, [markers, arkitOrigin?.lat, arkitOrigin?.lng, arkitOrigin?.alt]);
+    cairnNodesRef.current = nodes;
+    return nodes;
+  }, [markers, arkitOrigin?.lat, arkitOrigin?.lng, arkitOrigin?.alt, groundYTick]);
+
+  // Camera transform handler — fires on every ARKit frame (60Hz). Throttle
+  // to ~10Hz so we don't flood the JS bridge. Forward the camera state +
+  // cairn world positions to the parent for off-screen arrow rendering.
+  const onCameraTransformUpdate = useCallback((evt: any) => {
+    if (!onArFrame) return;
+    const now = Date.now();
+    if (now - lastFrameTsRef.current < 100) return; // 10Hz
+    lastFrameTsRef.current = now;
+    const t = evt?.cameraTransform;
+    if (!t || !t.position || !t.forward) return;
+    onArFrame({
+      camera: { position: t.position, forward: t.forward },
+      cairns: cairnNodesRef.current,
+      origin: arkitOrigin ? { lat: arkitOrigin.lat, lng: arkitOrigin.lng, alt: arkitOrigin.alt ?? null } : null,
+      groundY: groundYRef.current,
+    });
+  }, [onArFrame, arkitOrigin]);
+
+  // v70: ARKit horizontal plane detection. We accept any plane reported by
+  // ARKit and keep the running minimum Y as "floor". `anchorDetectionTypes`
+  // defaults to ["planesHorizontal","planesVertical"] in ViroARScene, so
+  // we just need handlers — no extra props.
+  const handleAnchor = useCallback((anchor: any) => {
+    if (!anchor) return;
+    if (anchor.type !== 'plane') return;
+    if (anchor.alignment && anchor.alignment !== 'Horizontal' && anchor.alignment !== 'horizontal') return;
+    const y = anchor.position?.[1];
+    if (typeof y !== 'number' || !isFinite(y)) return;
+    const cur = groundYRef.current;
+    if (cur === null || y < cur) {
+      groundYRef.current = y;
+      setGroundYTick((n) => n + 1);
+      crashLogger.breadcrumb(`viro:plane y=${y.toFixed(2)} (new lowest)`);
+    }
+  }, []);
+  const onAnchorFound = useCallback((anchor: any) => handleAnchor(anchor), [handleAnchor]);
+  const onAnchorUpdated = useCallback((anchor: any) => handleAnchor(anchor), [handleAnchor]);
 
   useEffect(() => {
     crashLogger.breadcrumb(
@@ -140,35 +555,192 @@ function CairnARScene(props: any) {
   }, [cairnNodes.length, arkitOrigin?.lat, arkitOrigin?.lng]);
 
   return (
-    <ViroARScene onTrackingUpdated={onTrackingUpdated}>
+    <ViroARScene
+      onTrackingUpdated={onTrackingUpdated}
+      onCameraTransformUpdate={onCameraTransformUpdate}
+      onAnchorFound={onAnchorFound}
+      onAnchorUpdated={onAnchorUpdated}
+    >
       <ViroAmbientLight color="#ffffff" intensity={400} />
       <ViroDirectionalLight color="#ffffff" direction={[0, -1, -0.2]} intensity={800} />
-      {materialsReady && cairnNodes.map((c) => {
-        const matName =
-          c.type === 'danger' ? 'cairnDanger' :
-          c.type === 'scenic' ? 'cairnScenic' :
-          c.type === 'supply' ? 'cairnSupply' :
-          'cairnJunction';
-        return (
-          <ViroNode
-            key={c.id}
-            position={[c.x, c.y, c.z]}
-            onClick={() => {
-              crashLogger.breadcrumb(`viro:cairn:press id=${c.id.slice(-6)}`);
-              onCairnPress?.(c.id);
-            }}
-            animation={{ name: 'pulse', run: tracking, loop: true }}
-          >
-            <ViroSphere
-              radius={ORB_RADIUS}
-              widthSegmentCount={24}
-              heightSegmentCount={24}
-              materials={[matName]}
-            />
-          </ViroNode>
-        );
-      })}
+      {materialsReady && cairnNodes.map((c) => (
+        <CairnInstance
+          key={c.id}
+          id={c.id}
+          type={c.type}
+          x={c.x}
+          y={c.y}
+          z={c.z}
+          tracking={tracking}
+          beaming={beamingId === c.id}
+          note={c.note}
+          onPress={onCairnPress}
+        />
+      ))}
     </ViroARScene>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// CairnInstance — single cairn rendered as a soul-wisp icon
+// ─────────────────────────────────────────────────────────────────
+//
+// Layered structure (closest to outermost):
+//   1. Icon body (ViroGeometry, type-specific shape, idle iconSpin animation)
+//   2. Inner core sphere (Constant + Add, white-bright)
+//   3. Fresnel shell (Lambert + fresnelExponent, mid-colour, edges glow)
+//   4. Outer wisp (Constant + Add + cullMode=Front, deep-colour)
+//   5. Particle ring (ViroNode wrapping 30 small ViroSpheres, parent rotates)
+//
+// Animation chain:
+//   - On mount: orb wrapper plays riseIn (positionY +=1.5 over 1.4s)
+//     → icon scaled 0 → 1 reveal (controlled by inner pulse)
+//   - After mount: idle iconSpin + iconPulse + particleRing run forever
+function CairnInstance(props: {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  z: number;
+  tracking: boolean;
+  beaming?: boolean;
+  note?: string;
+  onPress?: (id: string) => void;
+}) {
+  const { id, type, x, y, z, tracking, beaming, note, onPress } = props;
+  // v70: known type → use specific geometry. Unknown type (legacy 'cairn',
+  // 'free', or anything else) → render a neutral grey sphere with the
+  // 'generic' colour palette. No more "scenic blue → junction orange"
+  // surprises from a silent fallback to junction.
+  const knownType = type in TYPE_COLOR_TRIPLET && type in ICON_GEOM ? type : null;
+  const geom = knownType ? ICON_GEOM[knownType] : null;
+  const tName = knownType ?? 'generic';
+  const M = (n: string) => `${n}${tName}`;       // material name helper
+  const onPressCb = useCallback(() => {
+    crashLogger.breadcrumb(`viro:cairn:press id=${id.slice(-6)}`);
+    onPress?.(id);
+  }, [id, onPress]);
+
+  return (
+    <ViroNode
+      position={[x, y, z]}
+      onClick={onPressCb}
+    >
+      {/* v70.1 rise-in wrapper: inner node starts 1.5m below the cairn's
+          target world position and animates up by +=1.5 over 1.4s. The
+          OUTER node stays anchored at GPS-derived (x,y,z) so the cairn's
+          world position is correct from frame 1; only the visual
+          presentation animates up from "ground" → "eye-level". `key`
+          uses the cairn id so a fresh marker re-runs the animation,
+          while existing markers don't re-trigger on prop changes. */}
+      <ViroNode
+        position={[0, -1.5, 0]}
+        opacity={0}
+        animation={{ name: 'riseIn', run: tracking, loop: false }}
+      >
+      {/* 1. Icon body (Viro geometry, spinning).
+          For known types we render the type-specific geometry. For unknown
+          types (legacy data) we render a plain sphere as the icon body. */}
+      <ViroNode
+        animation={{ name: 'iconSpin', run: tracking, loop: true }}
+        scale={[ICON_SCALE, ICON_SCALE, ICON_SCALE]}
+      >
+        {geom ? (
+          <ViroGeometry
+            vertices={geom.vertices}
+            triangleIndices={geom.triangleIndices}
+            materials={[M('icon')]}
+          />
+        ) : (
+          <ViroSphere
+            radius={0.18}
+            widthSegmentCount={20}
+            heightSegmentCount={16}
+            materials={[M('icon')]}
+          />
+        )}
+      </ViroNode>
+
+      {/* 2. Inner bright core */}
+      <ViroSphere
+        radius={0.10}
+        widthSegmentCount={18}
+        heightSegmentCount={14}
+        materials={[M('core')]}
+        opacity={0.85}
+      />
+
+      {/* 3. Fresnel shell — Lambert + fresnelExponent so edges glow */}
+      <ViroSphere
+        radius={0.22}
+        widthSegmentCount={24}
+        heightSegmentCount={18}
+        materials={[M('shell')]}
+        opacity={0.45}
+      />
+
+      {/* 4. Outer wisp halo — front-culled so we see the back wall from inside */}
+      <ViroSphere
+        radius={0.36}
+        widthSegmentCount={20}
+        heightSegmentCount={16}
+        materials={[M('wisp')]}
+        opacity={0.22}
+      />
+
+      {/* 5. Particle ring — 30 small spheres rotating together */}
+      <ViroNode animation={{ name: 'particleRing', run: tracking, loop: true }}>
+        {PARTICLE_POSITIONS.map((p, i) => (
+          <ViroSphere
+            key={i}
+            radius={PARTICLE_RADIUS}
+            widthSegmentCount={6}
+            heightSegmentCount={4}
+            position={[p.x, p.y, p.z]}
+            materials={[M('particle')]}
+            opacity={0.85}
+          />
+        ))}
+      </ViroNode>
+
+      {/* 6. v70: optional vertical beam (skylight) — toggled by tapping the
+          marker panel row. Helps user spot a far cairn. Box stretched 30m
+          tall, very narrow, additive-blended bright white. Local origin is
+          the cairn centre, box centre is 15m up so the beam goes from
+          cairn-Y up to cairn-Y + 30m. */}
+      {beaming && (
+        <ViroBox
+          position={[0, 15, 0]}
+          width={0.12}
+          height={30}
+          length={0.12}
+          materials={[M('core')]}
+          opacity={0.55}
+        />
+      )}
+
+      {/* 7. v70.1: note (title) floats 1.2m above the cairn body. ViroText
+          uses transformBehaviors=["billboard"] so it always faces the
+          camera, perfectly readable when the user looks at the cairn,
+          gracefully shrinks via natural perspective when far away. Only
+          rendered if the marker has a non-empty note. */}
+      {note && note.length > 0 && (
+        <ViroText
+          text={note.length > 60 ? note.slice(0, 57) + '...' : note}
+          position={[0, 1.2, 0]}
+          scale={[0.6, 0.6, 0.6]}
+          transformBehaviors={['billboard']}
+          color="#ffffff"
+          outerStroke={{ type: 'Outline', width: 2, color: '#000000' }}
+          style={{
+            fontSize: 18,
+            fontWeight: '700',
+            textAlign: 'center',
+          } as any}
+        />
+      )}
+      </ViroNode>
+    </ViroNode>
   );
 }
 
@@ -178,19 +750,24 @@ function CairnARScene(props: any) {
 export function ViroAROverlay({
   markers,
   userPos,
-  userHeading: _userHeading,
+  userHeading,
   onStatus,
   onCairnPress,
+  onArFrame,
+  beamingId,
 }: Props) {
   const arkitOriginRef = useRef<{ lat: number; lng: number; alt?: number | null } | null>(null);
   const [originReady, setOriginReady] = useState(false);
 
+  // Set origin as soon as GPS is available. With worldAlignment="GravityAndHeading",
+  // ARKit handles north-alignment internally (fused compass + gyro), so we don't
+  // need to capture heading ourselves.
   useEffect(() => {
     if (!arkitOriginRef.current && userPos) {
       arkitOriginRef.current = { ...userPos };
       setOriginReady(true);
       crashLogger.breadcrumb(
-        `viro:origin-set lat=${userPos.lat.toFixed(6)} lng=${userPos.lng.toFixed(6)} alt=${userPos.alt ?? 'null'}`
+        `viro:origin-set lat=${userPos.lat.toFixed(6)} lng=${userPos.lng.toFixed(6)} alt=${userPos.alt ?? 'null'} hdg=${userHeading?.toFixed(1) ?? 'null'} fixedFwd=${FIXED_FORWARD_M} align=GravityAndHeading`
       );
     }
   }, [userPos?.lat, userPos?.lng, userPos?.alt]);
@@ -217,6 +794,8 @@ export function ViroAROverlay({
           arkitOrigin: arkitOriginRef.current,
           markers,
           onCairnPress,
+          onArFrame,
+          beamingId,
         }}
         style={StyleSheet.absoluteFillObject}
       />
