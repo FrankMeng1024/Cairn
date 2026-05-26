@@ -78,6 +78,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return { sessions: next };
     });
 
+    // v73: when the incremental flow already created the server row
+    // (remoteId set during stopTracking), skip the legacy all-in-one
+    // POST. The row was already finalized via PATCH /api/sessions/:id.
+    // Without this guard we'd double-insert the session on every save.
+    if (session.remoteId != null) return;
+
     // Sync to backend, capture remote ID
     authenticatedFetch('/api/sessions', {
       method: 'POST',

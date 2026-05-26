@@ -1,8 +1,12 @@
 /**
  * Session routes:
- *   POST /api/sessions      (authenticated) — save a session
- *   GET  /api/sessions      (authenticated) — list user's sessions
- *   GET  /api/sessions/:id  (authenticated) — get session with route_points + flags
+ *   POST   /api/sessions                      (authenticated) — save a session (legacy: all-in-one)
+ *   POST   /api/sessions/start                (authenticated) — create empty row, return id (incremental flow)
+ *   PATCH  /api/sessions/:id/append-points    (authenticated) — append GPS points to active session
+ *   PATCH  /api/sessions/:id                  (authenticated) — finalize a session (end_time, distance, name)
+ *   GET    /api/sessions                      (authenticated) — list user's sessions
+ *   GET    /api/sessions/:id                  (authenticated) — get session with route_points + flags
+ *   DELETE /api/sessions/:id                  (authenticated) — delete a session
  */
 const express = require('express');
 const Session = require('../models/Session');
@@ -12,7 +16,7 @@ const router = express.Router();
 
 // ── POST /api/sessions ─────────────────────────────────────────────────────
 router.post('/', authenticate, async (req, res) => {
-  const { type, start_time, end_time, distance_m, duration_s, route_points, flags, route_id } = req.body;
+  const { type, start_time, end_time, distance_m, duration_s, route_points, flags, route_id, name } = req.body;
 
   if (!type || !['hiking', 'running'].includes(type)) {
     return res.status(400).json({ error: 'type must be "hiking" or "running".' });
@@ -38,6 +42,7 @@ router.post('/', authenticate, async (req, res) => {
       durationS: duration_s ?? 0,
       routePoints: route_points ?? null,
       flags: flags ?? null,
+      name: name ?? null,
     });
 
     const session = await Session.findByIdAndUser(id, req.user.userId);
@@ -55,6 +60,96 @@ router.get('/', authenticate, async (req, res) => {
     return res.json({ sessions });
   } catch (err) {
     console.error('[sessions/list]', err);
+    return res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// ── POST /api/sessions/start ───────────────────────────────────────────────
+// Begin an active session — creates an empty row, returns its id.
+// Client uses the returned id for subsequent /append-points and final
+// PATCH calls. This decouples "start tracking" from "finish tracking" so
+// crashes mid-session don't lose data.
+router.post('/start', authenticate, async (req, res) => {
+  const { type, start_time } = req.body;
+  if (!type || !['hiking', 'running'].includes(type)) {
+    return res.status(400).json({ error: 'type must be "hiking" or "running".' });
+  }
+  if (!start_time || isNaN(Date.parse(start_time))) {
+    return res.status(400).json({ error: 'start_time must be a valid ISO date.' });
+  }
+  try {
+    const id = await Session.createEmpty({
+      userId: req.user.userId,
+      type,
+      startTime: new Date(start_time),
+    });
+    return res.status(201).json({ id });
+  } catch (err) {
+    console.error('[sessions/start]', err);
+    return res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// ── PATCH /api/sessions/:id/append-points ──────────────────────────────────
+// Append a batch of GPS points to an active session. Used by the 60-second
+// incremental backup interval during tracking.
+router.patch('/:id/append-points', authenticate, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id || isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid session ID.' });
+  }
+  const { points } = req.body;
+  if (!Array.isArray(points)) {
+    return res.status(400).json({ error: 'points must be an array.' });
+  }
+  if (points.length === 0) {
+    return res.status(200).json({ ok: true, appended: 0 });
+  }
+  try {
+    const ok = await Session.appendPoints(id, req.user.userId, points);
+    if (!ok) return res.status(404).json({ error: 'Session not found.' });
+    return res.status(200).json({ ok: true, appended: points.length });
+  } catch (err) {
+    console.error('[sessions/append-points]', err);
+    return res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// ── PATCH /api/sessions/:id ────────────────────────────────────────────────
+// Finalize a session at stop time: write end_time, distance_m, duration_s,
+// and (optional) name. Called from stopTracking after final point flush.
+router.patch('/:id', authenticate, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id || isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid session ID.' });
+  }
+  const { end_time, distance_m, duration_s, name } = req.body;
+  const fields = {};
+  if (end_time !== undefined) {
+    if (isNaN(Date.parse(end_time))) {
+      return res.status(400).json({ error: 'end_time must be a valid ISO date.' });
+    }
+    fields.endTime = new Date(end_time);
+  }
+  if (distance_m !== undefined) {
+    if (typeof distance_m !== 'number' || distance_m < 0) {
+      return res.status(400).json({ error: 'distance_m must be a non-negative number.' });
+    }
+    fields.distanceM = distance_m;
+  }
+  if (duration_s !== undefined) {
+    if (typeof duration_s !== 'number' || duration_s < 0) {
+      return res.status(400).json({ error: 'duration_s must be a non-negative number.' });
+    }
+    fields.durationS = duration_s;
+  }
+  if (name !== undefined) fields.name = name;
+  try {
+    const ok = await Session.finalize(id, req.user.userId, fields);
+    if (!ok) return res.status(404).json({ error: 'Session not found or no changes.' });
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('[sessions/finalize]', err);
     return res.status(500).json({ error: 'Server error.' });
   }
 });

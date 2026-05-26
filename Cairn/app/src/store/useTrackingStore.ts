@@ -27,6 +27,8 @@ import { batteryMonitor } from '../services/batteryMonitor';
 import { networkMonitor } from '../services/networkMonitor';
 import { sessionRecorder } from '../services/sessionRecorder';
 import { telemetryUploader } from '../services/telemetryUploader';
+import { startSession, appendPoints as remoteAppendPoints, finalizeSession } from '../services/sessionService';
+import { crashLogger } from '../services/crashLogger';
 import {
   BACKGROUND_LOCATION_TASK,
   registerBackgroundTask,
@@ -40,10 +42,17 @@ let locationSubscription: { remove: () => void } | null = null;
 let durationInterval: ReturnType<typeof setInterval> | null = null;
 let drainInterval: ReturnType<typeof setInterval> | null = null;
 let dynamicSamplingInterval: ReturnType<typeof setInterval> | null = null;
+let incrementalFlushInterval: ReturnType<typeof setInterval> | null = null;
 let appStateSubscription: { remove: () => void } | null = null;
 let lastSamplingIntervalMs = 3000;
 let backgroundTaskActive = false;
 let backgroundGrantedCached = false;
+// Index into trackPoints[] of the next un-flushed point. The 60s
+// incremental-backup interval reads `trackPoints.slice(lastFlushedIdx)`,
+// PATCHes those to the server, and advances the index on success. On
+// failure the index is NOT advanced — next interval re-tries the same
+// range, so dropped network is recovered automatically.
+let lastFlushedIdx = 0;
 
 async function getLocation() {
   if (!Location) {
@@ -61,6 +70,13 @@ export type TrackingStatus = 'idle' | 'requesting' | 'tracking' | 'paused';
 interface TrackingState {
   status: TrackingStatus;
   sessionId: string | null;
+  /** Server-side session id, set after POST /api/sessions/start succeeds.
+   *  Used by the 60s incremental backup to PATCH /append-points and the
+   *  finalize PATCH at stopTracking. null until server replies (which
+   *  may never happen if offline — incremental flushes silently no-op
+   *  in that case, and stopTracking falls back to the legacy all-in-one
+   *  POST /api/sessions). */
+  remoteSessionId: number | null;
   activityMode: ActivityMode;
   startedAt: number | null;
   durationS: number;
@@ -92,6 +108,7 @@ interface TrackingState {
 const initialState = {
   status: 'idle' as TrackingStatus,
   sessionId: null,
+  remoteSessionId: null as number | null,
   activityMode: 'hiking' as ActivityMode,
   startedAt: null,
   durationS: 0,
@@ -113,10 +130,36 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   setActivityMode: (mode) => set({ activityMode: mode }),
 
   startTracking: async () => {
-    set({ status: 'requesting', sessionId: generateId(), startedAt: Date.now() });
+    const startedAt = Date.now();
+    set({
+      status: 'requesting',
+      sessionId: generateId(),
+      remoteSessionId: null,
+      startedAt,
+    });
 
     // Reset module-level state from any previous session
     lastSamplingIntervalMs = 3000;
+    lastFlushedIdx = 0;
+
+    // Kick off the server-side session row immediately. This gives us a
+    // remoteId we can PATCH new points into via the 60s incremental flush
+    // — so even if the app is killed mid-session, the partial track is
+    // already on the server. Failure here is non-fatal; we fall back to
+    // the legacy all-in-one POST at stopTracking.
+    const mode = get().activityMode;
+    startSession(mode, new Date(startedAt).toISOString())
+      .then((rid) => {
+        if (rid) {
+          set({ remoteSessionId: rid });
+          crashLogger.breadcrumb(`session:start:server-id=${rid}`);
+        } else {
+          crashLogger.breadcrumb(`session:start:server-failed`);
+        }
+      })
+      .catch(() => {
+        crashLogger.breadcrumb(`session:start:server-error`);
+      });
 
     // Start debug logger session (no-op if disabled)
     const dbgSessionId = debugLogger.startSession({ activity_mode: get().activityMode });
@@ -145,6 +188,10 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     if (dynamicSamplingInterval) {
       clearInterval(dynamicSamplingInterval);
       dynamicSamplingInterval = null;
+    }
+    if (incrementalFlushInterval) {
+      clearInterval(incrementalFlushInterval);
+      incrementalFlushInterval = null;
     }
     if (appStateSubscription) {
       try { appStateSubscription.remove(); } catch { /* no-op */ }
@@ -290,6 +337,27 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
           }
         }
       }, 60_000);
+
+      // ── Incremental backup — every 60s, PATCH new points to the
+      // server so a force-quit / OS-kill mid-session doesn't lose the
+      // entire run. Silent on failure — buffer stays in-memory and
+      // next interval re-tries the unflushed range.
+      incrementalFlushInterval = setInterval(async () => {
+        const state = get();
+        if (state.status !== 'tracking') return;
+        const remoteId = state.remoteSessionId;
+        if (!remoteId) return; // server-side row not yet created (start POST in flight or failed)
+        const total = state.trackPoints.length;
+        if (total <= lastFlushedIdx) return; // nothing new
+        const slice = state.trackPoints.slice(lastFlushedIdx, total);
+        const ok = await remoteAppendPoints(remoteId, slice);
+        if (ok) {
+          lastFlushedIdx = total;
+          crashLogger.breadcrumb(`session:flush count=${slice.length} idx=${total}`);
+        } else {
+          crashLogger.breadcrumb(`session:flush:failed count=${slice.length}`);
+        }
+      }, 60_000);
     } catch (err) {
       debugLogger.logError(err, 'startTracking');
       set({ locationAvailable: false });
@@ -322,6 +390,10 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     if (dynamicSamplingInterval) {
       clearInterval(dynamicSamplingInterval);
       dynamicSamplingInterval = null;
+    }
+    if (incrementalFlushInterval) {
+      clearInterval(incrementalFlushInterval);
+      incrementalFlushInterval = null;
     }
 
     // Stop monitors. We do this asynchronously but the order matters:
@@ -359,12 +431,44 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
       const finalName = (sessionName && sessionName.trim().length > 0)
         ? sessionName.trim().slice(0, 60)
         : defaultName;
+
+      // v73: if we have a remoteSessionId (incremental flow established),
+      // do one final flush of any unflushed points + finalize the row,
+      // and tell addSession to skip the legacy POST. Otherwise (network
+      // down at start, or server didn't respond), fall back to the
+      // legacy all-in-one POST inside addSession.
+      const remoteId = s.remoteSessionId;
+      const endedAt = Date.now();
+      if (remoteId) {
+        const tail = s.trackPoints.slice(lastFlushedIdx);
+        // Fire and forget — addSession's local-store write is the user-
+        // visible truth; server sync is best-effort.
+        (async () => {
+          if (tail.length > 0) {
+            const ok = await remoteAppendPoints(remoteId, tail);
+            crashLogger.breadcrumb(`session:final-flush count=${tail.length} ok=${ok}`);
+            if (ok) lastFlushedIdx = s.trackPoints.length;
+          }
+          const ok2 = await finalizeSession(remoteId, {
+            end_time: new Date(endedAt).toISOString(),
+            distance_m: s.distanceM,
+            duration_s: s.durationS,
+            name: finalName,
+          });
+          crashLogger.breadcrumb(`session:finalize ok=${ok2}`);
+        })().catch(() => undefined);
+      }
+
       useSessionStore.getState().addSession({
         id: s.sessionId,
+        // Pre-populate remoteId so addSession knows to SKIP the legacy
+        // POST /api/sessions when the incremental flow already created
+        // the row. Without this, we'd double-insert the session.
+        remoteId: remoteId ?? undefined,
         activityMode: s.activityMode,
         regionCode: region.code,
         startedAt: s.startedAt,
-        endedAt: Date.now(),
+        endedAt,
         durationS: s.durationS,
         distanceM: s.distanceM,
         elevationGainM: s.elevationGainM,
@@ -474,6 +578,10 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     if (dynamicSamplingInterval) {
       clearInterval(dynamicSamplingInterval);
       dynamicSamplingInterval = null;
+    }
+    if (incrementalFlushInterval) {
+      clearInterval(incrementalFlushInterval);
+      incrementalFlushInterval = null;
     }
 
     // Stop monitors and end debug session (best effort)

@@ -15,11 +15,12 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useSessionStore, loadTrackPoints } from '../store/useSessionStore';
+import { fetchSessionDetail } from '../services/sessionService';
 import { useRouteStore } from '../store/useRouteStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { crashLogger } from '../services/crashLogger';
 import { getCurrentRegion } from '../config/regions';
-import { formatDistance, formatDuration, formatDate, getRelativeTime } from '../utils/geo';
+import { formatDistance, formatDuration, formatDate, getRelativeTime, haversineM } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
@@ -575,20 +576,75 @@ export function MapHistoryScreen() {
   const selectedSession = sessions.find(s => s.id === selectedSessionId) ?? null;
   const selectedMarker = markers.find(m => m.id === selectedMarkerId) ?? null;
 
-  // Load track points on demand when session is selected
+  // Load track points on demand when session is selected.
+  //
+  // v73: source of truth for activity-detail trackPoints is the SERVER
+  // (GET /api/sessions/:remoteId). Local AsyncStorage was unreliable —
+  // (a) cross-device installs wouldn't have the local cache; (b) the
+  // local id used as the storage key didn't always match the server-id
+  // that hydrate() rebuilt the session list with, so the lookup
+  // silently returned [] even when local data existed. Network failure
+  // falls back to local storage as a best-effort.
   const [loadedTrackPoints, setLoadedTrackPoints] = useState<import('../store/useSessionStore').TrackPoint[]>([]);
   useEffect(() => {
     if (!selectedSessionId) { setLoadedTrackPoints([]); return; }
-    loadTrackPoints(selectedSessionId).then(setLoadedTrackPoints).catch(() => {});
-  }, [selectedSessionId]);
+    let cancelled = false;
+    (async () => {
+      const session = sessions.find(s => s.id === selectedSessionId);
+      const remoteId = session?.remoteId;
+      if (remoteId != null) {
+        const detail = await fetchSessionDetail(remoteId);
+        if (!cancelled && detail?.route_points) {
+          // Server points may use a different field shape (lat/lng/timestamp)
+          // than the local TrackPoint (lat/lng/alt/t). Normalise.
+          const normalised = detail.route_points.map((p: any) => ({
+            lat: p.lat,
+            lng: p.lng,
+            alt: p.alt ?? null,
+            t: typeof p.t === 'number' ? p.t : (p.timestamp ? Date.parse(p.timestamp) : Date.now()),
+          }));
+          setLoadedTrackPoints(normalised);
+          return;
+        }
+      }
+      // No remoteId yet (offline-only session) or fetch failed — fall back to local cache
+      const local = await loadTrackPoints(selectedSessionId);
+      if (!cancelled) setLoadedTrackPoints(local);
+    })().catch(() => { if (!cancelled) setLoadedTrackPoints([]); });
+    return () => { cancelled = true; };
+  }, [selectedSessionId, sessions]);
 
   // Merge loaded track points into the selected session for display
   const sessionForDisplay = selectedSession
     ? { ...selectedSession, trackPoints: loadedTrackPoints }
     : null;
 
-  // Show real markers on map; up to 8
-  const mapMarkers: Marker[] = markers.slice(0, 8);
+  // v73: nearby-flag filter — only show personal markers within ~50m
+  // of any point on the route polyline. Avoids "all 50 markers in the
+  // region" cluttering the past-hike map. Uses haversineM (proper
+  // sphere distance, ~50m precision). Skipped when no track points
+  // (initial load + tiny sessions).
+  const NEARBY_FLAG_RADIUS_M = 50;
+  const routeFlags: Marker[] = (() => {
+    if (!sessionForDisplay || sessionForDisplay.trackPoints.length === 0) return [];
+    return markers.filter(m => {
+      // Cheap bounding-box reject before haversine to keep this fast on
+      // long hikes with many flags. ~0.001° lat/lng ≈ 100m at NZ
+      // latitudes, well above the 50m threshold.
+      return sessionForDisplay.trackPoints.some(p => {
+        if (Math.abs(p.lat - m.lat) > 0.001) return false;
+        if (Math.abs(p.lng - m.lng) > 0.001) return false;
+        return haversineM({ lat: p.lat, lng: p.lng }, { lat: m.lat, lng: m.lng }) <= NEARBY_FLAG_RADIUS_M;
+      });
+    });
+  })();
+
+  // Show real markers on map. v73: when a session is selected, restrict
+  // to flags planted along that route (within 50m of any track point);
+  // when nothing is selected, show up to 8 generic recent markers.
+  const mapMarkers: Marker[] = sessionForDisplay
+    ? routeFlags
+    : markers.slice(0, 8);
 
   return (
     <View style={styles.container}>
@@ -599,7 +655,7 @@ export function MapHistoryScreen() {
             map; web/Expo Go falls back to the SVG-on-panel rendering. */}
         {sessionForDisplay ? (
           MapView && sessionForDisplay.trackPoints.length >= 2
-            ? <NativeTrackMap session={sessionForDisplay} markers={markers} />
+            ? <NativeTrackMap session={sessionForDisplay} markers={routeFlags} />
             : <TrackPolyline session={sessionForDisplay} />
         ) : (
           // Decorative lines when no session selected

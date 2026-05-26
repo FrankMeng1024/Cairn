@@ -4,6 +4,16 @@
  */
 import { authenticatedFetch } from './apiService';
 
+// GPS point shape used by both legacy POST and new incremental flows.
+export interface TrackPointLike {
+  lat: number;
+  lng: number;
+  alt?: number | null;
+  /** Either ISO string (incremental flow) or epoch ms (legacy flow). */
+  t?: number;
+  timestamp?: string;
+}
+
 export interface SessionPayload {
   type: 'hiking' | 'running';
   start_time: string;   // ISO date string
@@ -13,7 +23,7 @@ export interface SessionPayload {
   // User-assigned activity name. Optional. When absent, the client will
   // synthesise a "Hike — DD/MM/YYYY" default at display time.
   name?: string | null;
-  route_points?: Array<{ lat: number; lng: number; timestamp: string }>;
+  route_points?: TrackPointLike[];
   flags?: Array<{ lat: number; lng: number; note: string; timestamp: string }>;
 }
 
@@ -29,11 +39,14 @@ export interface RemoteSession {
   // user never named the activity. Caller should fall back to a
   // type+date default in that case.
   name?: string | null;
+  /** Only present on GET /api/sessions/:id (detail). list endpoint omits. */
+  route_points?: TrackPointLike[];
+  flags?: any[] | null;
   created_at: string;
 }
 
 /**
- * POST a completed session to the backend.
+ * POST a completed session to the backend (legacy: all-in-one path).
  * Returns the remote session ID, or null on failure (caller continues with local only).
  */
 export async function syncSession(payload: SessionPayload): Promise<number | null> {
@@ -46,6 +59,82 @@ export async function syncSession(payload: SessionPayload): Promise<number | nul
     if (!res.ok) return null;
     const data = await res.json();
     return data?.session?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Begin an active session — creates an empty row server-side, returns
+ * its id so the client can later append points + finalize.
+ */
+export async function startSession(
+  type: 'hiking' | 'running',
+  startTime: string,
+): Promise<number | null> {
+  try {
+    const res = await authenticatedFetch('/api/sessions/start', {
+      method: 'POST',
+      body: JSON.stringify({ type, start_time: startTime }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data?.id === 'number' ? data.id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Append a batch of GPS points to an active session. Used by the
+ * 60-second incremental backup interval during tracking. Silent on
+ * failure — the next interval retries the unflushed range.
+ */
+export async function appendPoints(
+  remoteId: number,
+  points: TrackPointLike[],
+): Promise<boolean> {
+  if (points.length === 0) return true;
+  try {
+    const res = await authenticatedFetch(`/api/sessions/${remoteId}/append-points`, {
+      method: 'PATCH',
+      body: JSON.stringify({ points }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Finalize a session at stop time: write end_time, distance_m,
+ * duration_s, and (optional) name.
+ */
+export async function finalizeSession(
+  remoteId: number,
+  fields: { end_time?: string; distance_m?: number; duration_s?: number; name?: string | null },
+): Promise<boolean> {
+  try {
+    const res = await authenticatedFetch(`/api/sessions/${remoteId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetch a single session WITH route_points + flags. Used by the
+ * activity-detail view to render the polyline on the map.
+ */
+export async function fetchSessionDetail(remoteId: number): Promise<RemoteSession | null> {
+  try {
+    const res = await authenticatedFetch(`/api/sessions/${remoteId}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.session ?? null;
   } catch {
     return null;
   }
