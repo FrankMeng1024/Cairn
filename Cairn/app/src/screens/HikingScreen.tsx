@@ -578,11 +578,12 @@ function FlagSavedToast({ onHide }: { onHide: () => void }) {
 }
 
 // ── Marker Detail Sheet ────────────────────────────────────────────────────
-function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
+function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate, onUpdateMemo }: {
   marker: Marker;
   onClose: () => void;
   onDelete: () => void;
   lastCoordinate: { lat: number; lng: number } | null;
+  onUpdateMemo: (uri: string, durationMs: number) => void;
 }) {
   const meta = MARKER_META[marker.type] || MARKER_META.free;
   const flagType = FLAG_TYPES.find(f => f.id === marker.type);
@@ -613,6 +614,78 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
   }, []);
 
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  // v80 #45: voice memo state. recordingHandle != null while recording;
+  // hasMemo derived from marker.voiceMemoUri.
+  const [recordingHandle, setRecordingHandle] = useState<{ stop: () => Promise<{ uri: string; durationMs: number } | null>; cancel: () => Promise<void> } | null>(null);
+  const [recordingProgress, setRecordingProgress] = useState(0); // 0..1 over 5s
+  const [playing, setPlaying] = useState(false);
+  const playHandleRef = useRef<{ stop: () => Promise<void> } | null>(null);
+
+  const handleStartRecording = async () => {
+    try {
+      const { startRecording } = require('../services/voiceMemoService');
+      const handle = await startRecording();
+      setRecordingHandle(handle);
+      setRecordingProgress(0);
+      const startedAt = Date.now();
+      const tickInterval = setInterval(() => {
+        const elapsed = (Date.now() - startedAt) / 5000;
+        setRecordingProgress(Math.min(1, elapsed));
+        if (elapsed >= 1) clearInterval(tickInterval);
+      }, 50);
+    } catch (err: any) {
+      Alert.alert('Could not record', err?.message || 'Microphone unavailable');
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (!recordingHandle) return;
+    const result = await recordingHandle.stop();
+    setRecordingHandle(null);
+    setRecordingProgress(0);
+    if (result) {
+      // Persist to permanent location keyed by marker id
+      const { persistMemo } = require('../services/voiceMemoService');
+      const finalUri = await persistMemo(result.uri, marker.id);
+      onUpdateMemo(finalUri, result.durationMs);
+    }
+  };
+
+  const handleCancelRecording = async () => {
+    if (!recordingHandle) return;
+    await recordingHandle.cancel();
+    setRecordingHandle(null);
+    setRecordingProgress(0);
+  };
+
+  const handlePlayMemo = async () => {
+    if (!marker.voiceMemoUri) return;
+    if (playing) {
+      await playHandleRef.current?.stop();
+      playHandleRef.current = null;
+      setPlaying(false);
+      return;
+    }
+    try {
+      const { playMemo } = require('../services/voiceMemoService');
+      const handle = await playMemo(marker.voiceMemoUri);
+      playHandleRef.current = handle;
+      setPlaying(true);
+      // Auto-clear playing state after duration + small buffer
+      const dur = (marker.voiceMemoDurationMs ?? 5000) + 200;
+      setTimeout(() => { setPlaying(false); playHandleRef.current = null; }, dur);
+    } catch (err: any) {
+      Alert.alert('Could not play', err?.message || 'Audio unavailable');
+    }
+  };
+
+  // Cleanup any active recording/playback on unmount
+  useEffect(() => {
+    return () => {
+      recordingHandle?.cancel().catch(() => {});
+      playHandleRef.current?.stop().catch(() => {});
+    };
+  }, []);
 
   const handleClose = () => {
     setDeleteConfirm(false);
@@ -649,6 +722,51 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate }: {
         ) : (
           <Text style={[detailStyles.note, { color: Colors.textMuted, fontStyle: 'italic' }]}>(No note)</Text>
         )}
+        {/* v80 #45: voice memo. Three states:
+            - Has memo → Play / Stop button
+            - Recording → red Stop / Cancel pair + progress bar
+            - No memo → Record button */}
+        <View style={detailStyles.voiceMemoRow}>
+          {marker.voiceMemoUri ? (
+            <TouchableOpacity
+              style={[detailStyles.voiceBtn, playing && detailStyles.voiceBtnActive]}
+              onPress={handlePlayMemo}
+              activeOpacity={0.7}
+            >
+              <Icon name={playing ? 'Square' : 'Volume2'} size={14} color={playing ? '#fff' : Colors.primary} strokeWidth={2.2} />
+              <Text style={[detailStyles.voiceBtnLabel, playing && { color: '#fff' }]}>
+                {playing ? 'Stop' : `Play voice memo${marker.voiceMemoDurationMs ? ` · ${Math.round(marker.voiceMemoDurationMs/1000)}s` : ''}`}
+              </Text>
+            </TouchableOpacity>
+          ) : recordingHandle ? (
+            <>
+              <TouchableOpacity
+                style={[detailStyles.voiceBtn, { backgroundColor: Colors.danger, borderColor: Colors.danger, flex: 1 }]}
+                onPress={handleStopRecording}
+                activeOpacity={0.7}
+              >
+                <Icon name="Square" size={14} color="#fff" strokeWidth={2.2} />
+                <Text style={[detailStyles.voiceBtnLabel, { color: '#fff' }]}>Stop ({Math.ceil((1 - recordingProgress) * 5)}s)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[detailStyles.voiceBtnSecondary]}
+                onPress={handleCancelRecording}
+                activeOpacity={0.7}
+              >
+                <Icon name="X" size={14} color={Colors.textSecondary} strokeWidth={2.2} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity
+              style={detailStyles.voiceBtn}
+              onPress={handleStartRecording}
+              activeOpacity={0.7}
+            >
+              <Icon name="Mic" size={14} color={Colors.primary} strokeWidth={2.2} />
+              <Text style={detailStyles.voiceBtnLabel}>Record voice memo (5s)</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <View style={detailStyles.metaRow}>
           <Icon name="Timer" size={IconSize.sm} color={Colors.textMuted} strokeWidth={1.8} />
           <Text style={detailStyles.meta}>{timeAgo}</Text>
@@ -1450,6 +1568,16 @@ export function HikingScreen() {
           onClose={() => { setSelectedMarkerId(null); setUi('map'); }}
           onDelete={handleDeleteMarker}
           lastCoordinate={lastCoordinate}
+          onUpdateMemo={(uri, durationMs) => {
+            // v80 #45: persist voiceMemoUri locally on the marker.
+            // Backend has columns ready (migration 010) but cloud upload is
+            // deferred to a future iteration. Local store update is enough
+            // for in-app playback to work.
+            useMarkerStore.getState().updateMarker(selectedMarker.id, {
+              voiceMemoUri: uri,
+              voiceMemoDurationMs: durationMs,
+            });
+          }}
         />
       )}
 
@@ -1882,6 +2010,43 @@ const toastStyles = StyleSheet.create({
 
 
 const detailStyles = StyleSheet.create({
+  // v80 #45: voice memo row + button styles. Sit between note and meta.
+  voiceMemoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  voiceBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight,
+  },
+  voiceBtnActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  voiceBtnLabel: {
+    fontSize: FontSize.small,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  voiceBtnSecondary: {
+    width: 36, height: 36,
+    alignItems: 'center', justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: 'transparent',
+  },
   container: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: Colors.surface,

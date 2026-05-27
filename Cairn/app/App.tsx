@@ -176,6 +176,37 @@ function AppRoot() {
       // eslint-disable-next-line no-console
       console.warn('[telemetryUploader.init failed]', err);
     }
+
+    // v80 #9: Audio ducking. Configures AVAudioSession to .playback
+    // with .duckOthers so when the app speaks (TTS), background music
+    // (Spotify / Apple Music) lowers in volume but keeps playing
+    // instead of being interrupted. Required setting once at app start.
+    // No native build needed — expo-av is already linked.
+    //
+    // v80 review-fix: corrected interruption mode constants. expo-av 16
+    // exports `InterruptionModeIOS.DuckOthers = 2` (NOT 1 — that's
+    // DoNotMix, which is the original "interrupt" behaviour). I had
+    // written `1` originally; that would have made TTS still interrupt
+    // music, defeating the whole point of this change.
+    try {
+      const { Audio, InterruptionModeIOS, InterruptionModeAndroid } = require('expo-av');
+      Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      }).then(() => {
+        crashLogger.breadcrumb('audio:ducking-mode-set');
+      }).catch((err: any) => {
+        crashLogger.breadcrumb(`audio:ducking-mode-failed ${String(err).slice(0, 60)}`);
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[audio ducking init failed]', err);
+    }
+
     // v78 #7: subscribe offline queue drains. Drains the persisted
     // mutation queue whenever (a) the network comes back online or
     // (b) the app returns to foreground. Independent of the

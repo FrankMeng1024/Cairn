@@ -39,6 +39,13 @@ export interface Marker {
   // exists so backend rows and types are forward-compatible. Photos are
   // displayed inline in the marker detail sheet when present.
   photoUrls?: string[];
+  // v80 #45 — optional 5s voice memo. Stored as a local file:// URI in
+  // FileSystem.documentDirectory. NOT uploaded to backend in v80 (next
+  // iteration will add cloud upload + cross-device sync). The recording
+  // file is preserved across app restarts via the AsyncStorage marker
+  // persistence — the URI string itself, the m4a file lives on disk.
+  voiceMemoUri?: string;
+  voiceMemoDurationMs?: number;
 }
 
 const STORAGE_KEY_PREFIX = 'cairn_markers';

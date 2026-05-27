@@ -96,18 +96,70 @@ const Session = {
    */
   async appendPoints(id, userId, points) {
     if (!Array.isArray(points) || points.length === 0) return false;
-    const [rows] = await pool.execute(
-      `SELECT route_points FROM sessions WHERE id = ? AND user_id = ?`,
-      [id, userId]
-    );
-    if (!rows[0]) return false;
-    const existing = parseJsonCol(rows[0].route_points) ?? [];
-    const merged = Array.isArray(existing) ? existing.concat(points) : points.slice();
-    await pool.execute(
-      `UPDATE sessions SET route_points = ? WHERE id = ? AND user_id = ?`,
-      [JSON.stringify(merged), id, userId]
-    );
-    return true;
+
+    // v80 review-fix: wrap in a transaction with SELECT ... FOR UPDATE.
+    // Two concurrent flushes for the same session_id (e.g. queued retry
+    // firing while a fresh flush dispatches) could both SELECT the
+    // baseline, both compute disjoint dedupe sets, and the second UPDATE
+    // would clobber the first. The row lock serialises read-modify-write
+    // so the dedupe Set sees the latest committed state.
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [rows] = await conn.execute(
+        `SELECT route_points FROM sessions WHERE id = ? AND user_id = ? FOR UPDATE`,
+        [id, userId]
+      );
+      if (!rows[0]) {
+        await conn.rollback();
+        return false;
+      }
+      const existing = parseJsonCol(rows[0].route_points) ?? [];
+      const existingArr = Array.isArray(existing) ? existing : [];
+
+      // Defensive dedupe — see comment about idempotency middleware.
+      // v80 review-fix: include longitude in the dedupe key so the
+      // (theoretical but possible) "same ms + same 6dp lat / different
+      // lng" collision can't ever drop a real point. Cost: one extra
+      // toFixed per point.
+      const ts = (p) => typeof p?.t === 'number'
+        ? p.t
+        : (typeof p?.timestamp === 'number' ? p.timestamp : Date.parse(p?.t ?? p?.timestamp ?? ''));
+      const seen = new Set();
+      for (const p of existingArr) {
+        const t = ts(p);
+        if (Number.isFinite(t)) {
+          seen.add(`${t}|${(p?.lat ?? 0).toFixed(6)}|${(p?.lng ?? 0).toFixed(6)}`);
+        }
+      }
+      const newPoints = [];
+      for (const p of points) {
+        const t = ts(p);
+        if (!Number.isFinite(t)) { newPoints.push(p); continue; }
+        const key = `${t}|${(p?.lat ?? 0).toFixed(6)}|${(p?.lng ?? 0).toFixed(6)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        newPoints.push(p);
+      }
+      if (newPoints.length === 0) {
+        // All caller-sent points were already on file → idempotent no-op.
+        // Return true so the client doesn't retry; no UPDATE needed.
+        await conn.commit();
+        return true;
+      }
+      const merged = existingArr.concat(newPoints);
+      await conn.execute(
+        `UPDATE sessions SET route_points = ? WHERE id = ? AND user_id = ?`,
+        [JSON.stringify(merged), id, userId]
+      );
+      await conn.commit();
+      return true;
+    } catch (err) {
+      try { await conn.rollback(); } catch { /* ignore */ }
+      throw err;
+    } finally {
+      conn.release();
+    }
   },
 
   /**

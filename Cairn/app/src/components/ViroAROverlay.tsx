@@ -23,6 +23,7 @@ import {
   ViroARSceneNavigator,
   ViroSphere,
   ViroBox,
+  ViroQuad,
   ViroNode,
   ViroGeometry,
   ViroText,
@@ -409,6 +410,9 @@ function CairnARScene(props: any) {
     try {
       const types = ['danger', 'scenic', 'supply', 'junction', 'generic'] as const;
       const matDict: Record<string, any> = {};
+      // v80: register the halo PNG once (reused across all types — colour
+      // tint is applied per-type via diffuseColor on the per-type material).
+      const haloPng = require('../../assets/ar/halo_radial.png');
       for (const t of types) {
         const c = TYPE_COLOR_TRIPLET[t];
         matDict[`icon${t}`] = {
@@ -440,6 +444,22 @@ function CairnARScene(props: any) {
           diffuseColor: c.inner,
           blendMode: 'Add',
           bloomThreshold: 0.30,
+        };
+        // v80 #48: halo billboard sprite material — radial gradient PNG
+        // tinted by the type's mid colour, additively blended so it
+        // brightens the camera feed (cleaner than alpha blending), with
+        // depth-write disabled so it never z-fights the icon body.
+        // bloomThreshold 0.85: high enough that bright daylight scenes
+        // don't push the halo into uncontrolled bloom but the colour
+        // still glows softly in dim conditions (low review-3 risk).
+        matDict[`halo${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: c.mid,
+          diffuseTexture: haloPng,
+          blendMode: 'Add',
+          writesToDepthBuffer: false,
+          readsFromDepthBuffer: true,
+          bloomThreshold: 0.85,
         };
       }
       ViroMaterials.createMaterials(matDict);
@@ -640,7 +660,12 @@ function CairnInstance(props: {
       >
       {/* 1. Icon body (Viro geometry, spinning).
           For known types we render the type-specific geometry. For unknown
-          types (legacy data) we render a plain sphere as the icon body. */}
+          types (legacy data) we render a plain sphere as the icon body.
+          v80 fix: icon was being washed out by overlapping core+shell+wisp
+          spheres. Material now uses higher bloomThreshold so the colored
+          shape stays clearly visible — matches HTML reference where the
+          icon (triangle prism / star / droplet / arrow) is the dominant
+          visual, not the halo. */}
       <ViroNode
         animation={{ name: 'iconSpin', run: tracking, loop: true }}
         scale={[ICON_SCALE, ICON_SCALE, ICON_SCALE]}
@@ -661,31 +686,43 @@ function CairnInstance(props: {
         )}
       </ViroNode>
 
-      {/* 2. Inner bright core */}
+      {/* 2. v80: inner core glow — small bright sphere INSIDE the type
+          geometry, so the icon reads as a glowing volume rather than a
+          flat shape. Reviewer 1 flagged that removing core entirely lost
+          the "physical glowing object" feel. radius=0.08 sits well below
+          all four icon geometries' inner clearance. */}
       <ViroSphere
-        radius={0.10}
-        widthSegmentCount={18}
-        heightSegmentCount={14}
+        radius={0.08}
+        widthSegmentCount={16}
+        heightSegmentCount={12}
         materials={[M('core')]}
-        opacity={0.85}
+        opacity={0.65}
       />
 
-      {/* 3. Fresnel shell — Lambert + fresnelExponent so edges glow */}
-      <ViroSphere
-        radius={0.22}
-        widthSegmentCount={24}
-        heightSegmentCount={18}
-        materials={[M('shell')]}
-        opacity={0.45}
+      {/* 3. v80: Halo billboard sprite — radial gradient PNG, additive blend,
+          always faces camera. Renders at 0.85 world units across so it's
+          bigger than the icon (≈0.5 unit) and fades softly into the background.
+          PNG asset is a 256px white→transparent radial gradient
+          (assets/ar/halo_radial.png). The colored Add-blended quad gets
+          tinted via the M('halo') material. */}
+      <ViroQuad
+        height={0.85}
+        width={0.85}
+        materials={[M('halo')]}
+        opacity={0.90}
+        transformBehaviors={['billboard']}
       />
 
-      {/* 4. Outer wisp halo — front-culled so we see the back wall from inside */}
+      {/* 4. Outer wisp halo — soft additive sphere, slightly larger than the icon.
+          v80: enlarged from 0.36 → 0.55 and opacity dropped 0.22 → 0.10 so
+          it doesn't wash the icon shape. Front-culled so we see the back wall
+          from inside (atmospheric inner-glow effect). */}
       <ViroSphere
-        radius={0.36}
+        radius={0.55}
         widthSegmentCount={20}
         heightSegmentCount={16}
         materials={[M('wisp')]}
-        opacity={0.22}
+        opacity={0.10}
       />
 
       {/* 5. Particle ring — 30 small spheres rotating together */}
@@ -756,8 +793,30 @@ export function ViroAROverlay({
   onArFrame,
   beamingId,
 }: Props) {
+  // v80 fix: arkitOriginRef MUST be a fresh capture every AR session.
+  // Previously useRef held the value indefinitely — when the user closed
+  // and reopened AR, arkitOriginRef.current still held the GPS reading
+  // from the very first session. ARKit's new origin (set from current
+  // GPS, ±5-10m noise) and the stale stored origin disagreed → all
+  // anchored cairns appeared offset by that GPS noise vector ("flag
+  // drifts forward" bug).
+  // Fix: explicit reset on mount + unmount so each AR session captures
+  // its own fresh origin from the current GPS reading.
   const arkitOriginRef = useRef<{ lat: number; lng: number; alt?: number | null } | null>(null);
   const [originReady, setOriginReady] = useState(false);
+
+  // Reset origin every time component mounts. ViroAROverlay mounts/unmounts
+  // with the AR screen lifecycle, so this gives one fresh origin per
+  // AR session — matching ARKit's own session-origin behavior.
+  useEffect(() => {
+    arkitOriginRef.current = null;
+    setOriginReady(false);
+    crashLogger.breadcrumb('viro:origin-reset (AR session start)');
+    return () => {
+      arkitOriginRef.current = null;
+      crashLogger.breadcrumb('viro:origin-cleared (AR session end)');
+    };
+  }, []);
 
   // Set origin as soon as GPS is available. With worldAlignment="GravityAndHeading",
   // ARKit handles north-alignment internally (fused compass + gyro), so we don't
