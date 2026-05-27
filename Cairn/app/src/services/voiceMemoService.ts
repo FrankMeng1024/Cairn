@@ -34,12 +34,6 @@ import { crashLogger } from './crashLogger';
 
 const MAX_DURATION_MS = 5_000;
 
-// expo-av interruption mode constants matching legacy numeric API.
-// Verified: in expo-av 16.x, MixWithOthers=0, DoNotMix=1, DuckOthers=2.
-// (Different from older versions where DuckOthers was 1.)
-const INTERRUPTION_DUCK_OTHERS_IOS = 2;
-const INTERRUPTION_DUCK_OTHERS_ANDROID = 2;
-
 let activeRecording: any | null = null;
 let activeStopTimer: ReturnType<typeof setTimeout> | null = null;
 let activePlaybackSound: any | null = null;
@@ -70,7 +64,7 @@ export async function startRecording(): Promise<{
   if (isBusy()) {
     throw new Error('Audio busy — stop the current recording or playback first');
   }
-  const { Audio } = require('expo-av');
+  const { Audio, InterruptionModeIOS, InterruptionModeAndroid } = require('expo-av');
 
   // Permission
   const perm = await Audio.requestPermissionsAsync();
@@ -82,8 +76,8 @@ export async function startRecording(): Promise<{
   await Audio.setAudioModeAsync({
     allowsRecordingIOS: true,
     playsInSilentModeIOS: true,
-    interruptionModeIOS: INTERRUPTION_DUCK_OTHERS_IOS,
-    interruptionModeAndroid: INTERRUPTION_DUCK_OTHERS_ANDROID,
+    interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+    interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
     shouldDuckAndroid: true,
     staysActiveInBackground: false,
     playThroughEarpieceAndroid: false,
@@ -110,11 +104,12 @@ export async function startRecording(): Promise<{
       const durationMs = Math.min(MAX_DURATION_MS, Date.now() - startedAt);
       // Restore playback-only mode so the next sound plays through speaker.
       try {
-        await Audio.setAudioModeAsync({
+        const { Audio: A2, InterruptionModeIOS: IIOS, InterruptionModeAndroid: IAnd } = require('expo-av');
+        await A2.setAudioModeAsync({
           allowsRecordingIOS: false,
           playsInSilentModeIOS: true,
-          interruptionModeIOS: INTERRUPTION_DUCK_OTHERS_IOS,
-          interruptionModeAndroid: INTERRUPTION_DUCK_OTHERS_ANDROID,
+          interruptionModeIOS: IIOS.DuckOthers,
+          interruptionModeAndroid: IAnd.DuckOthers,
           shouldDuckAndroid: true,
           staysActiveInBackground: true,
           playThroughEarpieceAndroid: false,

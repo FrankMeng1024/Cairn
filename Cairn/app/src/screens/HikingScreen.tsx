@@ -616,7 +616,15 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate, onUpdate
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   // v80 #45: voice memo state. recordingHandle != null while recording;
   // hasMemo derived from marker.voiceMemoUri.
+  // Round-2 review-fix: recordingHandle MUST be mirrored to a ref so the
+  // unmount cleanup `useEffect(() => () => ..., [])` actually sees the
+  // current handle. With empty deps, the cleanup closure freezes on the
+  // initial state value (null) — without the ref mirror, an in-flight
+  // recording survives sheet close, the auto-stop timer fires orphaned
+  // and the memo is lost; reopening the sheet within 5s hits the
+  // isBusy() mutex and throws.
   const [recordingHandle, setRecordingHandle] = useState<{ stop: () => Promise<{ uri: string; durationMs: number } | null>; cancel: () => Promise<void> } | null>(null);
+  const recordingHandleRef = useRef<typeof recordingHandle>(null);
   const [recordingProgress, setRecordingProgress] = useState(0); // 0..1 over 5s
   const [playing, setPlaying] = useState(false);
   const playHandleRef = useRef<{ stop: () => Promise<void> } | null>(null);
@@ -626,6 +634,7 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate, onUpdate
       const { startRecording } = require('../services/voiceMemoService');
       const handle = await startRecording();
       setRecordingHandle(handle);
+      recordingHandleRef.current = handle;
       setRecordingProgress(0);
       const startedAt = Date.now();
       const tickInterval = setInterval(() => {
@@ -642,6 +651,7 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate, onUpdate
     if (!recordingHandle) return;
     const result = await recordingHandle.stop();
     setRecordingHandle(null);
+    recordingHandleRef.current = null;
     setRecordingProgress(0);
     if (result) {
       // Persist to permanent location keyed by marker id
@@ -655,6 +665,7 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate, onUpdate
     if (!recordingHandle) return;
     await recordingHandle.cancel();
     setRecordingHandle(null);
+    recordingHandleRef.current = null;
     setRecordingProgress(0);
   };
 
@@ -679,10 +690,15 @@ function MarkerDetailSheet({ marker, onClose, onDelete, lastCoordinate, onUpdate
     }
   };
 
-  // Cleanup any active recording/playback on unmount
+  // Cleanup any active recording/playback on unmount.
+  // Round-2 review-fix: cleanup uses recordingHandleRef.current (not the
+  // state value `recordingHandle`) because [] deps means this closure is
+  // captured once at mount and the state's null initial value would
+  // permanently haunt the cleanup. Refs side-step React's closure capture
+  // by being a live mutable reference cell.
   useEffect(() => {
     return () => {
-      recordingHandle?.cancel().catch(() => {});
+      recordingHandleRef.current?.cancel().catch(() => {});
       playHandleRef.current?.stop().catch(() => {});
     };
   }, []);
