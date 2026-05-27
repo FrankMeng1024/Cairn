@@ -16,7 +16,7 @@ const router = express.Router();
 
 // ── POST /api/sessions ─────────────────────────────────────────────────────
 router.post('/', authenticate, async (req, res) => {
-  const { type, start_time, end_time, distance_m, duration_s, route_points, flags, route_id, name } = req.body;
+  const { type, start_time, end_time, distance_m, duration_s, route_points, route_points_raw, flags, route_id, name } = req.body;
 
   if (!type || !['hiking', 'running'].includes(type)) {
     return res.status(400).json({ error: 'type must be "hiking" or "running".' });
@@ -41,6 +41,7 @@ router.post('/', authenticate, async (req, res) => {
       distanceM: distance_m ?? 0,
       durationS: duration_s ?? 0,
       routePoints: route_points ?? null,
+      routePointsRaw: route_points_raw ?? null,
       flags: flags ?? null,
       name: name ?? null,
     });
@@ -123,7 +124,7 @@ router.patch('/:id', authenticate, async (req, res) => {
   if (!id || isNaN(id)) {
     return res.status(400).json({ error: 'Invalid session ID.' });
   }
-  const { end_time, distance_m, duration_s, name } = req.body;
+  const { end_time, distance_m, duration_s, name, route_points_raw } = req.body;
   const fields = {};
   if (end_time !== undefined) {
     if (isNaN(Date.parse(end_time))) {
@@ -144,6 +145,14 @@ router.patch('/:id', authenticate, async (req, res) => {
     fields.durationS = duration_s;
   }
   if (name !== undefined) fields.name = name;
+  // v77: optional raw audit track. Sent once at session finalize (not in
+  // 60s flushes since it's debug-only). Accept null to clear.
+  if (route_points_raw !== undefined) {
+    if (route_points_raw !== null && !Array.isArray(route_points_raw)) {
+      return res.status(400).json({ error: 'route_points_raw must be an array or null.' });
+    }
+    fields.routePointsRaw = route_points_raw;
+  }
   try {
     const ok = await Session.finalize(id, req.user.userId, fields);
     if (!ok) return res.status(404).json({ error: 'Session not found or no changes.' });

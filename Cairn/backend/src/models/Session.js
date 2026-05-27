@@ -19,15 +19,16 @@ function parseJsonCol(v) {
 }
 
 const Session = {
-  async create({ userId, routeId, type, startTime, endTime, distanceM, durationS, routePoints, flags, name }) {
+  async create({ userId, routeId, type, startTime, endTime, distanceM, durationS, routePoints, routePointsRaw, flags, name }) {
     const [result] = await pool.execute(
-      `INSERT INTO sessions (user_id, route_id, type, start_time, end_time, distance_m, duration_s, name, route_points, flags)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sessions (user_id, route_id, type, start_time, end_time, distance_m, duration_s, name, route_points, route_points_raw, flags)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId, routeId ?? null, type, startTime, endTime,
         distanceM ?? 0, durationS ?? 0,
         name ?? null,
         routePoints ? JSON.stringify(routePoints) : null,
+        routePointsRaw ? JSON.stringify(routePointsRaw) : null,
         flags ? JSON.stringify(flags) : null,
       ]
     );
@@ -53,7 +54,7 @@ const Session = {
 
   async findByIdAndUser(id, userId) {
     const [rows] = await pool.execute(
-      `SELECT id, user_id, route_id, type, start_time, end_time, distance_m, duration_s, name, route_points, flags, created_at
+      `SELECT id, user_id, route_id, type, start_time, end_time, distance_m, duration_s, name, route_points, route_points_raw, flags, created_at
        FROM sessions WHERE id = ? AND user_id = ?`,
       [id, userId]
     );
@@ -62,6 +63,7 @@ const Session = {
     return {
       ...s,
       route_points: parseJsonCol(s.route_points) ?? [],
+      route_points_raw: parseJsonCol(s.route_points_raw) ?? null,
       flags: parseJsonCol(s.flags) ?? [],
     };
   },
@@ -112,14 +114,22 @@ const Session = {
    * Finalize a session at stop time: overwrite end_time, distance_m,
    * duration_s, and (optionally) name. Called from stopTracking after
    * the final point flush.
+   *
+   * v77: optional routePointsRaw — full audit track including stationary
+   * drift + low-accuracy fixes (everything except teleport-rejected).
+   * Stored once at finalize, not in per-60s appendPoints flushes.
    */
-  async finalize(id, userId, { endTime, distanceM, durationS, name }) {
+  async finalize(id, userId, { endTime, distanceM, durationS, name, routePointsRaw }) {
     const fields = [];
     const values = [];
     if (endTime != null) { fields.push('end_time = ?'); values.push(endTime); }
     if (distanceM != null) { fields.push('distance_m = ?'); values.push(distanceM); }
     if (durationS != null) { fields.push('duration_s = ?'); values.push(durationS); }
     if (name !== undefined) { fields.push('name = ?'); values.push(name); }
+    if (routePointsRaw !== undefined) {
+      fields.push('route_points_raw = ?');
+      values.push(routePointsRaw ? JSON.stringify(routePointsRaw) : null);
+    }
     if (fields.length === 0) return false;
     values.push(id, userId);
     const [result] = await pool.execute(
