@@ -157,11 +157,16 @@ function NativeTrackMap({ session, markers }: { session: TrackingSession; marker
         />
       )}
       {ShapeSource && LineLayer && (() => {
-        // v78 #1: split by time gap > 30s. Render solid segments
-        // (continuous tracking) + dashed segments (signal lost). Same
-        // threshold + visual treatment as live HikingScreen so the user
-        // sees the same shape and color across hike/history.
-        const GAP_THRESHOLD_MS = 30_000;
+        // v79 fix: split by time AND distance double-check. v78 used
+        // dt>30s alone which false-triggered on red lights / slow walks
+        // / dynamic-sampling stationary ticks (verified on real data:
+        // session 31 had 8 false-positive dashed segments, all at
+        // dt=33-87s with dist 1-8m). New rule: dt > 120s AND dist > 200m
+        // → only fires for genuine signal-loss like metro segments.
+        // Same threshold as live HikingScreen so the user sees the same
+        // shape across hike/history.
+        const GAP_THRESHOLD_MS = 120_000;
+        const GAP_DIST_THRESHOLD_M = 200;
         type Seg = { coords: [number, number][]; gap: boolean };
         const segs: Seg[] = [];
         if (pts.length >= 2) {
@@ -170,7 +175,8 @@ function NativeTrackMap({ session, markers }: { session: TrackingSession; marker
             const prev = pts[i - 1];
             const p = pts[i];
             const dt = (prev.t != null && p.t != null) ? (p.t - prev.t) : 0;
-            if (dt > GAP_THRESHOLD_MS) {
+            const distM = haversineM({ lat: prev.lat, lng: prev.lng }, { lat: p.lat, lng: p.lng });
+            if (dt > GAP_THRESHOLD_MS && distM > GAP_DIST_THRESHOLD_M) {
               if (cur.coords.length >= 2) segs.push(cur);
               segs.push({ coords: [[prev.lng, prev.lat], [p.lng, p.lat]], gap: true });
               cur = { coords: [[p.lng, p.lat]], gap: false };

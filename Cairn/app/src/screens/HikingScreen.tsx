@@ -171,13 +171,20 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
 }) {
   const region = getCurrentRegion();
 
-  // v78 #1: split the track into solid + gap segments by time delta.
-  // 30s = "the user has been off-grid for at least one full
-  // dynamic-sampling window even in static mode (10Hz now, was 60s)".
-  // Anything bigger than that = signal lost. We render those segments
-  // as a dashed connector so the user sees "yes my GPS dropped here"
-  // instead of "my polyline mysteriously disappears".
-  const GAP_THRESHOLD_MS = 30_000;
+  // v79 #1 fix: split the track into solid + gap segments by time AND
+  // distance. v78 used 30s alone, but real walking data showed 30-90s
+  // gaps with <10m distance (user standing at a light, slow walk
+  // through dense city, dynamic-sampling 0.1Hz when stationary). All
+  // those triggered false-positive dashed segments.
+  //
+  // Real signal-loss (verified on session 38 metro hike): 13-minute
+  // gap with kilometres of distance. So the rule is now both:
+  //   • dt > 120s (long enough to genuinely stop tracking)
+  //   • dist > 200m (user actually moved out of GPS reach)
+  // Stationary users + dynamic-sampling-driven slow ticks no longer
+  // false-trigger. Real underground/metro segments still draw dashed.
+  const GAP_THRESHOLD_MS = 120_000;
+  const GAP_DIST_THRESHOLD_M = 200;
   type Segment = { coords: [number, number][]; gap: boolean };
   const segments: Segment[] = [];
   if (trackPoints.length >= 2) {
@@ -186,7 +193,8 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
       const prev = trackPoints[i - 1];
       const p = trackPoints[i];
       const dt = (prev.t != null && p.t != null) ? (p.t - prev.t) : 0;
-      const isGap = dt > GAP_THRESHOLD_MS;
+      const distM = haversineM({ lat: prev.lat, lng: prev.lng }, { lat: p.lat, lng: p.lng });
+      const isGap = dt > GAP_THRESHOLD_MS && distM > GAP_DIST_THRESHOLD_M;
       if (isGap) {
         // close the solid segment, push, then push a 2-point gap segment
         if (cur.coords.length >= 2) segments.push(cur);
@@ -1060,11 +1068,12 @@ export function HikingScreen() {
   const distDisplay = formatDistance(distanceM, 'km', 1);
   const durationDisplay = formatDuration(durationS);
 
-  // v78 #1: Signal-lost detection. If the most recent accepted track
-  // point is older than GAP_THRESHOLD_MS, surface a "Signal lost" pill
-  // so the user understands the polyline isn't broken — GPS is.
-  // Recomputed every render (cheap; runs only with stats bar active).
-  const SIGNAL_GAP_MS = 30_000;
+  // v79 #1 fix: Signal-lost detection. Bumped 30s → 120s to match the
+  // tightened polyline gap threshold. At 30s the pill triggered for
+  // every red light / dynamic-sampling stationary tick, which was
+  // noise. 120s is "haven't seen GPS in 2+ minutes" — actually
+  // actionable info.
+  const SIGNAL_GAP_MS = 120_000;
   const lastTrackT = trackPoints.length > 0 ? trackPoints[trackPoints.length - 1].t : null;
   const signalLostFor = (lastTrackT != null) ? (Date.now() - lastTrackT) : 0;
   const signalLost = lastTrackT != null && signalLostFor > SIGNAL_GAP_MS;
