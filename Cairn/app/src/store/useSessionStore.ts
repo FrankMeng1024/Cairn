@@ -33,7 +33,12 @@ export interface TrackingSession {
   durationS: number;          // seconds
   distanceM: number;          // meters (convert to km/mi at display layer)
   elevationGainM: number;     // meters
-  trackPoints: TrackPoint[];  // GPS breadcrumb trail
+  trackPoints: TrackPoint[];  // GPS breadcrumb trail (gated/clean)
+  /** v77: full audit track including stationary drift + low-accuracy
+   *  fixes (everything except teleport-rejected). Sent to server once
+   *  at session finalize for debug / re-processing. NOT used for
+   *  rendering or distance — those use `trackPoints`. */
+  trackPointsRaw?: TrackPoint[];
   markerIds: string[];        // markers planted during this session
   pausePins?: Coordinate[];   // locations where user paused (rendered as flag pins)
   name?: string;              // user-assigned name (optional, auto-generated if absent)
@@ -100,6 +105,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         // but Activities still shows Hike".
         name: session.name ?? null,
         route_points: session.trackPoints.length > 0 ? session.trackPoints : null,
+        // v77: also send raw audit track. Backend stores in route_points_raw.
+        // Only used by legacy "all-in-one POST" path (when start/append/finalize
+        // flow couldn't run, e.g. offline at start). Modern flow ships raw
+        // via finalizeSession PATCH — this path won't be hit when remoteId
+        // is already set (addSession early-returns above).
+        route_points_raw: session.trackPointsRaw && session.trackPointsRaw.length > 0
+          ? session.trackPointsRaw
+          : null,
         flags: session.markerIds.length > 0 ? session.markerIds : null,
       }),
     }).then(async (res) => {

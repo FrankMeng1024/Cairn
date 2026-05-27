@@ -24,6 +24,10 @@ export interface SessionPayload {
   // synthesise a "Hike — DD/MM/YYYY" default at display time.
   name?: string | null;
   route_points?: TrackPointLike[];
+  /** v77: full audit track (incl. stationary drift + low-accuracy fixes,
+   *  exclusive of teleport-rejected). Sent with the legacy all-in-one
+   *  POST path; modern incremental flow uses finalizeSession PATCH. */
+  route_points_raw?: TrackPointLike[] | null;
   flags?: Array<{ lat: number; lng: number; note: string; timestamp: string }>;
 }
 
@@ -41,6 +45,8 @@ export interface RemoteSession {
   name?: string | null;
   /** Only present on GET /api/sessions/:id (detail). list endpoint omits. */
   route_points?: TrackPointLike[];
+  /** v77: full audit track. Detail endpoint returns it; list omits. */
+  route_points_raw?: TrackPointLike[] | null;
   flags?: any[] | null;
   created_at: string;
 }
@@ -108,11 +114,17 @@ export async function appendPoints(
 
 /**
  * Finalize a session at stop time: write end_time, distance_m,
- * duration_s, and (optional) name.
+ * duration_s, (optional) name, and (optional v77) full raw audit track.
  */
 export async function finalizeSession(
   remoteId: number,
-  fields: { end_time?: string; distance_m?: number; duration_s?: number; name?: string | null },
+  fields: {
+    end_time?: string;
+    distance_m?: number;
+    duration_s?: number;
+    name?: string | null;
+    route_points_raw?: TrackPointLike[] | null;
+  },
 ): Promise<boolean> {
   try {
     const res = await authenticatedFetch(`/api/sessions/${remoteId}`, {

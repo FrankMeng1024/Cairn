@@ -11,6 +11,14 @@ export interface Coordinate {
   lng: number;
   alt?: number | null;        // meters, nullable (web/simulator may not provide)
   accuracy?: number | null;   // meters; expo-location coords.accuracy (added Sprint 55)
+  /** v77: GPS-reported speed in m/s. From `position.coords.speed`. iOS
+   *  computes this from satellite Doppler (independent of position
+   *  delta), so it stays low when the user is stationary even if GPS
+   *  position drifts ±10m. Used by the live tracking stationary-suppression
+   *  gate so we don't false-positive on noise. May be null on some
+   *  Android devices or for the very first fix — null means "skip the
+   *  gate, accept the point" (over-record beats data-loss). */
+  speed?: number | null;
 }
 
 const EARTH_RADIUS_M = 6_371_000;
@@ -414,6 +422,58 @@ function distanceToSegmentM(p: Coordinate, a: Coordinate, b: Coordinate): number
   };
 
   return haversineM(p, proj);
+}
+
+/**
+ * Douglas-Peucker polyline simplification (recursive). Removes vertices
+ * that are within `epsilonM` of the line between their kept neighbours.
+ * Visually identical to the input on a map at typical hike scale, but
+ * with 30-50% fewer vertices — Mapbox renders smoother (anti-aliasing
+ * has fewer cusps to handle) and consumes less GPU.
+ *
+ * Pure JS, no deps. Iterative-on-stack to avoid recursion-depth issues
+ * on very long tracks (e.g. multi-hour rides with >5000 points).
+ *
+ * @param points  Input polyline (lat/lng + any extra fields). Extra
+ *                fields are preserved on retained points.
+ * @param epsilonM  Tolerance in metres. ε=2 is a sweet spot for hikes
+ *                  (preserves all visible turns, drops only collinear
+ *                  noise points).
+ * @returns Filtered subset of `points` (same references, same order),
+ *          guaranteed to include the first and last point.
+ */
+export function simplifyPolyline<T extends Coordinate>(points: T[], epsilonM: number): T[] {
+  if (points.length < 3) return points.slice();
+  // Iterative DP: stack of (start, end) index ranges. For each range,
+  // find the point with max perpendicular distance from the chord
+  // start→end. If > ε, mark it as kept and split into two sub-ranges.
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const stack: Array<[number, number]> = [[0, points.length - 1]];
+  while (stack.length > 0) {
+    const [lo, hi] = stack.pop()!;
+    if (hi - lo < 2) continue;
+    let maxD = 0;
+    let maxIdx = -1;
+    const a = points[lo];
+    const b = points[hi];
+    for (let i = lo + 1; i < hi; i++) {
+      const d = distanceToSegmentM(points[i], a, b);
+      if (d > maxD) {
+        maxD = d;
+        maxIdx = i;
+      }
+    }
+    if (maxIdx >= 0 && maxD > epsilonM) {
+      keep[maxIdx] = 1;
+      stack.push([lo, maxIdx]);
+      stack.push([maxIdx, hi]);
+    }
+  }
+  const out: T[] = [];
+  for (let i = 0; i < points.length; i++) if (keep[i]) out.push(points[i]);
+  return out;
 }
 
 /**

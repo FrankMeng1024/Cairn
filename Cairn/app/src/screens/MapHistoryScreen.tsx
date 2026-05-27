@@ -15,12 +15,13 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useSessionStore, loadTrackPoints } from '../store/useSessionStore';
+import { useTrackingStore } from '../store/useTrackingStore';
 import { fetchSessionDetail } from '../services/sessionService';
 import { useRouteStore } from '../store/useRouteStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { crashLogger } from '../services/crashLogger';
 import { getCurrentRegion } from '../config/regions';
-import { formatDistance, formatDuration, formatDate, getRelativeTime, haversineM } from '../utils/geo';
+import { formatDistance, formatDuration, formatDate, getRelativeTime, haversineM, kalmanInit, kalmanUpdate, simplifyPolyline } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import type { IconName } from '../components/Icon';
@@ -571,6 +572,9 @@ export function MapHistoryScreen() {
   const allMarkers = useMarkerStore(s => s.markers);
   const markers = allMarkers.filter(m => m.regionCode === region.code);
   const deleteMarker = useMarkerStore(s => s.deleteMarker);
+  // v74a: live GPS for "distance from current position" in flag list rows.
+  // Updates reactively as the user moves (Zustand subscription).
+  const lastCoord = useTrackingStore(s => s.lastCoordinate);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const selectedSession = sessions.find(s => s.id === selectedSessionId) ?? null;
@@ -619,12 +623,114 @@ export function MapHistoryScreen() {
     ? { ...selectedSession, trackPoints: loadedTrackPoints }
     : null;
 
-  // v73: nearby-flag filter — only show personal markers within ~50m
-  // of any point on the route polyline. Avoids "all 50 markers in the
-  // region" cluttering the past-hike map. Uses haversineM (proper
-  // sphere distance, ~50m precision). Skipped when no track points
-  // (initial load + tiny sessions).
-  const NEARBY_FLAG_RADIUS_M = 50;
+  // v75: full GPS quality pipeline applied at render time so historical
+  // hikes (recorded before v74a's live filters existed) get the same
+  // treatment as live tracking. The pipeline is identical to live but
+  // re-implemented here because:
+  //   - server only stores raw points (never filters)
+  //   - client live filters only run during recording, not render
+  //
+  // Pipeline:
+  //   1. Drop accuracy > 25m fixes (urban canyon / indoor noise)
+  //   2. Drop teleports (>15 m/s & >30m vs last accepted = GPS glitch)
+  //   3. Stationary collapse (recent avg <0.5 m/s and within max(acc, 8m)
+  //      of last accepted → suppress, no new vertex)
+  //   4. Kalman 1D smoothing per channel, Q=1e-9 (low → trust prior →
+  //      visibly smooth output)
+  //
+  // Distance shown to user is the SERVER-STORED `distance_m` (computed
+  // on raw GPS during recording — accurate). Polyline RENDER uses
+  // smoothed. Same split as Strava.
+  const smoothedTrackPoints = React.useMemo(() => {
+    if (!sessionForDisplay || sessionForDisplay.trackPoints.length === 0) return [];
+    const KALMAN_PROCESS_NOISE = 1e-9;
+    const ACCURACY_REJECT_M = 25;
+    const TELEPORT_SPEED_MPS = 15;
+    const TELEPORT_DIST_MIN_M = 30;
+    const STATIONARY_SPEED_MPS = 0.5;
+    const STATIONARY_RADIUS_MIN_M = 8;
+    type P = typeof sessionForDisplay.trackPoints[number];
+    const pts = sessionForDisplay.trackPoints;
+    const kept: P[] = [];
+
+    // Filters 1, 2, 3 in one pass
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      // Filter 1: accuracy reject
+      if (p.accuracy != null && p.accuracy > ACCURACY_REJECT_M) continue;
+
+      if (kept.length > 0) {
+        const last = kept[kept.length - 1];
+        const distM = haversineM({ lat: last.lat, lng: last.lng }, { lat: p.lat, lng: p.lng });
+        const dtS = (p.t - last.t) / 1000;
+
+        // Filter 2: teleport reject
+        if (dtS > 0) {
+          const speed = distM / dtS;
+          if (speed > TELEPORT_SPEED_MPS && distM > TELEPORT_DIST_MIN_M) continue;
+        }
+
+        // Filter 3: stationary collapse — rolling 5-point speed.
+        // v75 BUGFIX: only apply when we have ≥3 accepted points so
+        // the speed calc has enough data. Otherwise the very first
+        // fixes get suppressed (avgSpeed=0 on empty window matches
+        // the stationary condition).
+        if (kept.length >= 3) {
+          const window = kept.slice(-5);
+          if (window.length >= 2) {
+            const winDt = (window[window.length - 1].t - window[0].t) / 1000;
+            let winDist = 0;
+            for (let j = 1; j < window.length; j++) {
+              winDist += haversineM(
+                { lat: window[j - 1].lat, lng: window[j - 1].lng },
+                { lat: window[j].lat, lng: window[j].lng },
+              );
+            }
+            const winSpeed = winDt > 0 ? winDist / winDt : 0;
+            const suppressRadius = Math.max(STATIONARY_RADIUS_MIN_M, p.accuracy ?? 0);
+            if (winSpeed < STATIONARY_SPEED_MPS && distM <= suppressRadius) continue;
+          }
+        }
+      }
+      kept.push(p);
+    }
+
+    // Filter 4: Kalman smoothing pass over the survivors. Q hard-coded
+    // to 1e-9 here because kalmanInit uses 1e-5 by default (geo.ts:159)
+    // — see plan. Override per call.
+    const out: P[] = [];
+    let kLat: ReturnType<typeof kalmanInit> | null = null;
+    let kLng: ReturnType<typeof kalmanInit> | null = null;
+    for (const p of kept) {
+      const acc = p.accuracy ?? 10;
+      if (kLat === null || kLng === null) {
+        kLat = kalmanInit(p.lat, acc, KALMAN_PROCESS_NOISE);
+        kLng = kalmanInit(p.lng, acc, KALMAN_PROCESS_NOISE);
+        out.push(p);
+      } else {
+        const sLat = kalmanUpdate(kLat, p.lat, acc);
+        const sLng = kalmanUpdate(kLng, p.lng, acc);
+        out.push({ ...p, lat: sLat, lng: sLng });
+      }
+    }
+    // v77: Douglas-Peucker simplification ε=2m. Removes vertices that
+    // are within 2m of the line between their kept neighbours. Reduces
+    // vertex count ~30% on a typical hike with no visible change to the
+    // rendered polyline. Mapbox renders fewer cusps → smoother visual.
+    return simplifyPolyline(out, 2);
+  }, [sessionForDisplay?.trackPoints]);
+
+  // Replace raw with smoothed in sessionForDisplay so all downstream
+  // renderers (NativeTrackMap, TrackPolyline, marker bbox) read smoothed.
+  const sessionRender = sessionForDisplay
+    ? { ...sessionForDisplay, trackPoints: smoothedTrackPoints }
+    : null;
+
+  // v73: nearby-flag filter — only show personal markers within ~80m
+  // of any point on the route polyline. v74a: widened from 50m to 80m
+  // because v72 hit-test plants 5-15m from user + GPS noise + offset
+  // from actual trail can push markers outside a 50m envelope.
+  const NEARBY_FLAG_RADIUS_M = 80;
   const routeFlags: Marker[] = (() => {
     if (!sessionForDisplay || sessionForDisplay.trackPoints.length === 0) return [];
     return markers.filter(m => {
@@ -653,10 +759,10 @@ export function MapHistoryScreen() {
         {/* Track polyline when session selected. Native (iOS/Android with
             @rnmapbox/maps available) renders the track on a real Mapbox
             map; web/Expo Go falls back to the SVG-on-panel rendering. */}
-        {sessionForDisplay ? (
-          MapView && sessionForDisplay.trackPoints.length >= 2
-            ? <NativeTrackMap session={sessionForDisplay} markers={routeFlags} />
-            : <TrackPolyline session={sessionForDisplay} />
+        {sessionRender ? (
+          MapView && sessionRender.trackPoints.length >= 2
+            ? <NativeTrackMap session={sessionRender} markers={routeFlags} />
+            : <TrackPolyline session={sessionRender} />
         ) : (
           // Decorative lines when no session selected
           <>
@@ -709,7 +815,7 @@ export function MapHistoryScreen() {
             decorative pin band on the SVG fallback path; on the real
             map it would float on top in random positions. So we skip
             it whenever a session is selected and the native map is up. */}
-        {!(sessionForDisplay && MapView && sessionForDisplay.trackPoints.length >= 2) && mapMarkers.map((m, i) => {
+        {!(sessionRender && MapView && sessionRender.trackPoints.length >= 2) && mapMarkers.map((m, i) => {
           const meta = MARKER_META[m.type as keyof typeof MARKER_META] || MARKER_META.free;
           return (
             <View
@@ -926,6 +1032,18 @@ export function MapHistoryScreen() {
               markers.map(m => {
                 const meta = MARKER_META[m.type as keyof typeof MARKER_META] || MARKER_META.free;
                 const timeAgo = getRelativeTime(m.createdAt);
+                // v74a: show distance from current GPS as the primary
+                // secondary line. Falls back to note/timeAgo only when
+                // user has no GPS lock yet.
+                const distM = lastCoord
+                  ? haversineM({ lat: lastCoord.lat, lng: lastCoord.lng }, { lat: m.lat, lng: m.lng })
+                  : null;
+                const distLabel = distM === null
+                  ? null
+                  : distM < 1000
+                    ? `${Math.round(distM)}m away`
+                    : `${(distM / 1000).toFixed(1)}km away`;
+                const subtitle = distLabel ?? (m.note ? m.note.substring(0, 40) : timeAgo);
                 return (
                   <PressRow key={m.id} onPress={() => setSelectedMarkerId(m.id)} style={{ marginBottom: 0 }}>
                     <View style={flagStyles.row}>
@@ -940,7 +1058,7 @@ export function MapHistoryScreen() {
                           </View>
                         </View>
                         <Text style={flagStyles.note} numberOfLines={1}>
-                          {m.note ? m.note.substring(0, 40) : timeAgo}
+                          {subtitle}
                         </Text>
                       </View>
                       <Icon name="ChevronRight" size={IconSize.sm} color={Colors.textMuted} strokeWidth={2} />

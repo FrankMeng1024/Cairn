@@ -17,7 +17,10 @@
  */
 import { create } from 'zustand';
 import { AppState, type AppStateStatus } from 'react-native';
-import { haversineM, calculateElevationGain, generateId, getSamplingInterval, classifyMovement } from '../utils/geo';
+import {
+  haversineM, calculateElevationGain, generateId, getSamplingInterval, classifyMovement,
+  kalmanInit, kalmanUpdate, type KalmanState,
+} from '../utils/geo';
 import { getCurrentRegion } from '../config/regions';
 import { useSessionStore } from './useSessionStore';
 import type { TrackPoint, ActivityMode } from './useSessionStore';
@@ -54,6 +57,37 @@ let backgroundGrantedCached = false;
 // range, so dropped network is recovered automatically.
 let lastFlushedIdx = 0;
 
+// v74a: Kalman filter state for live GPS smoothing. Lat and lng are
+// filtered as independent 1D channels (the Kalman implementation in
+// geo.ts is 1D). State is reset at startTracking and again on the
+// first accepted fix per session. The smoothed position is what gets
+// pushed into trackPointsSmoothed[]; the raw fix is preserved in
+// trackPoints[] for accurate distance accumulation and audit.
+let kalmanLat: KalmanState | null = null;
+let kalmanLng: KalmanState | null = null;
+// Filter constants — chosen for walking speeds. Hiking 1-2 m/s is the
+// dominant use case; running 3-4 m/s is also fine since Kalman gain
+// adjusts via measurement noise (R) which we feed accuracy into.
+//
+// v75: Q lowered from 1e-5 to 1e-9. With typical accuracy 14m the R
+// term is (14/111000)² ≈ 1.6e-8. The old Q was 600× larger than R,
+// which forced Kalman gain ≈ 1 and made the filter a passthrough (no
+// smoothing). Q=1e-9 makes Q/R ≈ 0.06 → smoothed track follows the
+// prior 90-95% with a 5-10% pull from each new fix — visibly smooth
+// like Strava/Komoot.
+const KALMAN_PROCESS_NOISE = 1e-9;
+const ACCURACY_REJECT_M = 25;             // drop fixes worse than this — typical "indoor / canyon"
+// v77: tightened from 15 → 10 m/s. Real upper bound for hike/run/trail
+// running is 8 m/s (top trail runner). 10 gives buffer; anything beyond
+// is GPS glitch (river-crossing teleport).
+const TELEPORT_SPEED_MPS = 10;
+const STATIONARY_SPEED_MPS = 0.5;         // below this, we treat as standing still
+const STATIONARY_RADIUS_MIN_M = 8;        // suppress fixes within this circle of last accepted
+// v77: avgSpeedMps removed. We now use GPS-reported `coords.speed`
+// (Doppler-derived, immune to position drift) instead of computing
+// speed from position history — which produced false-positive "you're
+// moving 3 m/s" readings while actually standing still due to GPS noise.
+
 async function getLocation() {
   if (!Location) {
     try {
@@ -83,6 +117,21 @@ interface TrackingState {
   distanceM: number;
   elevationGainM: number;
   trackPoints: TrackPoint[];
+  /** v74a: Kalman-smoothed track for rendering. Same length+timestamps as
+   *  `trackPoints` but lat/lng have been passed through the filter. UI
+   *  (NativeTrackMap polyline, MapHistoryScreen) uses this for the visual
+   *  line so it doesn't sawtooth on raw GPS noise. Distance accumulation,
+   *  AR cairn placement, server upload all keep using the RAW
+   *  `trackPoints` so we never lose the audit trail or introduce drift
+   *  into measurements. */
+  trackPointsSmoothed: TrackPoint[];
+  /** v77: full audit track including stationary drift + low-accuracy
+   *  fixes (everything except teleport-rejected). Stored once at
+   *  session finalize as `route_points_raw` for debug / future
+   *  re-processing with new algorithms. NOT used for rendering or
+   *  distance — those use `trackPoints` (clean) and
+   *  `trackPointsSmoothed` (Kalman-smoothed clean). */
+  trackPointsRaw: TrackPoint[];
   markerIds: string[];         // markers planted during this session
   pausePins: Coordinate[];     // locations where user paused (rendered as flag pins)
   locationAvailable: boolean;  // false on web/simulator
@@ -115,6 +164,8 @@ const initialState = {
   distanceM: 0,
   elevationGainM: 0,
   trackPoints: [],
+  trackPointsSmoothed: [],
+  trackPointsRaw: [],
   markerIds: [],
   pausePins: [] as Coordinate[],
   locationAvailable: false,
@@ -141,6 +192,8 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     // Reset module-level state from any previous session
     lastSamplingIntervalMs = 3000;
     lastFlushedIdx = 0;
+    kalmanLat = null;
+    kalmanLng = null;
 
     // Kick off the server-side session row immediately. This gives us a
     // remoteId we can PATCH new points into via the 60s incremental flush
@@ -304,6 +357,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
               lng: c.longitude,
               alt: c.altitude,
               accuracy: c.accuracy ?? null,
+              speed: c.speed ?? null,
             },
             c.timestamp,
           );
@@ -454,8 +508,12 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
             distance_m: s.distanceM,
             duration_s: s.durationS,
             name: finalName,
+            // v77: ship full audit track at finalize. ~50% larger than
+            // clean track (includes drift + low-acc fixes); fine to
+            // upload once at session end, not in 60s flushes.
+            route_points_raw: s.trackPointsRaw.length > 0 ? s.trackPointsRaw : null,
           });
-          crashLogger.breadcrumb(`session:finalize ok=${ok2}`);
+          crashLogger.breadcrumb(`session:finalize ok=${ok2} raw=${s.trackPointsRaw.length}`);
         })().catch(() => undefined);
       }
 
@@ -473,6 +531,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
         distanceM: s.distanceM,
         elevationGainM: s.elevationGainM,
         trackPoints: s.trackPoints,
+        trackPointsRaw: s.trackPointsRaw.length > 0 ? s.trackPointsRaw : undefined,
         markerIds: s.markerIds,
         pausePins: s.pausePins.length > 0 ? s.pausePins : undefined,
         name: finalName,
@@ -509,9 +568,9 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
 
   addTrackPoint: (coord, timestamp) => {
     set((s) => {
-      // Timestamp-based dedupe: skip if a fix with this exact timestamp was
-      // just recorded UNLESS the coords moved >5m (real movement at the
-      // same wall-clock instant — keep the new point).
+      // ── Timestamp dedupe: two parallel sources (foreground watchPositionAsync
+      // + background TaskManager) can emit the same fix. Drop the duplicate
+      // unless coords moved >5m.
       if (
         timestamp !== undefined &&
         s.lastFixTimestamp !== null &&
@@ -520,32 +579,118 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
         if (s.lastCoordinate) {
           const movement = haversineM(s.lastCoordinate, coord);
           if (movement <= 5) {
-            return s; // duplicate fix from a parallel source — ignore
+            return s;
           }
         } else {
           return s;
         }
       }
 
-      const point: TrackPoint = { ...coord, t: Date.now() };
-      const newPoints = [...s.trackPoints, point];
+      const acc = coord.accuracy ?? null;
+      const speed = coord.speed ?? null;
+      const t = Date.now();
 
-      // Accumulate distance
+      // ── v77 GATE 1: TELEPORT REJECT (drop everywhere — no audit value)
+      // implied speed > 10 m/s AND distance > 30m vs last accepted = GPS
+      // glitch (river-crossing, satellite re-acquisition jump). 10 m/s is
+      // chosen with margin above the 8 m/s real-world max for top trail
+      // runners. The >30m qualifier protects normal hike fixes from a
+      // freak "you moved 25m in 1s" reading that's still inside the
+      // accuracy circle.
+      if (s.lastCoordinate && s.lastCoordinateTime) {
+        const dtS = (t - s.lastCoordinateTime) / 1000;
+        if (dtS > 0) {
+          const distM = haversineM(s.lastCoordinate, coord);
+          const impliedSpeed = distM / dtS;
+          if (impliedSpeed > TELEPORT_SPEED_MPS && distM > 30) {
+            // Don't add to ANY track (clean or raw) — pure GPS glitch.
+            return s;
+          }
+        }
+      }
+
+      // The point passes gate 1. Always add to RAW (audit) track.
+      const rawPoint: TrackPoint = { ...coord, t };
+
+      // ── v77 GATE 2: ACCURACY FILTER (drop from clean, keep in raw)
+      // accuracy > 25m means the fix is essentially "I'm somewhere in
+      // this neighbourhood" — useless for a track polyline. Indoors,
+      // urban canyon, dense forest cover. Keep in raw because it's
+      // useful debug info ("user lost signal here").
+      if (acc !== null && acc > ACCURACY_REJECT_M) {
+        return {
+          ...s,
+          trackPointsRaw: [...s.trackPointsRaw, rawPoint],
+          // Don't update lastCoordinate — we want the next gate's
+          // distance check vs the last *clean* point, not vs noise.
+          lastFixTimestamp: timestamp ?? s.lastFixTimestamp,
+        };
+      }
+
+      // ── v77 GATE 3: STATIONARY SUPPRESSION (drop from clean, keep in raw)
+      // Use GPS-reported speed (Doppler-derived, immune to position drift)
+      // — when the user is standing still the speed is genuinely ~0 even
+      // though the position drifts ±10m. If speed is null (rare, some
+      // Android, or first fix), skip this gate entirely (over-record).
+      const distFromLastAccepted = s.lastCoordinate
+        ? haversineM(s.lastCoordinate, coord)
+        : Infinity;
+      const suppressRadius = Math.max(STATIONARY_RADIUS_MIN_M, acc ?? 0);
+      if (
+        speed !== null &&
+        speed < STATIONARY_SPEED_MPS &&
+        s.lastCoordinate &&
+        distFromLastAccepted <= suppressRadius
+      ) {
+        return {
+          ...s,
+          trackPointsRaw: [...s.trackPointsRaw, rawPoint],
+          // lastCoordinate stays unchanged so next non-stationary fix
+          // is measured against the original anchor, not the drifting
+          // suppress points.
+          lastFixTimestamp: timestamp ?? s.lastFixTimestamp,
+          lastCoordinateTime: t,
+        };
+      }
+
+      // ── v77 GATE 4: KALMAN SMOOTHING — point is accepted into clean.
+      let smoothedLat = coord.lat;
+      let smoothedLng = coord.lng;
+      if (kalmanLat === null || kalmanLng === null) {
+        const accForInit = acc ?? 10;
+        kalmanLat = kalmanInit(coord.lat, accForInit, KALMAN_PROCESS_NOISE);
+        kalmanLng = kalmanInit(coord.lng, accForInit, KALMAN_PROCESS_NOISE);
+      } else {
+        smoothedLat = kalmanUpdate(kalmanLat, coord.lat, acc ?? undefined);
+        smoothedLng = kalmanUpdate(kalmanLng, coord.lng, acc ?? undefined);
+      }
+      const smoothedPoint: TrackPoint = {
+        lat: smoothedLat,
+        lng: smoothedLng,
+        alt: coord.alt,
+        accuracy: coord.accuracy,
+        speed: coord.speed,
+        t,
+      };
+
+      // Distance is computed on RAW positions (not smoothed) — Kalman can
+      // shrink real movement inward, costing distance. Strava behaviour:
+      // smooth render, raw distance.
       let addedDistance = 0;
       if (s.lastCoordinate) {
         addedDistance = haversineM(s.lastCoordinate, coord);
-        // Ignore implausible jumps > 200m in 3s (GPS glitch)
         if (addedDistance > 200) addedDistance = 0;
       }
 
-      // Accumulate elevation
       const newAltHistory = [...s.altitudeHistory, coord.alt ?? null];
       const elevationGainM = calculateElevationGain(newAltHistory);
 
       return {
-        trackPoints: newPoints,
+        trackPoints: [...s.trackPoints, rawPoint],
+        trackPointsSmoothed: [...s.trackPointsSmoothed, smoothedPoint],
+        trackPointsRaw: [...s.trackPointsRaw, rawPoint],
         lastCoordinate: coord,
-        lastCoordinateTime: Date.now(),
+        lastCoordinateTime: t,
         lastFixTimestamp: timestamp ?? s.lastFixTimestamp,
         distanceM: s.distanceM + addedDistance,
         elevationGainM,
@@ -658,6 +803,7 @@ async function activateForegroundSource(): Promise<void> {
             lng: position.coords.longitude,
             alt: position.coords.altitude,
             accuracy: position.coords.accuracy ?? null,
+            speed: position.coords.speed ?? null,
           },
           ts,
         );
