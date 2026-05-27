@@ -176,6 +176,21 @@ function AppRoot() {
       // eslint-disable-next-line no-console
       console.warn('[telemetryUploader.init failed]', err);
     }
+    // v78 #7: subscribe offline queue drains. Drains the persisted
+    // mutation queue whenever (a) the network comes back online or
+    // (b) the app returns to foreground. Independent of the
+    // tracking lifecycle — runs as long as the app is alive.
+    let unsubOfflineQueue: (() => void) | null = null;
+    try {
+      const { subscribeOfflineQueueDrains, drain } = require('./src/services/offlineQueue');
+      unsubOfflineQueue = subscribeOfflineQueueDrains();
+      // Also do an initial drain on app boot in case the previous
+      // session was killed mid-flight with a non-empty queue.
+      drain().catch(() => {});
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[offlineQueue init failed]', err);
+    }
 
     // App state change listener for debug logger
     const sub = AppState.addEventListener('change', (next) => {

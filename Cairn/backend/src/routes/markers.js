@@ -11,6 +11,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/db');
 const authenticate = require('../middleware/authenticate');
+const idempotency = require('../middleware/idempotency');
 
 router.use(authenticate);
 
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
 });
 
 // ── Create marker ───────────────────────────────────────────────────────────
-router.post('/', async (req, res) => {
+router.post('/', idempotency, async (req, res) => {
   try {
     const { type, text, lat, lng, alt, permission, approximate } = req.body;
 

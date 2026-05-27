@@ -309,14 +309,39 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
       // Single-source guarantee eliminates the duplicate-fix logging bug.
       // Each handler awaits via the activation queue to prevent TOCTOU races
       // between hasStartedLocationUpdatesAsync and startLocationUpdatesAsync.
+      //
+      // v78 #7/#8: 2s debounce on `active` direction. Real-world metro
+      // hike showed 18 app_state_changes in 23 minutes (clustered every
+      // 30s) — likely brief screen unlock cycles. The `active` handler
+      // is idempotent but still kicks off a foreground source restart
+      // each time, which causes brief GPS gaps and battery churn. We
+      // debounce only the `active` direction; `background`/`inactive`
+      // always fire immediately so we never miss the off-screen pause.
+      let activeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
       appStateSubscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
         if (get().status !== 'tracking') return;
+        crashLogger.breadcrumb(`appstate:${nextState}`);
         if (nextState === 'active') {
-          enqueueActivation(async () => {
-            await activateForegroundSource();
-            deactivateBackgroundSource();
-          });
+          // If we already have a pending active-flip, leave it. If we
+          // were going to background within the debounce window, reset.
+          if (activeDebounceTimer) clearTimeout(activeDebounceTimer);
+          activeDebounceTimer = setTimeout(() => {
+            activeDebounceTimer = null;
+            // Re-check current state at the moment the timer fires —
+            // if user flipped back to background, do nothing.
+            if (AppState.currentState !== 'active') return;
+            enqueueActivation(async () => {
+              await activateForegroundSource();
+              deactivateBackgroundSource();
+            });
+          }, 2000);
         } else if (nextState === 'background' || nextState === 'inactive') {
+          // Cancel any pending active-flip timer — user dropped back
+          // to background within the debounce window.
+          if (activeDebounceTimer) {
+            clearTimeout(activeDebounceTimer);
+            activeDebounceTimer = null;
+          }
           enqueueActivation(async () => {
             deactivateForegroundSource();
             await activateBackgroundSource();
@@ -365,6 +390,9 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
       }, 1000);
 
       // ── Dynamic sampling — restart background+foreground if interval should change ──
+      // v78 #4/#6: tighten reaction window from 60s to 10s. User starts
+      // running mid-hike → mode/UI should reflect it within ~30s of pace
+      // change instead of waiting up to a minute.
       dynamicSamplingInterval = setInterval(async () => {
         if (get().status !== 'tracking') return;
         const lastCoord = get().lastCoordinate;
@@ -390,12 +418,16 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
             enqueueActivation(activateForegroundSource);
           }
         }
-      }, 60_000);
+      }, 10_000);
 
-      // ── Incremental backup — every 60s, PATCH new points to the
+      // ── Incremental backup — every 120s, PATCH new points to the
       // server so a force-quit / OS-kill mid-session doesn't lose the
       // entire run. Silent on failure — buffer stays in-memory and
       // next interval re-tries the unflushed range.
+      // v78: bumped 60s → 120s. Halves background network frequency and
+      // saves modest battery. Trade-off: at most 2 minutes of points
+      // lost on a force-kill instead of 1 minute. Acceptable: real
+      // session crashes are rare and a 1-min vs 2-min loss is minor.
       incrementalFlushInterval = setInterval(async () => {
         const state = get();
         if (state.status !== 'tracking') return;
@@ -411,7 +443,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
         } else {
           crashLogger.breadcrumb(`session:flush:failed count=${slice.length}`);
         }
-      }, 60_000);
+      }, 120_000);
     } catch (err) {
       debugLogger.logError(err, 'startTracking');
       set({ locationAvailable: false });

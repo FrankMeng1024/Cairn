@@ -151,7 +151,11 @@ function CompassNeedle({ heading, size = 22 }: { heading: number | null; size?: 
 // ── Map component (real Mapbox or fallback) ─────────────────────────────
 function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStart, userPos, instantCamera }: {
   markers: Marker[];
-  trackPoints: Array<{ lat: number; lng: number }>;
+  // v78 #1: trackPoints carry an optional `t` (epoch ms) so we can split
+  // the polyline at GPS-signal-loss gaps. When two consecutive points are
+  // separated by more than GAP_THRESHOLD_MS in time, we render that
+  // segment as a dashed "lost signal" line instead of a solid track.
+  trackPoints: Array<{ lat: number; lng: number; t?: number }>;
   onMarkerPress: (id: string) => void;
   showCompass?: boolean;
   // When a saved route is selected and the user isn't already at its
@@ -167,17 +171,48 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
 }) {
   const region = getCurrentRegion();
 
-  // Build GeoJSON for track polyline
-  const trackGeoJSON = {
+  // v78 #1: split the track into solid + gap segments by time delta.
+  // 30s = "the user has been off-grid for at least one full
+  // dynamic-sampling window even in static mode (10Hz now, was 60s)".
+  // Anything bigger than that = signal lost. We render those segments
+  // as a dashed connector so the user sees "yes my GPS dropped here"
+  // instead of "my polyline mysteriously disappears".
+  const GAP_THRESHOLD_MS = 30_000;
+  type Segment = { coords: [number, number][]; gap: boolean };
+  const segments: Segment[] = [];
+  if (trackPoints.length >= 2) {
+    let cur: Segment = { coords: [[trackPoints[0].lng, trackPoints[0].lat]], gap: false };
+    for (let i = 1; i < trackPoints.length; i++) {
+      const prev = trackPoints[i - 1];
+      const p = trackPoints[i];
+      const dt = (prev.t != null && p.t != null) ? (p.t - prev.t) : 0;
+      const isGap = dt > GAP_THRESHOLD_MS;
+      if (isGap) {
+        // close the solid segment, push, then push a 2-point gap segment
+        if (cur.coords.length >= 2) segments.push(cur);
+        segments.push({ coords: [[prev.lng, prev.lat], [p.lng, p.lat]], gap: true });
+        cur = { coords: [[p.lng, p.lat]], gap: false };
+      } else {
+        cur.coords.push([p.lng, p.lat]);
+      }
+    }
+    if (cur.coords.length >= 2) segments.push(cur);
+  }
+  const solidGeoJSON = {
     type: 'FeatureCollection' as const,
-    features: trackPoints.length >= 2 ? [{
+    features: segments.filter(s => !s.gap).map(s => ({
       type: 'Feature' as const,
-      geometry: {
-        type: 'LineString' as const,
-        coordinates: trackPoints.map(p => [p.lng, p.lat]),
-      },
+      geometry: { type: 'LineString' as const, coordinates: s.coords },
       properties: {},
-    }] : [],
+    })),
+  };
+  const gapGeoJSON = {
+    type: 'FeatureCollection' as const,
+    features: segments.filter(s => s.gap).map(s => ({
+      type: 'Feature' as const,
+      geometry: { type: 'LineString' as const, coordinates: s.coords },
+      properties: {},
+    })),
   };
 
   // Imperative camera ref — used to forcefully snap the camera to the
@@ -282,14 +317,32 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
         />
         <UserLocationComponent visible={true} renderMode="normal" />
 
-        {/* Track polyline */}
-        {trackPoints.length >= 2 && (
-          <ShapeSource id="track-line" shape={trackGeoJSON}>
+        {/* Track polyline — solid segments (good signal) */}
+        {solidGeoJSON.features.length > 0 && (
+          <ShapeSource id="track-line" shape={solidGeoJSON}>
             <LineLayer
               id="track-line-layer"
               style={{
                 lineColor: Colors.primary,
                 lineWidth: 5,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </ShapeSource>
+        )}
+
+        {/* v78 #1: Track polyline — dashed gap segments (signal lost > 30s).
+            Muted color + dashed pattern signals "we couldn't track here"
+            without breaking the visual continuity of the path. */}
+        {gapGeoJSON.features.length > 0 && (
+          <ShapeSource id="track-gap-line" shape={gapGeoJSON}>
+            <LineLayer
+              id="track-gap-line-layer"
+              style={{
+                lineColor: Colors.textMuted,
+                lineWidth: 3,
+                lineDasharray: [2, 1.5],
                 lineCap: 'round',
                 lineJoin: 'round',
               }}
@@ -816,6 +869,12 @@ export function HikingScreen() {
   const lastCoordinate = useTrackingStore(s => s.lastCoordinate);
   const sessionId = useTrackingStore(s => s.sessionId);
   const trackPoints = useTrackingStore(s => s.trackPoints);
+  // v78: prefer smoothed track for live polyline render. Same Kalman
+  // pass that MapHistoryScreen uses post-hoc, but applied live here so
+  // Hike screen shows the same clean line the user will see in
+  // Activities — not a sawtooth raw GPS jitter. Falls back to raw if
+  // smoothed is empty (very early in the session).
+  const trackPointsSmoothed = useTrackingStore(s => s.trackPointsSmoothed);
   const startTracking = useTrackingStore(s => s.startTracking);
   const stopTracking = useTrackingStore(s => s.stopTracking);
   const linkMarker = useTrackingStore(s => s.linkMarker);
@@ -1001,6 +1060,16 @@ export function HikingScreen() {
   const distDisplay = formatDistance(distanceM, 'km', 1);
   const durationDisplay = formatDuration(durationS);
 
+  // v78 #1: Signal-lost detection. If the most recent accepted track
+  // point is older than GAP_THRESHOLD_MS, surface a "Signal lost" pill
+  // so the user understands the polyline isn't broken — GPS is.
+  // Recomputed every render (cheap; runs only with stats bar active).
+  const SIGNAL_GAP_MS = 30_000;
+  const lastTrackT = trackPoints.length > 0 ? trackPoints[trackPoints.length - 1].t : null;
+  const signalLostFor = (lastTrackT != null) ? (Date.now() - lastTrackT) : 0;
+  const signalLost = lastTrackT != null && signalLostFor > SIGNAL_GAP_MS;
+  const signalLostMin = Math.floor(signalLostFor / 60_000);
+
   const [showRoutePicker, setShowRoutePicker] = useState(false);
   const routePickerSlide = useRef(new Animated.Value(300)).current;
   const routePickerOpacity = useRef(new Animated.Value(0)).current;
@@ -1169,7 +1238,7 @@ export function HikingScreen() {
     <View style={styles.container}>
       <HikingMap
         markers={markers}
-        trackPoints={trackPoints.map(tp => ({ lat: tp.lat, lng: tp.lng }))}
+        trackPoints={(trackPointsSmoothed.length >= 2 ? trackPointsSmoothed : trackPoints).map(tp => ({ lat: tp.lat, lng: tp.lng, t: tp.t }))}
         onMarkerPress={(id) => { setSelectedMarkerId(id); setUi('detail'); }}
         routeStart={routePolyline.length > 0
           ? { lat: routePolyline[0].lat, lng: routePolyline[0].lng }
@@ -1211,6 +1280,18 @@ export function HikingScreen() {
             </Text>
           </View>
         </View>
+
+        {/* v78 #1: Signal-lost pill — appears above the stats bar when
+            the latest accepted GPS fix is older than 30s. Hidden during
+            normal operation. */}
+        {isTracking && signalLost && (
+          <View style={styles.signalLostPill}>
+            <View style={styles.signalLostDot} />
+            <Text style={styles.signalLostText}>
+              {signalLostMin >= 1 ? `Signal lost · ${signalLostMin} min` : 'Signal lost'}
+            </Text>
+          </View>
+        )}
 
         {/* Tracking stats bar */}
         {isTracking && (
@@ -1597,6 +1678,20 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: Colors.primary,
   },
   trackingStat: { alignItems: 'center', flex: 1 },
+  // v78 #1: Signal-lost pill — amber chip above the stats bar.
+  // Self-aligned start, only visible when GPS hasn't fixed in 30s+.
+  signalLostPill: {
+    flexDirection: 'row', alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginHorizontal: Spacing.base, marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.md, paddingVertical: 6,
+    backgroundColor: Colors.severityWarningBg,
+    borderRadius: 999,
+    borderWidth: 1, borderColor: Colors.severityWarning,
+    gap: 6,
+  },
+  signalLostDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.severityWarning },
+  signalLostText: { fontSize: 11, fontWeight: '700', color: Colors.severityWarning, letterSpacing: 0.2 },
   // Tracking stats panel — values intentionally compact (14pt) so the
   // panel doesn't dominate the map view. The numbers are reference
   // information; users glance at them, they don't read them like a

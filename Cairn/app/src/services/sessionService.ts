@@ -1,8 +1,14 @@
 /**
  * Session service — sync local sessions to backend.
  * Silent on network failure (offline-first design).
+ *
+ * v78 #7: every mutating call carries a client_op_id (UUID). On
+ * failure, the call is enqueued in offlineQueue for later retry.
+ * Server-side dedupes against op_id so multiple attempts don't
+ * create duplicate sessions.
  */
 import { authenticatedFetch } from './apiService';
+import { enqueue, makeOp, uuidv4 } from './offlineQueue';
 
 // GPS point shape used by both legacy POST and new incremental flows.
 export interface TrackPointLike {
@@ -93,21 +99,31 @@ export async function startSession(
 
 /**
  * Append a batch of GPS points to an active session. Used by the
- * 60-second incremental backup interval during tracking. Silent on
- * failure — the next interval retries the unflushed range.
+ * incremental backup interval during tracking. On failure, the batch
+ * is enqueued for retry — so points aren't lost even if the request
+ * fails. Idempotency via client_op_id (server-side dedupe).
  */
 export async function appendPoints(
   remoteId: number,
   points: TrackPointLike[],
 ): Promise<boolean> {
   if (points.length === 0) return true;
+  const opId = uuidv4();
+  const path = `/api/sessions/${remoteId}/append-points`;
+  const body = { points, client_op_id: opId };
   try {
-    const res = await authenticatedFetch(`/api/sessions/${remoteId}/append-points`, {
+    const res = await authenticatedFetch(path, {
       method: 'PATCH',
-      body: JSON.stringify({ points }),
+      body: JSON.stringify(body),
     });
-    return res.ok;
+    if (res.ok) return true;
+    // 4xx (other than 401) are bad payloads — don't retry. 5xx + 401
+    // and network errors are retryable.
+    if (res.status >= 400 && res.status < 500 && res.status !== 401) return false;
+    await enqueue(makeOp('session_append', path, 'PATCH', { points }, opId));
+    return false;
   } catch {
+    await enqueue(makeOp('session_append', path, 'PATCH', { points }, opId));
     return false;
   }
 }
@@ -115,6 +131,9 @@ export async function appendPoints(
 /**
  * Finalize a session at stop time: write end_time, distance_m,
  * duration_s, (optional) name, and (optional v77) full raw audit track.
+ *
+ * v78: failures enqueue with idempotency key — even if the user kills
+ * the app right after Stop, the next launch's queue drain will finalize.
  */
 export async function finalizeSession(
   remoteId: number,
@@ -126,13 +145,19 @@ export async function finalizeSession(
     route_points_raw?: TrackPointLike[] | null;
   },
 ): Promise<boolean> {
+  const opId = uuidv4();
+  const path = `/api/sessions/${remoteId}`;
   try {
-    const res = await authenticatedFetch(`/api/sessions/${remoteId}`, {
+    const res = await authenticatedFetch(path, {
       method: 'PATCH',
-      body: JSON.stringify(fields),
+      body: JSON.stringify({ ...fields, client_op_id: opId }),
     });
-    return res.ok;
+    if (res.ok) return true;
+    if (res.status >= 400 && res.status < 500 && res.status !== 401) return false;
+    await enqueue(makeOp('session_finalize', path, 'PATCH', fields, opId));
+    return false;
   } catch {
+    await enqueue(makeOp('session_finalize', path, 'PATCH', fields, opId));
     return false;
   }
 }

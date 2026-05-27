@@ -11,11 +11,12 @@
 const express = require('express');
 const Session = require('../models/Session');
 const authenticate = require('../middleware/authenticate');
+const idempotency = require('../middleware/idempotency');
 
 const router = express.Router();
 
 // ── POST /api/sessions ─────────────────────────────────────────────────────
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, idempotency, async (req, res) => {
   const { type, start_time, end_time, distance_m, duration_s, route_points, route_points_raw, flags, route_id, name } = req.body;
 
   if (!type || !['hiking', 'running'].includes(type)) {
@@ -70,7 +71,7 @@ router.get('/', authenticate, async (req, res) => {
 // Client uses the returned id for subsequent /append-points and final
 // PATCH calls. This decouples "start tracking" from "finish tracking" so
 // crashes mid-session don't lose data.
-router.post('/start', authenticate, async (req, res) => {
+router.post('/start', authenticate, idempotency, async (req, res) => {
   const { type, start_time } = req.body;
   if (!type || !['hiking', 'running'].includes(type)) {
     return res.status(400).json({ error: 'type must be "hiking" or "running".' });
@@ -94,7 +95,7 @@ router.post('/start', authenticate, async (req, res) => {
 // ── PATCH /api/sessions/:id/append-points ──────────────────────────────────
 // Append a batch of GPS points to an active session. Used by the 60-second
 // incremental backup interval during tracking.
-router.patch('/:id/append-points', authenticate, async (req, res) => {
+router.patch('/:id/append-points', authenticate, idempotency, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id || isNaN(id)) {
     return res.status(400).json({ error: 'Invalid session ID.' });
@@ -119,7 +120,7 @@ router.patch('/:id/append-points', authenticate, async (req, res) => {
 // ── PATCH /api/sessions/:id ────────────────────────────────────────────────
 // Finalize a session at stop time: write end_time, distance_m, duration_s,
 // and (optional) name. Called from stopTracking after final point flush.
-router.patch('/:id', authenticate, async (req, res) => {
+router.patch('/:id', authenticate, idempotency, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id || isNaN(id)) {
     return res.status(400).json({ error: 'Invalid session ID.' });

@@ -156,30 +156,81 @@ function NativeTrackMap({ session, markers }: { session: TrackingSession; marker
           animationDuration={0}
         />
       )}
-      {ShapeSource && LineLayer && (
-        <ShapeSource
-          id="track-line"
-          shape={{
-            type: 'Feature',
-            geometry: {
-              type: 'LineString',
-              coordinates: pts.map(p => [p.lng, p.lat]),
-            },
-            properties: {},
-          }}
-        >
-          <LineLayer
-            id="track-line-layer"
-            style={{
-              lineColor: color,
-              lineWidth: 4,
-              lineOpacity: 0.9,
-              lineCap: 'round',
-              lineJoin: 'round',
-            }}
-          />
-        </ShapeSource>
-      )}
+      {ShapeSource && LineLayer && (() => {
+        // v78 #1: split by time gap > 30s. Render solid segments
+        // (continuous tracking) + dashed segments (signal lost). Same
+        // threshold + visual treatment as live HikingScreen so the user
+        // sees the same shape and color across hike/history.
+        const GAP_THRESHOLD_MS = 30_000;
+        type Seg = { coords: [number, number][]; gap: boolean };
+        const segs: Seg[] = [];
+        if (pts.length >= 2) {
+          let cur: Seg = { coords: [[pts[0].lng, pts[0].lat]], gap: false };
+          for (let i = 1; i < pts.length; i++) {
+            const prev = pts[i - 1];
+            const p = pts[i];
+            const dt = (prev.t != null && p.t != null) ? (p.t - prev.t) : 0;
+            if (dt > GAP_THRESHOLD_MS) {
+              if (cur.coords.length >= 2) segs.push(cur);
+              segs.push({ coords: [[prev.lng, prev.lat], [p.lng, p.lat]], gap: true });
+              cur = { coords: [[p.lng, p.lat]], gap: false };
+            } else {
+              cur.coords.push([p.lng, p.lat]);
+            }
+          }
+          if (cur.coords.length >= 2) segs.push(cur);
+        }
+        const solidFeatures = segs.filter(s => !s.gap).map((s, i) => ({
+          type: 'Feature' as const,
+          id: `solid-${i}`,
+          geometry: { type: 'LineString' as const, coordinates: s.coords },
+          properties: {},
+        }));
+        const gapFeatures = segs.filter(s => s.gap).map((s, i) => ({
+          type: 'Feature' as const,
+          id: `gap-${i}`,
+          geometry: { type: 'LineString' as const, coordinates: s.coords },
+          properties: {},
+        }));
+        return (
+          <>
+            {solidFeatures.length > 0 && (
+              <ShapeSource
+                id="track-line"
+                shape={{ type: 'FeatureCollection', features: solidFeatures }}
+              >
+                <LineLayer
+                  id="track-line-layer"
+                  style={{
+                    lineColor: color,
+                    lineWidth: 4,
+                    lineOpacity: 0.9,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                  }}
+                />
+              </ShapeSource>
+            )}
+            {gapFeatures.length > 0 && (
+              <ShapeSource
+                id="track-gap-line"
+                shape={{ type: 'FeatureCollection', features: gapFeatures }}
+              >
+                <LineLayer
+                  id="track-gap-line-layer"
+                  style={{
+                    lineColor: Colors.textMuted,
+                    lineWidth: 3,
+                    lineDasharray: [2, 1.5],
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                  }}
+                />
+              </ShapeSource>
+            )}
+          </>
+        );
+      })()}
       {PointAnnotation && (
         <>
           <PointAnnotation id="track-start" coordinate={[start.lng, start.lat]}>

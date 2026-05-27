@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import { storage } from './storage';
 import { generateId } from '../utils/geo';
 import { authenticatedFetch } from '../services/apiService';
+import { enqueue, makeOp, uuidv4 } from '../services/offlineQueue';
 import { debugLogger } from '../services/debugLogger';
 import { crashLogger } from '../services/crashLogger';
 import type { MarkerType } from '../data/mockData';
@@ -120,19 +121,22 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
       permission: (data.permission ?? 'personal') as 'personal' | 'group' | 'public',
     });
 
-    // Sync to backend
+    // Sync to backend. v78 #7: on transient failure, enqueue for retry
+    // with idempotency key. Local marker remains usable (synced=false).
+    const opId = uuidv4();
+    const body = {
+      type: data.type,
+      text: data.note,
+      lat: data.lat,
+      lng: data.lng,
+      alt: data.alt,
+      permission: data.permission,
+      approximate: data.approximate || false,
+    };
     try {
       const res = await authenticatedFetch('/api/markers', {
         method: 'POST',
-        body: JSON.stringify({
-          type: data.type,
-          text: data.note,
-          lat: data.lat,
-          lng: data.lng,
-          alt: data.alt,
-          permission: data.permission,
-          approximate: data.approximate || false,
-        }),
+        body: JSON.stringify({ ...body, client_op_id: opId }),
       });
       if (res.ok) {
         const serverMarker = await res.json();
@@ -148,8 +152,13 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
         });
         return { ...marker, id: String(serverMarker.id), synced: true };
       }
+      // 5xx / 401: enqueue for retry. 4xx (other): give up.
+      if (res.status >= 500 || res.status === 401) {
+        await enqueue(makeOp('marker_create', '/api/markers', 'POST', body, opId));
+      }
     } catch {
-      // Network failure — stays as local-only, will retry on next sync
+      // Network failure — enqueue for retry on next online/foreground.
+      await enqueue(makeOp('marker_create', '/api/markers', 'POST', body, opId));
     }
     return marker;
   },

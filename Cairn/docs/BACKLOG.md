@@ -86,3 +86,4 @@
 | 55 | AR cairn 类型扩展 (cairn / free) | E-003 | Should Have | 当前 v70 把 `cairn` / `free` 这两个 MarkerType fallback 渲染为灰色通用球。两种类型的产品语义还没定义清楚，需要 PO 拍板：留还是删，或给独立视觉。 |
 | 56 | AR 视觉 — 粒子贴图 + Fresnel 强度 | E-003 | Should Have | 配合 #48 加 PNG 贴图后，把 Viro 内置 fresnelExponent 调到 ~3.0 + 加 ViroParticleEmitter 替换当前 30 ViroSphere 粒子（更顺滑、性能更好）。 |
 | 57 | AR cairn note 长文本/语音 | E-003 | Should Have | 当前 v71 在球上方 billboard 显示 note 文字（30m 内）。后续：> 60 字省略号点击可展开；语音 memo（参考 #45）需要单独 UI 按钮播放。 |
+| 58 | AR cairn 跨 session 漂移修复（ARWorldMap 持久化）| E-003 | Should Have | **Needs native build (Swift)**. 用户报告：在同一地点 plant 一个 flag，关 AR，回到该点重开 AR，flag 出现在前方 5-10m。再循环越来越前。根因：每次 AR session 启动 ARKit 用当前 GPS 设原点，GPS 噪声 ±5-10m 累积。修法：调用 ARSession.getCurrentWorldMap() 序列化保存到 device，下次启动 ARSession.initialWorldMap = saved 让 ARKit relocalize 回原坐标系，零漂移。需要写 Swift native module 暴露 worldMap 序列化 + relocalize 接口。约 200 行 Swift + 50 行 RN bridge，下次 native build 一起做。|

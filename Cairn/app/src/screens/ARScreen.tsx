@@ -12,7 +12,7 @@
  * Sprint 51 — STORY-00173 (E-003: AR插旗)
  */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, Animated, Dimensions, PanResponder } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, Animated, Dimensions, PanResponder, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
@@ -508,6 +508,37 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   // v24 diagnostic: AR overlay reports its internal state up so the
   // ARDebugOverlay can show GL-ready + cairn count on screen.
   const [arStatus, setArStatus] = useState<{ glReady: boolean; cairnCount: number }>({ glReady: false, cairnCount: 0 });
+  // v78 #3: AR init UX. Tracks one of:
+  //   'init'      — first 4 seconds, glReady === false. Show spinner.
+  //   'ready'     — glReady === true. Hide overlay.
+  //   'low-light' — 4s elapsed and still !glReady. Show "Low light or
+  //                 featureless area — AR may not work here" + retry.
+  // ARKit needs textured features + light to fix world tracking; in
+  // metro stations / dim rooms it sits at "limited" forever and the
+  // user just sees a black screen. This overlay tells them why.
+  const [arInitState, setArInitState] = useState<'init' | 'ready' | 'low-light'>('init');
+  useEffect(() => {
+    if (arStatus.glReady) {
+      setArInitState('ready');
+      return;
+    }
+    // not ready: schedule low-light degrade after 4s if still not ready
+    setArInitState('init');
+    const t = setTimeout(() => {
+      // re-check after timer — only flip if still not ready (latest
+      // arStatus.glReady from closure may be stale, but setArInitState
+      // is updater-safe and the next glReady=true above wins anyway).
+      setArInitState(prev => prev === 'ready' ? 'ready' : 'low-light');
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [arStatus.glReady]);
+  // Retry handler: simply re-mount the AR overlay by toggling a key.
+  // Using a counter so consecutive retries each force a fresh mount.
+  const [arRetryKey, setArRetryKey] = useState(0);
+  const retryAr = () => {
+    setArInitState('init');
+    setArRetryKey(k => k + 1);
+  };
   // v64: live ARKit camera transform + cairn world positions, fed by
   // ViroAROverlay's onArFrame at ~10Hz. Powers CairnEdgeArrows so the
   // direction-to-cairn indicator uses ARKit's true-north fusion (accurate)
@@ -936,6 +967,7 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
           still functional. Triggered automatically by ErrorBoundary if
           ViroAROverlay throws (e.g. on devices missing ARKit support). */}
       <ErrorBoundary
+        key={arRetryKey}
         tag="ARKitOverlay"
         fallback={
           <AR3DCairnOverlay
@@ -981,6 +1013,37 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
         userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng } : null}
         userHeading={userHeading}
       />
+
+      {/* v78 #3: AR init / low-light overlay. Lives above the AR scene
+          but below other UI chrome. 'init' = transient spinner;
+          'low-light' = persistent hint with retry button. Hidden when
+          AR has reached glReady. */}
+      {arInitState !== 'ready' && (
+        <View style={styles.arInitOverlay} pointerEvents={arInitState === 'low-light' ? 'auto' : 'none'}>
+          <View style={styles.arInitCard}>
+            {arInitState === 'init' ? (
+              <>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.arInitTitle}>Initializing AR…</Text>
+                <Text style={styles.arInitBody}>
+                  Move your phone slowly to scan the surroundings.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.arInitTitle}>Low light or featureless area</Text>
+                <Text style={styles.arInitBody}>
+                  AR needs visible texture and light to anchor flags. Try a
+                  brighter spot or point at the ground / a wall with detail.
+                </Text>
+                <TouchableOpacity style={styles.arInitRetry} onPress={retryAr} activeOpacity={0.7}>
+                  <Text style={styles.arInitRetryText}>Retry</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* v64: ARKit-driven edge arrows + distance labels. Replaces the
           old magnetic-compass dial because the dial's heading source
@@ -1088,6 +1151,32 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' /* fallback when no camera */ },
+  // v78 #3: AR init + low-light overlay. Centered card on a dark
+  // semi-transparent background so it reads against either the camera
+  // feed (when permission granted) or the dark backdrop.
+  arInitOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+  },
+  arInitCard: {
+    backgroundColor: 'rgba(20,20,28,0.92)',
+    borderRadius: Radius.card,
+    paddingVertical: Spacing.lg, paddingHorizontal: Spacing.lg,
+    alignItems: 'center', gap: Spacing.sm,
+    maxWidth: 320,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  arInitTitle: { fontSize: FontSize.h3, fontWeight: '700', color: '#fff', textAlign: 'center' },
+  arInitBody: { fontSize: FontSize.caption, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 18 },
+  arInitRetry: {
+    marginTop: Spacing.sm,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.lg, paddingVertical: 10,
+    borderRadius: Radius.pill ?? 999,
+  },
+  arInitRetryText: { color: '#fff', fontWeight: '700', fontSize: FontSize.body },
   cameraPlaceholder: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#1a1a2e',
