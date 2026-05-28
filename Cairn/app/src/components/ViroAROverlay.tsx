@@ -89,7 +89,8 @@ const ALT_THRESHOLD_M = 5;    // GPS alt noise floor (deprecated — kept for sa
 // Reason: 5km made the AR view feel cluttered with distant cairns the user
 // couldn't actually see anyway.
 const VISIBLE_RANGE_M = 30;
-const ICON_SCALE = 0.7;        // v82: 2.0 → 0.7. v81 的 2.0 撑爆屏幕(icon 半径 0.48m → 直径 ~1m 挂在 1-2m 远处占满半屏)，且只缩放 icon 不缩放 halo/shell/粒子，导致 icon 比 halo(0.55) 还大彻底遮挡光晕。0.7 让 icon 半径 ≈ 0.17m，远小于 halo 0.55，光晕可见。reference HTML 是给整个 orb group 1.55x，我们只缩 icon。
+const ICON_SCALE = 0.55;       // v88: 0.7 → 0.55. 让 icon 不再撑爆 shell.
+                                // 实际 icon 半径 = 0.24 × 0.55 ≈ 0.13m, 远小于 shell 0.42-0.48.
 const PARTICLE_COUNT = 50;     // v70: bumped 30 → 50 (denser orbit)
 const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presence
 
@@ -101,8 +102,9 @@ const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presen
 // Coordinate convention: +Y = up, +Z = front (icon faces +Z).
 function buildDangerGeom() {
   // Translucent triangular prism, apex up, axis along Z (faces front+back).
-  // v84: D 0.10 → 0.20 (加厚 100%) — 自旋时三棱柱侧面更厚实
-  const R = 0.26, D = 0.20;
+  // v88: D 0.20 → 0.06. 跟 scenic 同样思路, icon 内部压扁让"扁面"成为
+  // 确定特征. 外面 shell 球壳负责 3D 体积感.
+  const R = 0.26, D = 0.06;
   // Front triangle (z = +D), back triangle (z = -D)
   const a = -Math.PI / 2;       // start at top
   const v0: [number, number, number] = [Math.cos(a) * R, Math.sin(a) * R + R * 0.1,  D];
@@ -124,8 +126,11 @@ function buildDangerGeom() {
 
 function buildScenicGeom() {
   // True 3D 5-pointed star: front/back centres + 10 perimeter alternating outer/inner
-  // v84: depth 0.07 → 0.16 (加厚 130%) — 让侧面厚度可见，自旋时不像贴纸
-  const outerR = 0.24, innerR = 0.10, depth = 0.16;
+  // v88: depth 0.16 → 0.04. 用户反馈"5 角星从某些角度看变成两个三角形" —
+  // 这是 5 角星 perimeter 顶点都在 z=0 平面的几何特征 (前后中心连接但侧面
+  // 没棱柱壁). 压扁到 0.04 让 icon 像一个"奖章雕花" — 永远是平的, 不论
+  // 角度. 外面的 shell 球壳负责 3D 体积感, icon 本身像勋章里的 2D 标识.
+  const outerR = 0.24, innerR = 0.10, depth = 0.04;
   const N = 5;
   const verts: [number, number, number][] = [
     [0, 0,  depth],
@@ -645,15 +650,12 @@ function CairnARScene(props: any) {
 
   const cairnNodes = useMemo(() => {
     if (!arkitOrigin) return [];
-    // v87 root cause #1 修: 旗子飘到天花板。
-    // 旧公式: cairnY = ground + 1.5 (假设 user 站着, 旗子在眼睛高度).
-    // 真实场景: user 室内蹲着 plant 在桌面 (ground=-1.47m floor),
-    //   桌面 ≠ ground, 但代码强制 ground+1.5 = 0.03 = 顶到天花板.
-    // 修法: EYE_M 1.5 → 0.5. 旗子悬浮地面 50cm, 跟桌子高度 (~75cm)
-    //   或地面观察 (~30-50cm) 都贴近. 户外 hike 视角下也 OK
-    //   (旗子在膝盖到腰之间, 比眼睛高度自然得多).
-    // FALLBACK_HOLD_HEIGHT_M 不动 (无 plane 检测到时的兜底).
-    const EYE_M = 0.5;
+    // v88 恢复: EYE_M 0.5 → 1.5. v87 改成 0.5 让户外站立 hike 视角下旗子
+    // 太低 (膝盖高度). v86 那次"飘天花板"截图实际是 anomaly (用户蹲下
+    // plant 桌面上, ground 不是地板而是桌面 → +1.5 顶到天花板). 那是个
+    // hit-test 取错 plane 的 corner case, 不是 EYE_M 公式的问题.
+    // 户外 hike (主用例) ground+1.5 = 眼睛高度, 是对的.
+    const EYE_M = 1.5;
     const FALLBACK_HOLD_HEIGHT_M = 1.4;
     const ground = groundYRef.current;
     const cairnY = ground !== null
@@ -872,46 +874,44 @@ function CairnInstance(props: {
         opacity={0.55}
       />
 
-      {/* v84: 3. 多层透明玻璃壳 — Pokemon Go 半透明发光的标准手法。
-          3 层同心球，半径 1.0×/1.05×/1.10× icon 大小，opacity 递减。
-          外层折射感更弱，整体透出 "玻璃罩里有光" 的体积感。
-          PBR shell 材质 (metalness=0 + roughness=0.05) 模拟玻璃。 */}
+      {/* v88: 多层透明玻璃壳放大 — Pokemon Go 半透明发光的标准手法。
+          shell radius 0.28-0.32 → 0.42-0.48, 让 icon (半径 0.13) 在中央
+          有充足空间. 三层同心球 opacity 递减保持玻璃罩体积感.
+          PBR shell 材质 (metalness=0 + roughness=0.05) 模拟玻璃. */}
       <ViroSphere
-        radius={0.28}
+        radius={0.42}
         widthSegmentCount={36}
         heightSegmentCount={28}
         materials={[M('shell')]}
         opacity={0.20}
       />
       <ViroSphere
-        radius={0.30}
+        radius={0.45}
         widthSegmentCount={36}
         heightSegmentCount={28}
         materials={[M('shell')]}
         opacity={0.13}
       />
       <ViroSphere
-        radius={0.32}
+        radius={0.48}
         widthSegmentCount={36}
         heightSegmentCount={28}
         materials={[M('shell')]}
         opacity={0.08}
       />
 
-      {/* v84: 4. 简化 halo — 从 v83 的 3 层 ViroQuad + 多层混乱光晕
-          减为 1 层柔光 + outer wisp。设计上让 icon 主导视觉，halo 当配角。 */}
+      {/* v88: halo 1.30 → 1.80 配合 shell 放大 */}
       <ViroQuad
-        height={1.30}
-        width={1.30}
+        height={1.80}
+        width={1.80}
         materials={[M('haloMid')]}
         opacity={0.45}
         transformBehaviors={['billboard']}
       />
 
-      {/* v84: 5. Outer wisp — 最外层雾感光晕，球面 Lambert，
-          受光面亮一点 (帮助强化 3D 立体感)。 */}
+      {/* v88: outer wisp 0.55 → 0.75 同步放大 */}
       <ViroSphere
-        radius={0.55}
+        radius={0.75}
         widthSegmentCount={28}
         heightSegmentCount={20}
         materials={[M('wisp')]}
