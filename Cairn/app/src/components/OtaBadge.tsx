@@ -31,7 +31,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 //
 // Bump rule: increment by 1 immediately before running `eas update`.
 // Never reuse a number, never decrement.
-export const OTA_VERSION = 82;
+export const OTA_VERSION = 83;
 
 type OtaState =
   | 'idle'          // checked, no update — "Up to date"
@@ -119,10 +119,11 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
     let cancelled = false;
     (async () => {
       // Hard cap on the check phase — on flaky networks
-      // checkForUpdateAsync can hang for tens of seconds. Treat anything
-      // longer than 15s as "no update" so the user doesn't see a stuck
-      // Checking pill (or, in idleHidden mode, an indefinitely-shifted
-      // layout if the upstream layout depends on this badge's presence).
+      // checkForUpdateAsync can hang for tens of seconds. v82.1: bumped
+      // 15s → 30s + auto-retry once before surfacing error. User feedback:
+      // 15s was too tight for EAS production endpoint cold-starts; users
+      // were forced to tap "retry" themselves when patience would have
+      // worked. Now: try, if fail try once more, only THEN show error.
       const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
         new Promise((resolve, reject) => {
           const t = setTimeout(() => reject(new Error('ota-timeout')), ms);
@@ -143,17 +144,37 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
           await Updates.reloadAsync();
           return;
         }
-        // 15s for the check phase — production OTA endpoint can be slow
-        // on weaker connections; shorter timeouts caused stuck "Up to date".
-        const result = await withTimeout(Updates.checkForUpdateAsync(), 15000);
+        // v82.1: check phase with auto-retry. Try 30s, on timeout try
+        // once more (another 30s). Only after both attempts fail do we
+        // surface 'error'. Total worst-case wait: 60s — but the user
+        // sees "Checking" the whole time, never a misleading retry
+        // prompt for what's actually just a slow network.
+        const checkOnce = () => withTimeout(Updates.checkForUpdateAsync(), 30000);
+        let result;
+        try {
+          result = await checkOnce();
+        } catch {
+          if (cancelled) return;
+          // Stay in 'checking' — user shouldn't see a flash of error
+          // just because the first attempt was slow. Silent retry.
+          result = await checkOnce();
+        }
         if (cancelled) return;
         if (!result.isAvailable) {
           setState('idle');
           return;
         }
         setState('downloading');
-        // 60s timeout for the actual bundle fetch.
-        await withTimeout(Updates.fetchUpdateAsync(), 60000);
+        // Download phase — also retry once if it fails. 60s per attempt
+        // is generous; bundles are typically <2 MB so 60s only triggers
+        // on truly broken connections. Retry catches transient hiccups.
+        const fetchOnce = () => withTimeout(Updates.fetchUpdateAsync(), 60000);
+        try {
+          await fetchOnce();
+        } catch {
+          if (cancelled) return;
+          await fetchOnce();
+        }
         if (cancelled) return;
         // Auto-apply: instead of asking the user to tap "Restart", reload
         // immediately. Users complained that the manual "Done · tap to
@@ -165,9 +186,8 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
         // otherwise the reload feels like a random crash.
         setTimeout(() => { Updates.reloadAsync().catch(() => {}); }, 600);
       } catch {
-        // Network / OTA endpoint failed — surface this honestly so
-        // users don't see a fake "Up to date" pill when we never
-        // actually verified anything.
+        // Both attempts failed. Surface honest error; user can manually
+        // retry. This branch should be rare now that we auto-retry.
         if (!cancelled) setState('error');
       }
     })();

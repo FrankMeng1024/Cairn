@@ -476,16 +476,17 @@ function CairnARScene(props: any) {
           blendMode: 'Add',
           bloomThreshold: 0.30,
         };
-        // v81 fix #3 (halo 单层不够): three halo materials with different
-        // colour tints + sizes, matching reference's 3-layer halo sprite
-        // stack: inner/mid/outer colours, additive blend, no depth write.
-        // bloomThreshold raised so daylight doesn't over-bloom while dim
-        // scenes still see soft glow.
+        // v83 fix (halo 在白墙背景看不见): v81/v82 用 Add blend，物理上
+        // Add(白色背景, halo色) ≈ 白色 → halo 完全融入白墙不可见。截图证据:
+        // v82 三张图都是白墙背景，halo 完全看不到。
+        // reference HTML 用纯黑 3D 背景所以 Add 显眼；AR 现实场景背景是任意
+        // 颜色，必须用 Alpha (saturate) blend 才能可靠出现。
+        // 失去"亮 + 亮叠加更亮"的 HDR 感，但收获在任何背景下可见的稳定光晕。
         matDict[`haloInner${t}`] = {
           lightingModel: 'Constant',
           diffuseColor: c.inner,
           diffuseTexture: haloPng,
-          blendMode: 'Add',
+          blendMode: 'Alpha',
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
           bloomThreshold: 0.65,
@@ -494,7 +495,7 @@ function CairnARScene(props: any) {
           lightingModel: 'Constant',
           diffuseColor: c.mid,
           diffuseTexture: haloPng,
-          blendMode: 'Add',
+          blendMode: 'Alpha',
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
           bloomThreshold: 0.75,
@@ -503,7 +504,7 @@ function CairnARScene(props: any) {
           lightingModel: 'Constant',
           diffuseColor: c.outer,
           diffuseTexture: haloPng,
-          blendMode: 'Add',
+          blendMode: 'Alpha',
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
           bloomThreshold: 0.85,
@@ -530,14 +531,15 @@ function CairnARScene(props: any) {
           properties: { rotateY: '+=360' },
           duration: 4500,
         },
-        // v82 fix #3 (粒子飞天花板): v81 用 `+=0.12` + loop:true 永久累加，
-        // 50 个粒子每 1.1s 加 0.12m，几分钟就漂到 1-3m 高 → 撞天花板。
-        // 截图证据: 0528_1.jpg 粒子飞到天花板呈喷泉散开，离 icon 极远。
-        // reference HTML 用 sin(t*0.9 + i)*0.10 ±0.10m 摆动，不累加。
-        // Viro 不支持 sin，但 ViroAnimations 支持数组形式 = 串联动画
-        // (见 ViroAnimations.ts ViroRegisterableAnimation[])。
-        // 用 [up, down] 2 段串联 → loop 时正负相消，粒子永远在初始 Y ±bob
-        // 范围内。3 个 phase 错相位 (不同 duration) 让环呼吸不齐。
+        // v83 (粒子飞天/飞地终极修复): v81 `+=0.10 loop` 永久累加飞天花板;
+        // v82 改成数组 [up, down] 串联想抵消累加，但 ViroAnimations 数组形式
+        // 在 loop 时语义不确定 (类型定义有，runtime 行为可能 = 平行执行 or
+        // 第二段被 loop reset 跳过)。截图证据: v82 粒子飞到桌面/地板，比
+        // v81 飞天花板更糟。
+        // 解法: **彻底删除 Y bob 动画**，粒子只跟父 ViroNode 的 ring 旋转。
+        // 失去 reference HTML 的 sin*0.10 脉动呼吸感，但保证粒子永远贴在
+        // icon 周围 ±0.40m 的初始 baseY 范围内不漂走。 bob 留 stub 防止
+        // 引用 broken 但不挂到任何 node 上。
         particleBobA: [
           { properties: { positionY: '+=0.10' }, duration: 1100, easing: 'EaseInEaseOut' },
           { properties: { positionY: '-=0.10' }, duration: 1100, easing: 'EaseInEaseOut' },
@@ -794,7 +796,7 @@ function CairnInstance(props: {
         height={0.55}
         width={0.55}
         materials={[M('haloInner')]}
-        opacity={0.40}
+        opacity={0.65}
         transformBehaviors={['billboard']}
       />
       <ViroQuad
@@ -822,31 +824,25 @@ function CairnInstance(props: {
         opacity={0.08}
       />
 
-      {/* 6. v81: Particle ring — 50 small spheres orbiting + each particle
-          has a Y-bob animation with one of 3 phase variants. Reference
-          HTML uses a free-form sin(t*0.9 + i)*0.10 per-frame update;
-          Viro's animation system can't drive arbitrary per-frame positions,
-          so we approximate with 3 staggered bob animations. The visual
-          effect is a soft pulsing ring rather than a rigid bracelet. */}
+      {/* 6. v83: Particle ring — 50 small spheres on a static ring. Only
+          the parent ViroNode rotates (4.5s/360°). Per-particle Y bob
+          REMOVED in v83 — both v81 (`+=` loop累加) and v82 (`[up, down]`
+          数组串联) caused particles to drift away from the icon. Without
+          a Three.js-style per-frame sin update Viro can't faithfully
+          replicate reference HTML's pulsing ring; we trade pulse for
+          stability. Particles remain visible & orbital, never漂走. */}
       <ViroNode animation={{ name: 'particleRing', run: tracking, loop: true }}>
-        {PARTICLE_POSITIONS.map((p, i) => {
-          const bobName = i % 3 === 0 ? 'particleBobA' : (i % 3 === 1 ? 'particleBobB' : 'particleBobC');
-          return (
-            <ViroNode
-              key={i}
-              position={[p.x, p.y, p.z]}
-              animation={{ name: bobName, run: tracking, loop: true }}
-            >
-              <ViroSphere
-                radius={PARTICLE_RADIUS}
-                widthSegmentCount={6}
-                heightSegmentCount={4}
-                materials={[M('particle')]}
-                opacity={0.85}
-              />
-            </ViroNode>
-          );
-        })}
+        {PARTICLE_POSITIONS.map((p, i) => (
+          <ViroSphere
+            key={i}
+            position={[p.x, p.y, p.z]}
+            radius={PARTICLE_RADIUS}
+            widthSegmentCount={6}
+            heightSegmentCount={4}
+            materials={[M('particle')]}
+            opacity={0.85}
+          />
+        ))}
       </ViroNode>
 
       {/* 6. v70: optional vertical beam (skylight) — toggled by tapping the
@@ -957,6 +953,14 @@ export function ViroAROverlay({
         autofocus
         worldAlignment="GravityAndHeading"
         provider="none"
+        // v83: 启用 HDR + bloom post-processing pipeline。这是 bloomThreshold
+        // 真正生效的前提！v81/v82 我设了 bloomThreshold 但完全没启用 bloom
+        // pipeline → 等于没设。截图证据: v82 icon 还是纯实色无光晕。
+        // 现在 hdrEnabled + bloomEnabled 一起开 → diffuseColor.luminance >
+        // bloomThreshold 的像素会真的产生光晕扩散。pbr 不需要 (我们没用 PBR
+        // 材质)，shadows/multisampling 也省 (AR 性能敏感)。
+        hdrEnabled
+        bloomEnabled
         initialScene={{ scene: CairnARScene as any }}
         viroAppProps={{
           arkitOrigin: arkitOriginRef.current,
