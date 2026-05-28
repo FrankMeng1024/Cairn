@@ -595,15 +595,22 @@ function CairnARScene(props: any) {
             readsFromDepthBuffer: true,
           };
         }
-        // v97: cairn (Sphere) test type — 用最简 Constant material, 不用
-        // PBR/cubemap. 排除 PBR + reflectiveTexture + Alpha + cullMode='None'
-        // 组合在某些设备/Viro 版本上渲染失败的可能性. 强制可见.
+        // v99: cairn (Sphere) test type — 改为真 "玻璃罐" 视觉.
+        // 用户反馈 v97/v98 球 opacity 0.85 太实心, "套在 icon 上会看不清里面图标".
+        // 改法: PBR + metalness=0 + roughness=0.10 + cubemap → 球面真高光反射;
+        //       用 outer (深色) 作 diffuseColor, 跟 icon mid (亮色) 形成对比;
+        //       blendMode='Alpha' + opacity 0.25 → 透明可视内部;
+        //       cullMode='None' 双面渲染防剔除.
         if (t === 'cairn') {
           matDict[`icon${t}`] = {
-            lightingModel: 'Constant',
-            diffuseColor: c.mid,
+            lightingModel: 'PBR',
+            diffuseColor: c.outer,
+            metalness: 0.0,
+            roughness: 0.10,
+            reflectiveTexture: cubeMap,
             blendMode: 'Alpha',
-            writesToDepthBuffer: true,
+            cullMode: 'None',
+            writesToDepthBuffer: false,
             readsFromDepthBuffer: true,
             bloomThreshold: 0.40,
           };
@@ -637,20 +644,16 @@ function CairnARScene(props: any) {
           readsFromDepthBuffer: true,
           bloomThreshold: 0.50,
         };
+        // v99: shellAlpha 改用 cairn test sphere 同款 "透明玻璃罐" 配方.
+        // 用户反馈 v98 cairn type 球终于可见, 但说 "套在 icon 上会看不清里面图标".
+        // 把 cairn 的成功配方应用到 4 个真 type:
+        //   PBR + metalness 0 + roughness 0.10 + cubemap → 球面真高光反射
+        //   diffuseColor: c.outer (深色) → 跟 icon mid (亮色) 形成对比
+        //   blendMode 'Alpha' + cullMode 'None' → 双面渲染防失败
+        // 配合 ViroSphere opacity 0.25 (从 0.30) 让球更透明 icon 能看清.
         matDict[`shellAlpha${t}`] = {
-          // v93: 回到 v85 配方 — PBR + cubemap + cullMode='None' 双面渲染.
-          // 用户反馈 "之前几个版本不是出现过外圈么? 只是透明度问题".
-          // 那个就是 v85 PBR shell + reflectiveTexture, 用户当时说 "看到
-          // 立体感了". v91-v92 我各种试错都没回到那个配方.
-          // 关键改动:
-          //   - lightingModel: 'PBR' (有真受光高光)
-          //   - metalness 0 + roughness 0.10 (玻璃质感)
-          //   - reflectiveTexture: cubeMap (反射环境产生球面变化)
-          //   - cullMode: 'None' (双面渲染, 球永远可见不被剔除)
-          //   - opacity 0.30 (清晰可见但通透)
-          //   - bloomThreshold 1.10 关 bloom (避免 bloom 把球边缘吞了)
           lightingModel: 'PBR',
-          diffuseColor: c.mid,
+          diffuseColor: c.outer,
           metalness: 0.0,
           roughness: 0.10,
           reflectiveTexture: cubeMap,
@@ -1033,19 +1036,17 @@ function CairnInstance(props: {
       </ViroNode>
       )}
 
-      {/* v97: cairn (Sphere) test type — 强制可见的实心 PBR 玻璃球.
-          v94/v95/v96 cairn type 只渲染 shell + halo + particles 完全空,
-          可能因为 shell PBR + cubemap + Alpha + cullMode='None' 组合
-          在 Viro 上对某些 marker 渲染失败. 用最稳妥单一 ViroSphere 直接
-          画一个实心球: PBR + metalness=0 + roughness=0.05 + cubemap
-          (玻璃质感) + opacity=0.85 (清晰可见). 不依赖 shell 层. */}
+      {/* v99: cairn 透明玻璃罐 — opacity 0.85 → 0.25, 让球能透视内部.
+          给 4 个真 type 的 cairn 都套这个透明玻璃罐效果, 而不只是 cairn
+          test type. 这样 danger/scenic/supply/junction 都被一个透明球壳
+          包裹, 像 Pokestop 透明圆球里的小精灵. */}
       {isTestSphere && (
         <ViroSphere
           radius={0.20}
           widthSegmentCount={36}
           heightSegmentCount={28}
           materials={[M('icon')]}
-          opacity={0.85}
+          opacity={0.25}
         />
       )}
 
@@ -1070,7 +1071,7 @@ function CairnInstance(props: {
         widthSegmentCount={36}
         heightSegmentCount={28}
         materials={[M('shellAlpha')]}
-        opacity={0.30}
+        opacity={0.25}
       />
 
       {/* v89: halo 恢复 3 层 — 严格对齐 reference HTML line 506-508:
