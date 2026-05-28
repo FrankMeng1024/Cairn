@@ -31,6 +31,7 @@ import {
   ViroDirectionalLight,
   ViroMaterials,
   ViroAnimations,
+  ViroParticleEmitter,
   ViroTrackingStateConstants,
   type ViroTrackingState,
   type ViroTrackingReason,
@@ -104,27 +105,76 @@ const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presen
 //
 // Coordinate convention: +Y = up, +Z = front (icon faces +Z).
 function buildDangerGeom() {
-  // Translucent triangular prism, apex up, axis along Z (faces front+back).
-  // v88: D 0.20 → 0.06. 跟 scenic 同样思路, icon 内部压扁让"扁面"成为
-  // 确定特征. 外面 shell 球壳负责 3D 体积感.
-  const R = 0.26, D = 0.06;
-  // Front triangle (z = +D), back triangle (z = -D)
-  const a = -Math.PI / 2;       // start at top
-  const v0: [number, number, number] = [Math.cos(a) * R, Math.sin(a) * R + R * 0.1,  D];
-  const v1: [number, number, number] = [Math.cos(a + 2.094) * R, Math.sin(a + 2.094) * R, D];
-  const v2: [number, number, number] = [Math.cos(a + 4.189) * R, Math.sin(a + 4.189) * R, D];
-  const v3: [number, number, number] = [v0[0], v0[1], -D];
-  const v4: [number, number, number] = [v1[0], v1[1], -D];
-  const v5: [number, number, number] = [v2[0], v2[1], -D];
-  return {
-    vertices: [v0, v1, v2, v3, v4, v5],
-    triangleIndices: [
-      [0, 2, 1], [3, 4, 5],         // front + back
-      [0, 1, 4], [0, 4, 3],         // left side
-      [1, 2, 5], [1, 5, 4],         // bottom side
-      [2, 0, 3], [2, 3, 5],         // right side
-    ] as [number, number, number][],
-  };
+  // v92: 改为 lucide TriangleAlert 真三角形 + 感叹号几何 (跟系统底部
+  // "Danger" 按钮 icon 一致). 用户反馈 v91 三棱柱 prism 跟系统图标完全
+  // 不一致 (系统是三角形+!).
+  // SVG 原图 (viewBox 24×24): 顶点 (12,4) 底左 (4,21) 底右 (21.73,21).
+  // 我们映射到本地坐标: x [-0.24, 0.24], y [-0.20, 0.26], z 加薄厚度 0.04
+  // 让正面看是三角, 侧面有点厚度 (像奖章雕花).
+  // 感叹号: 用一根细圆柱 (bar) + 一颗小球 (dot), 都比三角形稍微突出 z+0.05
+  // 让感叹号"嵌"在三角形上而不是埋进去.
+  const verts: [number, number, number][] = [];
+  const idx: [number, number, number][] = [];
+  const D = 0.04;  // 三角形前后半厚度
+
+  // ── 三角形外框 (实心, 前后两面 + 三个侧壁) ──
+  // 顶点 0..2 = 前面三角 (z=+D), 3..5 = 后面三角 (z=-D)
+  // SVG (12,4)/(4,21)/(21.73,21) 映射到 (0, 0.26)/(-0.24, -0.20)/(0.24, -0.20)
+  verts.push([0, 0.26, D]);          // 0 前顶
+  verts.push([-0.24, -0.20, D]);     // 1 前左下
+  verts.push([0.24, -0.20, D]);      // 2 前右下
+  verts.push([0, 0.26, -D]);         // 3 后顶
+  verts.push([-0.24, -0.20, -D]);    // 4 后左下
+  verts.push([0.24, -0.20, -D]);     // 5 后右下
+  // 前面 (CCW 看从 +z) + 后面
+  idx.push([0, 1, 2]);
+  idx.push([3, 5, 4]);
+  // 三个侧壁 (前后顶点连接)
+  idx.push([0, 2, 5]); idx.push([0, 5, 3]);  // 右侧
+  idx.push([2, 1, 4]); idx.push([2, 4, 5]);  // 底
+  idx.push([1, 0, 3]); idx.push([1, 3, 4]);  // 左侧
+
+  // ── 感叹号竖 (bar) ──
+  // SVG M12 9 v4 (中心 x=0, y 从 9 到 13, viewBox 4-21 映射 -> -0.10 ~ -0.02)
+  // bar 宽 0.025, 高 0.10, 中心 (0, -0.06, D+0.02), 突出三角形面 0.02 让 emboss
+  const barW = 0.025, barH = 0.10, barCY = -0.04, barZ = D + 0.02;
+  const barT = 0.012;  // bar 厚度 (z 方向)
+  const bbase = verts.length;
+  // box 8 顶点
+  verts.push([-barW, barCY - barH/2, barZ - barT]);  // 0
+  verts.push([ barW, barCY - barH/2, barZ - barT]);  // 1
+  verts.push([ barW, barCY - barH/2, barZ + barT]);  // 2
+  verts.push([-barW, barCY - barH/2, barZ + barT]);  // 3
+  verts.push([-barW, barCY + barH/2, barZ - barT]);  // 4
+  verts.push([ barW, barCY + barH/2, barZ - barT]);  // 5
+  verts.push([ barW, barCY + barH/2, barZ + barT]);  // 6
+  verts.push([-barW, barCY + barH/2, barZ + barT]);  // 7
+  // 6 面三角化
+  idx.push([bbase+0, bbase+1, bbase+2], [bbase+0, bbase+2, bbase+3]);  // 底
+  idx.push([bbase+4, bbase+6, bbase+5], [bbase+4, bbase+7, bbase+6]);  // 顶
+  idx.push([bbase+0, bbase+5, bbase+1], [bbase+0, bbase+4, bbase+5]);  // 后
+  idx.push([bbase+2, bbase+6, bbase+3], [bbase+3, bbase+6, bbase+7]);  // 前
+  idx.push([bbase+1, bbase+5, bbase+6], [bbase+1, bbase+6, bbase+2]);  // 右
+  idx.push([bbase+0, bbase+3, bbase+7], [bbase+0, bbase+7, bbase+4]);  // 左
+
+  // ── 感叹号圆点 (dot) ──
+  // SVG M12 17 (中心 x=0, y=17 viewBox 4-21 映射 -> -0.13)
+  // 用一个 8-面体 (octahedron) 简化代替球, 12 顶点不到, 渲染廉价
+  const dotR = 0.022, dotY = -0.16, dotZ = D + 0.025;
+  const dbase = verts.length;
+  verts.push([0, dotY + dotR, dotZ]);          // 0 上
+  verts.push([0, dotY - dotR, dotZ]);          // 1 下
+  verts.push([dotR, dotY, dotZ]);              // 2 右
+  verts.push([-dotR, dotY, dotZ]);             // 3 左
+  verts.push([0, dotY, dotZ + dotR]);          // 4 前
+  verts.push([0, dotY, dotZ - dotR]);          // 5 后
+  // 8 三角面
+  idx.push([dbase+0, dbase+4, dbase+2], [dbase+0, dbase+2, dbase+5]);
+  idx.push([dbase+0, dbase+5, dbase+3], [dbase+0, dbase+3, dbase+4]);
+  idx.push([dbase+1, dbase+2, dbase+4], [dbase+1, dbase+5, dbase+2]);
+  idx.push([dbase+1, dbase+3, dbase+5], [dbase+1, dbase+4, dbase+3]);
+
+  return { vertices: verts, triangleIndices: idx };
 }
 
 function buildScenicGeom() {
@@ -581,20 +631,17 @@ function CairnARScene(props: any) {
           bloomThreshold: 0.50,
         };
         matDict[`shellAlpha${t}`] = {
-          // v91: 从 Constant 升 PBR — 让球壳真有 3D 受光感 (用户反馈
-          // "除了水滴都会显得很 2D 平面, 需要那个 3D 圆球包裹着").
-          // metalness=0.0 + roughness=0.10 + cubemap → 玻璃球反射环境, 球面
-          // 有真高光, 一眼能看出是 3D 球不是 flat 贴纸.
-          lightingModel: 'PBR',
+          // v92: 退回 Constant lightingModel. v91 的 PBR + cubemap 让球壳
+          // 反射环境跟背景颜色融合 = 球消失. Constant + Alpha + 高 opacity
+          // 是 AR 上"看得到 3D 球壳"最稳定的组合.
+          // opacity 0.25→0.35 进一步加强可见度.
+          lightingModel: 'Constant',
           diffuseColor: c.mid,
-          metalness: 0.0,
-          roughness: 0.10,
-          reflectiveTexture: cubeMap,
           blendMode: 'Alpha',
           cullMode: 'Front',
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
-          bloomThreshold: 1.10,  // > 1.0 = 关 bloom (这层只勾轮廓不发光)
+          bloomThreshold: 1.10,  // 关 bloom (这层只勾轮廓)
         };
         // Backwards-compat alias.
         matDict[`shell${t}`] = matDict[`shellAdd${t}`];
@@ -973,7 +1020,7 @@ function CairnInstance(props: {
         widthSegmentCount={36}
         heightSegmentCount={28}
         materials={[M('shellAlpha')]}
-        opacity={0.25}
+        opacity={0.35}
       />
 
       {/* v89: halo 恢复 3 层 — 严格对齐 reference HTML line 506-508:
@@ -1010,19 +1057,63 @@ function CairnInstance(props: {
           - 半径 PARTICLE_RADIUS=0.018 → 0.022 (略大更圆)
           - bloom 阈值 0.15 让每颗粒子都触发 bloom 扩散
           - 父 ViroNode 慢转 (4.5s → 6s) */}
-      <ViroNode animation={{ name: 'particleRing', run: tracking, loop: true }}>
-        {PARTICLE_POSITIONS_V84.map((p, i) => (
-          <ViroSphere
-            key={i}
-            position={[p.x, p.y, p.z]}
-            radius={0.010}
-            widthSegmentCount={10}
-            heightSegmentCount={8}
-            materials={[M('particle')]}
-            opacity={0.7}
-          />
-        ))}
-      </ViroNode>
+      {/* v92: 真粒子! 用 ViroParticleEmitter 替换 v89-v91 的 ViroSphere
+          数组. 用户反馈 "光粒效果太差 周围旋转的光粒太大了 很不真实".
+          根因: ViroSphere 实心 mesh 在 1m 距离 0.010 半径 = 屏幕 5px 实心圆,
+          不是 "光" 是 "球". Pokemon Go 等 AR 应用全用 GPU sprite billboard
+          + 半透明 radial gradient PNG + opacity/scale 渐变 + velocity 飘动.
+          ViroParticleEmitter 是 Viro 真粒子系统, 完整支持这些.
+
+          使用现有 halo_radial.png 当 sprite (中心亮边缘 alpha 渐变).
+          spawnVolume sphere radius 0.30 让粒子在 icon 周围球形空间生成.
+          velocity 微小 ±0.05 让粒子缓慢飘动. lifetime 2-4s + opacity 渐变
+          0.8→0 + scale 渐变 1.0→0.3 形成 "出现-飘动-淡出" 循环. */}
+      <ViroParticleEmitter
+        position={[0, 0, 0]}
+        duration={2000}
+        delay={0}
+        run={tracking}
+        loop
+        fixedToEmitter
+        image={{
+          source: require('../../assets/ar/halo_radial.png'),
+          height: 0.06,
+          width: 0.06,
+          bloomThreshold: 0.10,
+        }}
+        spawnBehavior={{
+          particleLifetime: [2000, 3500],
+          maxParticles: 40,
+          emissionRatePerSecond: [12, 18],
+          spawnVolume: {
+            shape: 'sphere',
+            params: [0.30],
+            spawnOnSurface: false,
+          },
+        }}
+        particleAppearance={{
+          opacity: {
+            initialRange: [0.6, 0.9],
+            factor: 'time',
+            interpolation: [
+              { interval: [0, 500], endValue: 0.9 },
+              { interval: [500, 3000], endValue: 0.0 },
+            ],
+          },
+          scale: {
+            initialRange: [[0.6, 0.6, 0.6], [1.2, 1.2, 1.2]],
+            factor: 'time',
+            interpolation: [
+              { interval: [0, 1000], endValue: [1.0, 1.0, 1.0] },
+              { interval: [1000, 3000], endValue: [0.2, 0.2, 0.2] },
+            ],
+          },
+        }}
+        particlePhysics={{
+          velocity: { initialRange: [[-0.05, -0.02, -0.05], [0.05, 0.08, 0.05]] },
+          acceleration: { initialRange: [[0, 0.02, 0], [0, 0.04, 0]] },
+        }}
+      />
 
       {/* 6. v70: optional vertical beam (skylight) — toggled by tapping the
           marker panel row. Helps user spot a far cairn. Box stretched 30m
