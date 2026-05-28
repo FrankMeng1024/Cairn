@@ -107,63 +107,46 @@ const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presen
 //
 // Coordinate convention: +Y = up, +Z = front (icon faces +Z).
 function buildDangerGeom() {
-  // v94: 重写为 "扁三角 + 嵌入感叹号" 而不是 v93 的 "三角板 + 突出浮雕".
-  // 用户反馈 v93 感叹号是 "单侧突出" — 问题是 v93 把 bar/dot 放在 z=+0.025
-  // 突出三角形正面 0.025m, 当 iconSpin 转到侧面时看到独立长条/球.
-  // v94 完全压扁: 整个 icon 厚度 D=0.012, bar/dot 跟三角形同一 z 平面
-  // (z=+D), 但用 inner 亮色而不是 mid 暗色, 形成 "颜色嵌入" 效果而不是
-  // "几何浮雕". 配合 v94 的 billboard (不 spin), 永远只看到正面.
-  // 顶尖向上正三角形 (用户反馈 "下面小上面大应该" = 顶尖朝上 = 我们要的).
+  // v97: 倒三角形 — 用户明确要 "三角形2个角在上 尖角在下"
+  // (跟标准国际警告标志反向但用户决定).
+  // 顶点 (0, -0.20) 朝下尖角, 底边 (±0.26, +0.27) 上方 2 个角.
+  // 感叹号: bar 在下 (y 偏 -), dot 在上 (y 偏 +) — 跟三角倒立对应.
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-  const D = 0.012;  // icon 总厚度极薄, 减少侧面问题
-  const TOP_Y = 0.27;
-  const BOT_Y = -0.20;
+  const D = 0.012;
+  const TIP_Y = -0.20;     // 顶尖朝下 (v97 翻转)
+  const BASE_Y = 0.27;     // 底边在上
   const HALF_W = 0.26;
 
-  // ── 主三角板 (用 mid 颜色, materials index 0) ──
-  // 8 顶点 = 前后两个三角形, 顶尖在 +Y
-  verts.push([0,        TOP_Y,  D]);   // 0 前顶
-  verts.push([-HALF_W,  BOT_Y,  D]);   // 1 前左下
-  verts.push([HALF_W,   BOT_Y,  D]);   // 2 前右下
-  verts.push([0,        TOP_Y, -D]);   // 3 后顶
-  verts.push([-HALF_W,  BOT_Y, -D]);   // 4 后左下
-  verts.push([HALF_W,   BOT_Y, -D]);   // 5 后右下
-  // 前面 (CCW from +Z = front)
+  // 主三角板 (倒立: 1 个尖角下, 2 个角上)
+  verts.push([0,        TIP_Y,   D]);   // 0 前下尖
+  verts.push([-HALF_W,  BASE_Y,  D]);   // 1 前左上
+  verts.push([HALF_W,   BASE_Y,  D]);   // 2 前右上
+  verts.push([0,        TIP_Y,  -D]);   // 3 后下尖
+  verts.push([-HALF_W,  BASE_Y, -D]);   // 4 后左上
+  verts.push([HALF_W,   BASE_Y, -D]);   // 5 后右上
+  // 前面 (CCW from +Z): 0 (下尖) → 1 (左上) → 2 (右上)
+  // 翻转后 CCW: 0 → 2 → 1 仍然 CCW 朝 +Z
   idx.push([0, 2, 1]);
-  // 后面 (CCW from -Z = back)
   idx.push([3, 4, 5]);
   // 三个侧壁
   idx.push([0, 1, 4]); idx.push([0, 4, 3]);
   idx.push([1, 2, 5]); idx.push([1, 5, 4]);
   idx.push([2, 0, 3]); idx.push([2, 3, 5]);
 
-  // ── 感叹号 bar (放在三角面前 z=+D + 0.001 epsilon 避免 z-fight) ──
-  // 占同一 z 平面, 颜色由 material 决定 (但 ViroGeometry 单 material).
-  // 简化: bar 也用 mid 颜色, 但用更高 emissive (后续 ViroQuad 加亮)
-  // 或: bar/dot 保留稍微 inset z=+D-0.002 让它显得像 "嵌入" 而不是浮雕.
-  // 这里采用方案 B: bar/dot 略低于三角板正面 (z=+D-0.002), 看上去像
-  // 雕刻凹下去的感叹号.
+  // 感叹号位置随三角倒立翻转:
+  // 倒三角内: y > 0 上方宽阔 → dot 放上; y < 0 下方狭窄 → bar 放中下
   const eps = 0.002;
-  const barW = 0.030, barH = 0.10, barCY = 0.029;
-  // bar 放在 z=+D 三角形正面 (跟正面同一平面, ~ z=+D)
-  // 简化: 4 顶点矩形 quad, 用 mid 颜色 (跟三角同色, 只用尺寸+位置区分)
-  // 实际上 ViroGeometry 一个 material, 想做颜色对比只能多 mesh. 这里
-  // 不再用浮雕, 直接接受 "感叹号位置标识但不强调颜色" 的折衷.
+  const barW = 0.030, barH = 0.10, barCY = -0.029;  // bar 在下
   const bbase = verts.length;
-  // 跟三角面同色, 但稍微突出 z=+D + eps 让 bar 实际能盖住三角面
   const barZ = D + eps;
-  verts.push([-barW, barCY - barH/2, barZ]);  // 0
-  verts.push([ barW, barCY - barH/2, barZ]);  // 1
-  verts.push([ barW, barCY + barH/2, barZ]);  // 2
-  verts.push([-barW, barCY + barH/2, barZ]);  // 3
-  // 前面 (CCW from +Z)
+  verts.push([-barW, barCY - barH/2, barZ]);
+  verts.push([ barW, barCY - barH/2, barZ]);
+  verts.push([ barW, barCY + barH/2, barZ]);
+  verts.push([-barW, barCY + barH/2, barZ]);
   idx.push([bbase+0, bbase+1, bbase+2], [bbase+0, bbase+2, bbase+3]);
-  // 后面 (面朝 +Z 的反面 quad, CCW from -Z)
-  // 不需要后面 — bar 比三角形薄, 后面用三角形遮挡
 
-  // ── 感叹号 dot — 简单 quad 矩形 ──
-  const dotSize = 0.038, dotY = -0.086;
+  const dotSize = 0.038, dotY = 0.086;  // dot 在上
   const dotZ = D + eps;
   const dbase = verts.length;
   verts.push([-dotSize/2, dotY - dotSize/2, dotZ]);
@@ -612,6 +595,19 @@ function CairnARScene(props: any) {
             readsFromDepthBuffer: true,
           };
         }
+        // v97: cairn (Sphere) test type — 用最简 Constant material, 不用
+        // PBR/cubemap. 排除 PBR + reflectiveTexture + Alpha + cullMode='None'
+        // 组合在某些设备/Viro 版本上渲染失败的可能性. 强制可见.
+        if (t === 'cairn') {
+          matDict[`icon${t}`] = {
+            lightingModel: 'Constant',
+            diffuseColor: c.mid,
+            blendMode: 'Alpha',
+            writesToDepthBuffer: true,
+            readsFromDepthBuffer: true,
+            bloomThreshold: 0.40,
+          };
+        }
         // v84: inner core — PBR + 高 emissive (用 metalness=0 + roughness=1 +
         // bloomThreshold=0.20 让它一直处于 bloom 阈值之上 → 永远发光).
         matDict[`core${t}`] = {
@@ -1029,6 +1025,22 @@ function CairnInstance(props: {
           )}
         </ViroNode>
       </ViroNode>
+      )}
+
+      {/* v97: cairn (Sphere) test type — 强制可见的实心 PBR 玻璃球.
+          v94/v95/v96 cairn type 只渲染 shell + halo + particles 完全空,
+          可能因为 shell PBR + cubemap + Alpha + cullMode='None' 组合
+          在 Viro 上对某些 marker 渲染失败. 用最稳妥单一 ViroSphere 直接
+          画一个实心球: PBR + metalness=0 + roughness=0.05 + cubemap
+          (玻璃质感) + opacity=0.85 (清晰可见). 不依赖 shell 层. */}
+      {isTestSphere && (
+        <ViroSphere
+          radius={0.20}
+          widthSegmentCount={36}
+          heightSegmentCount={28}
+          materials={[M('icon')]}
+          opacity={0.85}
+        />
       )}
 
       {/* v89: 删除 inner core 双层 (radius 0.06 + 0.10).
