@@ -140,11 +140,14 @@ interface ARScreenProps {
 }
 
 // Flag type config
-const FLAG_TYPES: { id: 'danger' | 'scenic' | 'supply' | 'junction'; icon: string; label: string; color: string; bg: string }[] = [
+// v94: 加 'cairn' (Sphere) test type — 在 AR 渲染为纯彩色玻璃球, 没内部 icon,
+// 用来测试球壳本身的可见性 (排除 icon 干扰).
+const FLAG_TYPES: { id: 'danger' | 'scenic' | 'supply' | 'junction' | 'cairn'; icon: string; label: string; color: string; bg: string }[] = [
   { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: '#c53d2e',  bg: '#fde8ea' },
   { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: '#3b82f6',  bg: '#e8f1fb' },
   { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: '#22c55e',  bg: '#e8f8ef' },
   { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: '#f59e0b',  bg: '#fef3e2' },
+  { id: 'cairn',    icon: 'Mountain',      label: 'Sphere',   color: '#b5823d',  bg: '#f5e6d0' },
 ];
 
 /**
