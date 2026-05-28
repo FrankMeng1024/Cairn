@@ -252,15 +252,15 @@ const PARTICLE_POSITIONS: Array<{ x: number; y: number; z: number; bobPhase: num
   return arr;
 })();
 
-// v84: 新粒子环 — 24 颗 (从 50 减半)，半径 0.45-0.60 (拉远 icon)，
-// Y 范围压扁到 ±0.10m (从 ±0.20)，更像"环绕"而不是"散云"。
-const PARTICLE_COUNT_V84 = 24;
+// v86 极致打磨: 粒子环再瘦身 — 从"白色雪花块"变成"细微星尘"。
+// 数量 24 → 16, 半径 0.45-0.60 → 0.65-0.85 (拉远 icon), Y 范围 ±0.10 → ±0.06
+const PARTICLE_COUNT_V84 = 16;
 const PARTICLE_POSITIONS_V84: Array<{ x: number; y: number; z: number }> = (() => {
   const arr: Array<{ x: number; y: number; z: number }> = [];
   for (let i = 0; i < PARTICLE_COUNT_V84; i++) {
     const a = (i / PARTICLE_COUNT_V84) * Math.PI * 2 + (i * 0.137);
-    const r = 0.45 + ((i * 31) % 100) / 100 * 0.15;  // 0.45-0.60
-    const y = (((i * 47) % 100) / 100 - 0.5) * 0.20; // ±0.10 扁平
+    const r = 0.65 + ((i * 31) % 100) / 100 * 0.20;  // 0.65-0.85 远 icon
+    const y = (((i * 47) % 100) / 100 - 0.5) * 0.12; // ±0.06 极扁平
     arr.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r });
   }
   return arr;
@@ -442,21 +442,30 @@ function CairnARScene(props: any) {
       // v81: register the halo PNG once (reused across all types — colour
       // tint is applied per-type via diffuseColor on the per-type material).
       const haloPng = require('../../assets/ar/halo_radial.png');
+      // v86: 用同一张 halo PNG 凑 cube map 6 面 — 给 PBR 材质提供反射环境。
+      // 没有 cubemap 时 metalness 完全没视觉效果 (没东西可反射)。这是
+      // v85 立体感"不多"的根因 — PBR 武器装备不全。
+      // 真正想要的是用户实际环境的全景图，但 OTA 只能塞已有 asset。halo PNG
+      // 中央亮、边缘暗、纯白色 — 6 面同 PNG 凑出"亮中心暗周围"的伪环境，
+      // 配 metalness 0.8 后 icon 会有真实"环境光泽"反射感。
+      const cubeMap = {
+        nx: haloPng, px: haloPng, ny: haloPng,
+        py: haloPng, nz: haloPng, pz: haloPng,
+      };
       for (const t of types) {
         const c = TYPE_COLOR_TRIPLET[t];
-        // v85 hotfix: v84 闪退 — shaderModifier fragment GLSL 编译失败
-        // (Viro 内置 varying 名 _view/_normal/_surface.diffuse_color 是
-        // 我从源码 grep 推断的，可能在当前 react-viro 版本不存在或名字不对)。
-        // 立即回滚 shaderModifier，保留所有 PBR/多光源/多层壳/几何加厚/
-        // backplate/呼吸动画 等声明式改造 (这些都不会闪退).
-        // 失去 reference HTML Fresnel rim light 1:1 复刻，但 PBR 本身的
-        // 受光阴影 + metalness/roughness 反射已经能做出立体感。
+        // v86 极致打磨: PBR 武器装备齐全
+        // - reflectiveTexture: cube map 给 metalness 真东西反射 (核心!)
+        // - metalness 0.6 → 0.85: 更强金属反射, 真"釉面玻璃" 质感
+        // - roughness 0.25 → 0.15: 反射更锐利, 接近水滴/釉面陶瓷
+        // - bloomThreshold 0.30 → 0.25: emissive 更易触发光晕
         matDict[`icon${t}`] = {
           lightingModel: 'PBR',
           diffuseColor: c.mid,
-          metalness: 0.6,
-          roughness: 0.25,
-          bloomThreshold: 0.30,
+          metalness: 0.85,
+          roughness: 0.15,
+          reflectiveTexture: cubeMap,
+          bloomThreshold: 0.25,
           writesToDepthBuffer: true,
           readsFromDepthBuffer: true,
         };
@@ -471,14 +480,14 @@ function CairnARScene(props: any) {
           writesToDepthBuffer: true,
           readsFromDepthBuffer: true,
         };
-        // v84: shell — 半透明玻璃壳。reference HTML 用 MeshPhysicalMaterial
-        // transmission=0.92 + IOR=1.33。Viro 没 transmission，用 PBR
-        // metalness=0.0 + roughness=0.05 + 高反射 + 低 alpha 近似玻璃。
+        // v86: shell 玻璃壳 — 也加 reflectiveTexture，
+        // metalness=0 + roughness=0.05 + reflective = 真透明玻璃质感
         matDict[`shell${t}`] = {
           lightingModel: 'PBR',
           diffuseColor: c.mid,
           metalness: 0.0,
           roughness: 0.05,
+          reflectiveTexture: cubeMap,
           blendMode: 'Alpha',
           cullMode: 'Front',
           writesToDepthBuffer: false,
@@ -608,9 +617,12 @@ function CairnARScene(props: any) {
         // Plant rise: cairn jumps in from -1m below ground to its target Y over 1.4s.
         // We attach this as the orb wrapper's animation when first mounted; once
         // the rise completes, idle animations take over.
+        // v86: 1.4s → 0.6s — 用户反馈"升起后从三角变方形像 loading", 那是
+        // riseIn 慢 + iconSpin 慢转 期间从不同角度看到 3D icon 的不同剪影。
+        // 加速 reveal 让 "形变" 阶段尽快过去, 进入稳定 viewing。
         riseIn: {
           properties: { positionY: '+=1.5', opacity: 1.0 },
-          duration: 1400,
+          duration: 600,
           easing: 'EaseOutQuint',
         },
       });
@@ -801,15 +813,16 @@ function CairnInstance(props: {
         opacity={0}
         animation={{ name: 'riseIn', run: tracking, loop: false }}
       >
-      {/* v84: 0. Backplate — 深色暗背板，billboard 朝相机，把 icon 从
-          复杂背景里隔离。Apple Watch activity ring / Pokestop 同款手法。
-          位于 icon 后方 0.05m，半径 0.45m，同色 outer 暗色版本。 */}
+      {/* v86: Backplate 加大 + opacity 0.55 → 0.85 强化 — v85 截图证据
+          backplate 完全看不到, 可能 0.55 在 alpha blend + bloom 下被吞了。
+          0.85 + 1.10 半径 (从 0.95) 确保 icon 永远从复杂背景里被切出来。
+          Pokestop 在阳光下还看得清的关键。 */}
       <ViroQuad
-        position={[0, 0, -0.05]}
-        height={0.95}
-        width={0.95}
+        position={[0, 0, -0.06]}
+        height={1.10}
+        width={1.10}
         materials={[M('backplate')]}
-        opacity={0.55}
+        opacity={0.85}
         transformBehaviors={['billboard']}
       />
 
@@ -917,11 +930,11 @@ function CairnInstance(props: {
           <ViroSphere
             key={i}
             position={[p.x, p.y, p.z]}
-            radius={0.022}
-            widthSegmentCount={14}
-            heightSegmentCount={10}
+            radius={0.014}
+            widthSegmentCount={12}
+            heightSegmentCount={8}
             materials={[M('particle')]}
-            opacity={0.9}
+            opacity={0.95}
           />
         ))}
       </ViroNode>
