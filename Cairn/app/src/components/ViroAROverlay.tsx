@@ -863,6 +863,12 @@ function CairnARScene(props: any) {
     if (anchor.alignment && anchor.alignment !== 'Horizontal' && anchor.alignment !== 'horizontal') return;
     const y = anchor.position?.[1];
     if (typeof y !== 'number' || !isFinite(y)) return;
+    // v97.1: 拒绝天花板. 用户反馈 "貌似把其他的也带到天花板去了" — 根因是
+    // 用户朝天花板举手机, ARKit 把天花板误判为 horizontal plane,
+    // groundYRef 取了 y=+1.5 的天花板, cairn=ground+1.5=+3.0 全飘到天花板.
+    // 真地面在相机下方 (ARKit origin Y=0 ≈ 站立眼睛高度, 真地面 -1.0~-1.7m).
+    // 拒绝 y > -0.3 的 plane (天花板 / 桌面 / 高架), 只接受 y < -0.3 真地面.
+    if (y > -0.3) return;
     const cur = groundYRef.current;
     if (cur === null || y < cur) {
       groundYRef.current = y;
