@@ -252,15 +252,17 @@ const PARTICLE_POSITIONS: Array<{ x: number; y: number; z: number; bobPhase: num
   return arr;
 })();
 
-// v86 极致打磨: 粒子环再瘦身 — 从"白色雪花块"变成"细微星尘"。
-// 数量 24 → 16, 半径 0.45-0.60 → 0.65-0.85 (拉远 icon), Y 范围 ±0.10 → ±0.06
+// v87 root cause #4 修: 粒子在视野各处散布, 整个屏幕都是大白点.
+// v86 把 ring radius 拉远到 0.65-0.85, 但相机距 cairn 只有 1-3m,
+// 0.85m 半径环 = 屏幕上 ±20-30° 视角范围 = 粒子覆盖整个屏幕中心.
+// 修法: 拉回贴近 icon (0.32-0.42m), 粒子环跟 icon 占同一视觉块.
 const PARTICLE_COUNT_V84 = 16;
 const PARTICLE_POSITIONS_V84: Array<{ x: number; y: number; z: number }> = (() => {
   const arr: Array<{ x: number; y: number; z: number }> = [];
   for (let i = 0; i < PARTICLE_COUNT_V84; i++) {
     const a = (i / PARTICLE_COUNT_V84) * Math.PI * 2 + (i * 0.137);
-    const r = 0.65 + ((i * 31) % 100) / 100 * 0.20;  // 0.65-0.85 远 icon
-    const y = (((i * 47) % 100) / 100 - 0.5) * 0.12; // ±0.06 极扁平
+    const r = 0.32 + ((i * 31) % 100) / 100 * 0.10;  // 0.32-0.42 贴 icon
+    const y = (((i * 47) % 100) / 100 - 0.5) * 0.12;
     arr.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r });
   }
   return arr;
@@ -480,14 +482,17 @@ function CairnARScene(props: any) {
           writesToDepthBuffer: true,
           readsFromDepthBuffer: true,
         };
-        // v86: shell 玻璃壳 — 也加 reflectiveTexture，
-        // metalness=0 + roughness=0.05 + reflective = 真透明玻璃质感
+        // v87 root cause #3 修: shell 远距离变蓝色方块.
+        // v86 给 shell 加了 reflectiveTexture cube map, 但 shell 不是金属
+        // (metalness=0), reflectiveTexture 在透明球壳上的渲染在远距离
+        // 退化为单色矩形 imposter (LOD 优化). 截图证据: 12m 远的 supply
+        // 显示成蓝色大方块.
+        // 删 reflectiveTexture, shell 回到纯透明玻璃壳.
         matDict[`shell${t}`] = {
           lightingModel: 'PBR',
           diffuseColor: c.mid,
           metalness: 0.0,
           roughness: 0.05,
-          reflectiveTexture: cubeMap,
           blendMode: 'Alpha',
           cullMode: 'Front',
           writesToDepthBuffer: false,
@@ -503,8 +508,7 @@ function CairnARScene(props: any) {
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
         };
-        // v84: 粒子 — Constant + Add 保持发光感，bloom threshold 极低让
-        // 每颗粒子都触发 bloom 扩散
+        // v87: 粒子 — Constant + Add 保持发光感 (留着备用)
         matDict[`particle${t}`] = {
           lightingModel: 'Constant',
           diffuseColor: c.inner,
@@ -513,8 +517,8 @@ function CairnARScene(props: any) {
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
         };
-        // v84: backplate — 深色暗背板，把 icon 从背景里隔离出来。
-        // Apple Watch activity ring / Pokestop 都用类似手法。
+        // v87: backplate material 删 (组件已删, 但保留材质定义以防别处引用).
+        // 实际渲染层不再用它.
         matDict[`backplate${t}`] = {
           lightingModel: 'Constant',
           diffuseColor: c.outer,
@@ -641,18 +645,20 @@ function CairnARScene(props: any) {
 
   const cairnNodes = useMemo(() => {
     if (!arkitOrigin) return [];
-    // v70: anchor cairn vertical position to detected floor (groundY + EYE_M).
-    // Fallback if no plane detected yet: assume user was standing & holding the
-    // phone at chest height (~1.4m above floor) at scene mount, so groundY ≈
-    // ARKit Y - 1.4. Cairn Y then = (ARKit Y - 1.4) + 1.5 = ARKit Y + 0.1.
-    // Once ARKit detects a real plane, groundY is overwritten and the cairn Y
-    // re-snaps to the accurate value.
-    const EYE_M = 1.5;
+    // v87 root cause #1 修: 旗子飘到天花板。
+    // 旧公式: cairnY = ground + 1.5 (假设 user 站着, 旗子在眼睛高度).
+    // 真实场景: user 室内蹲着 plant 在桌面 (ground=-1.47m floor),
+    //   桌面 ≠ ground, 但代码强制 ground+1.5 = 0.03 = 顶到天花板.
+    // 修法: EYE_M 1.5 → 0.5. 旗子悬浮地面 50cm, 跟桌子高度 (~75cm)
+    //   或地面观察 (~30-50cm) 都贴近. 户外 hike 视角下也 OK
+    //   (旗子在膝盖到腰之间, 比眼睛高度自然得多).
+    // FALLBACK_HOLD_HEIGHT_M 不动 (无 plane 检测到时的兜底).
+    const EYE_M = 0.5;
     const FALLBACK_HOLD_HEIGHT_M = 1.4;
     const ground = groundYRef.current;
     const cairnY = ground !== null
       ? ground + EYE_M
-      : -FALLBACK_HOLD_HEIGHT_M + EYE_M; // ≈ +0.1 above ARKit origin
+      : -FALLBACK_HOLD_HEIGHT_M + EYE_M;
     const nodes = markers
       .map((m) => {
         const [x, _y, z] = gpsToArWorld(arkitOrigin, m);
@@ -813,18 +819,11 @@ function CairnInstance(props: {
         opacity={0}
         animation={{ name: 'riseIn', run: tracking, loop: false }}
       >
-      {/* v86: Backplate 加大 + opacity 0.55 → 0.85 强化 — v85 截图证据
-          backplate 完全看不到, 可能 0.55 在 alpha blend + bloom 下被吞了。
-          0.85 + 1.10 半径 (从 0.95) 确保 icon 永远从复杂背景里被切出来。
-          Pokestop 在阳光下还看得清的关键。 */}
-      <ViroQuad
-        position={[0, 0, -0.06]}
-        height={1.10}
-        width={1.10}
-        materials={[M('backplate')]}
-        opacity={0.85}
-        transformBehaviors={['billboard']}
-      />
+      {/* v87: Backplate 删除. v84 加的暗背板想"把 icon 从复杂背景里隔离",
+          但 截图证据 v86 0528_1.jpg/0528_2.jpg 中, backplate 1.10x1.10 太大,
+          billboard 朝相机时把 icon 几何完全包住, 用户看到的是 backplate
+          形状而不是 icon. 直接删除. icon 自己受光阴影 + bloom 已经够亮. */}
+
 
       {/* v84: 1. Icon body — ViroGeometry, type-specific shape.
           重大升级:
