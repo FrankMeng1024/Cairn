@@ -444,19 +444,13 @@ function CairnARScene(props: any) {
       const haloPng = require('../../assets/ar/halo_radial.png');
       for (const t of types) {
         const c = TYPE_COLOR_TRIPLET[t];
-        // v84: 3D 极致包 — icon 材质全面 PBR + shaderModifier Fresnel
-        //
-        // 改造思路 (从 v83 Constant 平面色升级):
-        // 1. lightingModel 'Constant' → 'PBR' — 受光阴影、金属反射全部工作
-        //    (这是 reference HTML MeshPhysicalMaterial 在 Viro 上的对应)
-        // 2. metalness: 0.6 + roughness: 0.25 — icon 像"釉面玻璃"，
-        //    既有金属反射又不死板
-        // 3. shaderModifiers.fragment 注入 Fresnel rim light —
-        //    pow(1-V·N, 2.0) 计算法向量与视线夹角，边缘 (法向 ⊥ 视线)
-        //    亮度拉满，正面 (法向 // 视线) 维持本色。这是 reference HTML
-        //    第 280 行 ShaderMaterial 的 1:1 复刻。
-        // 4. bloomThreshold 0.30 配合 bloom + hdr 启用，让 emissive 区域
-        //    扩散光晕。
+        // v85 hotfix: v84 闪退 — shaderModifier fragment GLSL 编译失败
+        // (Viro 内置 varying 名 _view/_normal/_surface.diffuse_color 是
+        // 我从源码 grep 推断的，可能在当前 react-viro 版本不存在或名字不对)。
+        // 立即回滚 shaderModifier，保留所有 PBR/多光源/多层壳/几何加厚/
+        // backplate/呼吸动画 等声明式改造 (这些都不会闪退).
+        // 失去 reference HTML Fresnel rim light 1:1 复刻，但 PBR 本身的
+        // 受光阴影 + metalness/roughness 反射已经能做出立体感。
         matDict[`icon${t}`] = {
           lightingModel: 'PBR',
           diffuseColor: c.mid,
@@ -465,36 +459,6 @@ function CairnARScene(props: any) {
           bloomThreshold: 0.30,
           writesToDepthBuffer: true,
           readsFromDepthBuffer: true,
-          shaderModifiers: {
-            fragment: {
-              uniforms: `
-                uniform vec3 u_inner_color;
-                uniform vec3 u_outer_color;
-              `,
-              body: `
-                // Viro PBR fragment shader 注入点 — _surface 已经包含
-                // 所有受光后的属性。我们在 PBR 输出之上叠加 Fresnel。
-                // _normal 是 view-space normal, _view 是 view-space view dir
-                // (Viro 内置 varying 名)。
-                vec3 V = normalize(_view);
-                vec3 N = normalize(_normal);
-                float fresnel = pow(1.0 - max(dot(V, N), 0.0), 2.0);
-                // 边缘 70% inner 亮色 + 30% outer 暗色 → 立体勾边
-                vec3 rim = mix(u_outer_color, u_inner_color, 0.7);
-                _surface.diffuse_color.rgb = mix(
-                  _surface.diffuse_color.rgb,
-                  rim,
-                  fresnel * 0.85
-                );
-                // 边缘亮度也乘 1.0 + fresnel*0.5 让边缘真的更亮 (bloom 触发条件)
-                _surface.diffuse_color.rgb *= (1.0 + fresnel * 0.5);
-              `,
-            },
-          },
-          materialUniforms: [
-            { name: 'u_inner_color', type: 'vec3', value: hexToVec3(c.inner) },
-            { name: 'u_outer_color', type: 'vec3', value: hexToVec3(c.outer) },
-          ],
         };
         // v84: inner core — PBR + 高 emissive (用 metalness=0 + roughness=1 +
         // bloomThreshold=0.20 让它一直处于 bloom 阈值之上 → 永远发光).
@@ -742,31 +706,25 @@ function CairnARScene(props: any) {
       onAnchorFound={onAnchorFound}
       onAnchorUpdated={onAnchorUpdated}
     >
-      {/* v84: 3D 极致包灯光配置 — 前后侧三点布光让 PBR 材质有真受光阴影。
-          - Ambient: 弱 (200) 给阴影区一点底色，避免黑成死
-          - Key Light: 强 (1100) 从右上前方打主光，定义主受光面
-          - Rim Light: 中强 (700) 从左后方打背光，勾出 icon 后缘的轮廓
-          - Fill Light: 弱蓝调 (300) 从下方补光，模拟环境反射
-
-          castsShadow:true 让主光真投影到 icon 下方的虚拟地面上 (Pokemon
-          Go 的 Pokestop 阴影感来源)。intensity 数值是 lumens，PBR 材质
-          下 800-1500 是经验值。 */}
-      <ViroAmbientLight color="#ffffff" intensity={200} />
+      {/* v85 hotfix: 4 光源三点布光保留 (Viro 标配组件不会闪退)，
+          但去掉 castsShadow (shadowsEnabled 已回滚，留着 prop 也没用)。
+          灯光 intensity 从 v84 调整: 主光 1100→1000, rim 700→600,
+          fill 300→200, ambient 200→300 给 PBR 材质平衡的曝光。 */}
+      <ViroAmbientLight color="#ffffff" intensity={300} />
       <ViroDirectionalLight
         color="#ffffff"
         direction={[-0.4, -0.8, -0.5]}
-        intensity={1100}
-        castsShadow
+        intensity={1000}
       />
       <ViroDirectionalLight
         color="#ffe5cc"
         direction={[0.6, -0.2, 0.7]}
-        intensity={700}
+        intensity={600}
       />
       <ViroDirectionalLight
         color="#a8c8ff"
         direction={[0.0, 0.7, 0.0]}
-        intensity={300}
+        intensity={200}
       />
       {materialsReady && cairnNodes.map((c) => (
         <CairnInstance
@@ -1076,17 +1034,14 @@ export function ViroAROverlay({
         autofocus
         worldAlignment="GravityAndHeading"
         provider="none"
-        // v84: 3D 极致包 — 全开渲染管线
-        // hdrEnabled + bloomEnabled (v83 已加): bloom 后处理生效前提
-        // pbrEnabled (v84 新): 启用 PBR (Physically Based Rendering) 管线，
-        //   icon 材质切到 PBR 后受光阴影/金属反射全部工作
-        // shadowsEnabled (v84 新): castsShadow=true 的光源真的投影
-        // multisamplingEnabled (v84 新): MSAA 抗锯齿，icon 边缘从锯齿到柔顺
+        // v85 hotfix: v84 闪退 — 大概率原因是 shaderModifier，但 pbrEnabled/
+        // shadowsEnabled/multisamplingEnabled 也是首次启用，无法排除其中
+        // 之一在 react-viro 当前版本是 stub 导致 native 崩溃。
+        // 安全策略: 只保留 v83 已验证不闪退的 hdrEnabled + bloomEnabled。
+        // PBR 材质本身仍然工作 (lightingModel='PBR' 在 ViroMaterials 是
+        // 文档明确支持的，不依赖 ARSceneNavigator pbrEnabled prop)。
         hdrEnabled
         bloomEnabled
-        pbrEnabled
-        shadowsEnabled
-        multisamplingEnabled
         initialScene={{ scene: CairnARScene as any }}
         viroAppProps={{
           arkitOrigin: arkitOriginRef.current,
