@@ -224,15 +224,18 @@ const ICON_GEOM: Record<string, { vertices: [number, number, number][]; triangle
 // ── 30-particle classic orbit positions (ViroSphere children of a rotating ViroNode) ──
 // Each particle has a fixed local position; the parent ViroNode runs a
 // rotateY animation so the whole ring spins. Y bob is faked with a small
-// vertical translation animation per-particle (every 3rd particle uses a
-// different phase to avoid sync).
-const PARTICLE_POSITIONS: Array<{ x: number; y: number; z: number }> = (() => {
-  const arr: Array<{ x: number; y: number; z: number }> = [];
+// v81: particle ring — radius range matched to reference HTML
+// (0.22-0.36, was 0.32-0.50 in v80 which was too far from the icon).
+// Each particle has a distinct Y-bob phase so the ring pulses softly
+// rather than feeling like a static marble bracelet.
+const PARTICLE_POSITIONS: Array<{ x: number; y: number; z: number; bobPhase: number }> = (() => {
+  const arr: Array<{ x: number; y: number; z: number; bobPhase: number }> = [];
   for (let i = 0; i < PARTICLE_COUNT; i++) {
     const a = (i / PARTICLE_COUNT) * Math.PI * 2 + (i * 0.137);
-    const r = 0.32 + ((i * 31) % 100) / 100 * 0.18;
+    const r = 0.22 + ((i * 31) % 100) / 100 * 0.14;
     const y = (((i * 47) % 100) / 100 - 0.5) * 0.40;
-    arr.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r });
+    const bobPhase = (i * 1.7) % (Math.PI * 2);
+    arr.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r, bobPhase });
   }
   return arr;
 })();
@@ -410,34 +413,61 @@ function CairnARScene(props: any) {
     try {
       const types = ['danger', 'scenic', 'supply', 'junction', 'generic'] as const;
       const matDict: Record<string, any> = {};
-      // v80: register the halo PNG once (reused across all types — colour
+      // v81: register the halo PNG once (reused across all types — colour
       // tint is applied per-type via diffuseColor on the per-type material).
       const haloPng = require('../../assets/ar/halo_radial.png');
       for (const t of types) {
         const c = TYPE_COLOR_TRIPLET[t];
+        // v81 fix #1 (光感生硬): icon now uses Lambert + fresnelExponent so
+        // edges glow brighter than centre — matches reference HTML's
+        // ShaderMaterial Fresnel pow(1-V·N, 2.0). bloomThreshold lowered
+        // 0.55 → 0.40 so the colour itself blooms in HDR. inner colour
+        // used as diffuse so the icon reads as glowing-from-inside.
         matDict[`icon${t}`] = {
-          lightingModel: 'Constant',
+          lightingModel: 'Lambert',
           diffuseColor: c.mid,
-          bloomThreshold: 0.55,    // colour above this brightness blooms
+          fresnelExponent: 2.0,
+          bloomThreshold: 0.40,
         };
+        // v81 fix #1b: small inner core matches HTML reference (radius 0.10
+        // inside the icon geometry, additive constant lighting bright inner
+        // colour, opacity ~0.85). Restored brighter than v80's 0.65 so it
+        // gives the type icon clear "glowing from inside" volume.
         matDict[`core${t}`] = {
           lightingModel: 'Constant',
           diffuseColor: c.inner,
           blendMode: 'Add',
-          bloomThreshold: 0.40,
+          bloomThreshold: 0.30,
         };
+        // v81 fix #2 (透明圆形消失): bring back the atmospheric shell —
+        // a SphereGeometry with cullMode 'Back' so we see the INNER face
+        // (inside-out shell). This is the "transparent globe with type
+        // icon inside" look the reference HTML has via additive
+        // BackSide blending. cullMode='Back' culls back faces → renders
+        // front faces only. cullMode='Front' culls front faces → renders
+        // BACK faces (inside-out). REFERENCE uses BackSide which means
+        // back faces visible → cullMode='Front' is what shows the shell
+        // from inside out. That's actually what we have — but the issue
+        // was opacity was 0.10 (too faint). Bumped to 0.18 + adjusted
+        // tint and depth so the shell reads as a translucent globe.
         matDict[`shell${t}`] = {
-          lightingModel: 'Lambert',
+          lightingModel: 'Constant',
           diffuseColor: c.mid,
-          fresnelExponent: 2.0,    // edges glow brighter than centre
           blendMode: 'Add',
-          bloomThreshold: 0.55,
+          cullMode: 'Front',
+          writesToDepthBuffer: false,
+          readsFromDepthBuffer: true,
+          bloomThreshold: 0.50,
         };
+        // v81: outer wisp halo — softer, larger, outermost atmospheric layer
         matDict[`wisp${t}`] = {
           lightingModel: 'Constant',
           diffuseColor: c.outer,
           blendMode: 'Add',
-          cullMode: 'Front',        // render back faces only ("inside-out shell")
+          cullMode: 'Front',
+          writesToDepthBuffer: false,
+          readsFromDepthBuffer: true,
+          bloomThreshold: 0.55,
         };
         matDict[`particle${t}`] = {
           lightingModel: 'Constant',
@@ -445,22 +475,41 @@ function CairnARScene(props: any) {
           blendMode: 'Add',
           bloomThreshold: 0.30,
         };
-        // v80 #48: halo billboard sprite material — radial gradient PNG
-        // tinted by the type's mid colour, additively blended so it
-        // brightens the camera feed (cleaner than alpha blending), with
-        // depth-write disabled so it never z-fights the icon body.
-        // bloomThreshold 0.85: high enough that bright daylight scenes
-        // don't push the halo into uncontrolled bloom but the colour
-        // still glows softly in dim conditions (low review-3 risk).
-        matDict[`halo${t}`] = {
+        // v81 fix #3 (halo 单层不够): three halo materials with different
+        // colour tints + sizes, matching reference's 3-layer halo sprite
+        // stack: inner/mid/outer colours, additive blend, no depth write.
+        // bloomThreshold raised so daylight doesn't over-bloom while dim
+        // scenes still see soft glow.
+        matDict[`haloInner${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: c.inner,
+          diffuseTexture: haloPng,
+          blendMode: 'Add',
+          writesToDepthBuffer: false,
+          readsFromDepthBuffer: true,
+          bloomThreshold: 0.65,
+        };
+        matDict[`haloMid${t}`] = {
           lightingModel: 'Constant',
           diffuseColor: c.mid,
           diffuseTexture: haloPng,
           blendMode: 'Add',
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
+          bloomThreshold: 0.75,
+        };
+        matDict[`haloOuter${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: c.outer,
+          diffuseTexture: haloPng,
+          blendMode: 'Add',
+          writesToDepthBuffer: false,
+          readsFromDepthBuffer: true,
           bloomThreshold: 0.85,
         };
+        // Backwards-compat alias (the JSX still uses M('halo'); we keep
+        // it as the mid layer so any stale code path doesn't break).
+        matDict[`halo${t}`] = matDict[`haloMid${t}`];
       }
       ViroMaterials.createMaterials(matDict);
       ViroAnimations.registerAnimations({
@@ -479,6 +528,25 @@ function CairnARScene(props: any) {
         particleRing: {
           properties: { rotateY: '+=360' },
           duration: 4500,
+        },
+        // v81: per-particle Y bob — register 3 phase variants so the ring
+        // pulses with shifted rhythm rather than rigid synchronized
+        // up/down. Each variant is a 2-step cycle going up by `bob`,
+        // then back. Particles get assigned variant by index%3.
+        particleBobA: {
+          properties: { positionY: '+=0.12' },
+          duration: 1100,
+          easing: 'EaseInEaseOut',
+        },
+        particleBobB: {
+          properties: { positionY: '+=0.10' },
+          duration: 1300,
+          easing: 'EaseInEaseOut',
+        },
+        particleBobC: {
+          properties: { positionY: '+=0.14' },
+          duration: 950,
+          easing: 'EaseInEaseOut',
         },
         // Plant rise: cairn jumps in from -1m below ground to its target Y over 1.4s.
         // We attach this as the orb wrapper's animation when first mounted; once
@@ -659,13 +727,11 @@ function CairnInstance(props: {
         animation={{ name: 'riseIn', run: tracking, loop: false }}
       >
       {/* 1. Icon body (Viro geometry, spinning).
-          For known types we render the type-specific geometry. For unknown
-          types (legacy data) we render a plain sphere as the icon body.
-          v80 fix: icon was being washed out by overlapping core+shell+wisp
-          spheres. Material now uses higher bloomThreshold so the colored
-          shape stays clearly visible — matches HTML reference where the
-          icon (triangle prism / star / droplet / arrow) is the dominant
-          visual, not the halo. */}
+          For known types we render the type-specific geometry.
+          v81: material upgraded to Lambert + fresnelExponent so edges
+          glow brighter than centre (matches reference HTML's Fresnel
+          ShaderMaterial). Icon is the dominant visual; halo + shell
+          surround it without washing it out. */}
       <ViroNode
         animation={{ name: 'iconSpin', run: tracking, loop: true }}
         scale={[ICON_SCALE, ICON_SCALE, ICON_SCALE]}
@@ -686,58 +752,99 @@ function CairnInstance(props: {
         )}
       </ViroNode>
 
-      {/* 2. v80: inner core glow — small bright sphere INSIDE the type
+      {/* 2. Inner core glow — small bright sphere INSIDE the type
           geometry, so the icon reads as a glowing volume rather than a
-          flat shape. Reviewer 1 flagged that removing core entirely lost
-          the "physical glowing object" feel. radius=0.08 sits well below
-          all four icon geometries' inner clearance. */}
+          flat shape. radius=0.08 sits well inside all four icon
+          geometries' inner clearance. */}
       <ViroSphere
         radius={0.08}
         widthSegmentCount={16}
         heightSegmentCount={12}
         materials={[M('core')]}
-        opacity={0.65}
+        opacity={0.85}
       />
 
-      {/* 3. v80: Halo billboard sprite — radial gradient PNG, additive blend,
-          always faces camera. Renders at 0.85 world units across so it's
-          bigger than the icon (≈0.5 unit) and fades softly into the background.
-          PNG asset is a 256px white→transparent radial gradient
-          (assets/ar/halo_radial.png). The colored Add-blended quad gets
-          tinted via the M('halo') material. */}
+      {/* 3. v81: Translucent atmospheric shell — the "transparent globe"
+          the user expects to see around the type icon. Reference HTML
+          uses additive BackSide blending so the inner-facing wall is
+          rendered (the front face is culled). Front-culled here to give
+          the same inside-out sphere effect, and depth-write disabled so
+          it never z-fights the icon. opacity 0.18 (was 0.10) so the
+          globe is actually visible against the camera feed. */}
+      <ViroSphere
+        radius={0.32}
+        widthSegmentCount={28}
+        heightSegmentCount={20}
+        materials={[M('shell')]}
+        opacity={0.18}
+      />
+
+      {/* 4. v81: Three-layer billboard halo — matches reference HTML's
+          three radial-gradient sprites (inner small/bright, mid medium,
+          outer large/soft). Each ViroQuad is billboarded so it always
+          faces the camera; sizes mirror reference 0.55 / 1.10 / 1.70
+          local units.
+          With Add blending stacked on the same pixel, the centre
+          accumulates inner+mid+outer = bright glow; the outer fringe
+          only has outer = soft fade. This gives the "soft fog" look
+          a single quad couldn't produce. */}
       <ViroQuad
-        height={0.85}
-        width={0.85}
-        materials={[M('halo')]}
-        opacity={0.90}
+        height={0.55}
+        width={0.55}
+        materials={[M('haloInner')]}
+        opacity={0.40}
+        transformBehaviors={['billboard']}
+      />
+      <ViroQuad
+        height={1.10}
+        width={1.10}
+        materials={[M('haloMid')]}
+        opacity={0.50}
+        transformBehaviors={['billboard']}
+      />
+      <ViroQuad
+        height={1.70}
+        width={1.70}
+        materials={[M('haloOuter')]}
+        opacity={0.30}
         transformBehaviors={['billboard']}
       />
 
-      {/* 4. Outer wisp halo — soft additive sphere, slightly larger than the icon.
-          v80: enlarged from 0.36 → 0.55 and opacity dropped 0.22 → 0.10 so
-          it doesn't wash the icon shape. Front-culled so we see the back wall
-          from inside (atmospheric inner-glow effect). */}
+      {/* 5. Outer wisp halo — softest, largest atmospheric layer (kept
+          for ambient glow even when halo billboards face away). */}
       <ViroSphere
         radius={0.55}
         widthSegmentCount={20}
         heightSegmentCount={16}
         materials={[M('wisp')]}
-        opacity={0.10}
+        opacity={0.08}
       />
 
-      {/* 5. Particle ring — 30 small spheres rotating together */}
+      {/* 6. v81: Particle ring — 50 small spheres orbiting + each particle
+          has a Y-bob animation with one of 3 phase variants. Reference
+          HTML uses a free-form sin(t*0.9 + i)*0.10 per-frame update;
+          Viro's animation system can't drive arbitrary per-frame positions,
+          so we approximate with 3 staggered bob animations. The visual
+          effect is a soft pulsing ring rather than a rigid bracelet. */}
       <ViroNode animation={{ name: 'particleRing', run: tracking, loop: true }}>
-        {PARTICLE_POSITIONS.map((p, i) => (
-          <ViroSphere
-            key={i}
-            radius={PARTICLE_RADIUS}
-            widthSegmentCount={6}
-            heightSegmentCount={4}
-            position={[p.x, p.y, p.z]}
-            materials={[M('particle')]}
-            opacity={0.85}
-          />
-        ))}
+        {PARTICLE_POSITIONS.map((p, i) => {
+          const bobName = i % 3 === 0 ? 'particleBobA' : (i % 3 === 1 ? 'particleBobB' : 'particleBobC');
+          return (
+            <ViroNode
+              key={i}
+              position={[p.x, p.y, p.z]}
+              animation={{ name: bobName, run: tracking, loop: true }}
+            >
+              <ViroSphere
+                radius={PARTICLE_RADIUS}
+                widthSegmentCount={6}
+                heightSegmentCount={4}
+                materials={[M('particle')]}
+                opacity={0.85}
+              />
+            </ViroNode>
+          );
+        })}
       </ViroNode>
 
       {/* 6. v70: optional vertical beam (skylight) — toggled by tapping the
