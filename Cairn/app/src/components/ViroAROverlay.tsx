@@ -58,6 +58,16 @@ const TYPE_COLORS: Record<string, string> = {
   junction: TYPE_COLOR_TRIPLET.junction.mid,
 };
 
+// v84: hex '#rrggbb' → [r, g, b] 0..1 vec3 for shader uniform.
+// Used by icon material's Fresnel shaderModifier.
+function hexToVec3(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  return [r, g, b];
+}
+
 // ── Constants ──────────────────────────────────────────────────
 const ORB_RADIUS = 0.4;       // 80cm diameter (~2x basketball)
 // v68: cairn Y is now relative to ARKit camera Y at origin time, not "1.5m
@@ -91,7 +101,8 @@ const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presen
 // Coordinate convention: +Y = up, +Z = front (icon faces +Z).
 function buildDangerGeom() {
   // Translucent triangular prism, apex up, axis along Z (faces front+back).
-  const R = 0.26, D = 0.10;
+  // v84: D 0.10 → 0.20 (加厚 100%) — 自旋时三棱柱侧面更厚实
+  const R = 0.26, D = 0.20;
   // Front triangle (z = +D), back triangle (z = -D)
   const a = -Math.PI / 2;       // start at top
   const v0: [number, number, number] = [Math.cos(a) * R, Math.sin(a) * R + R * 0.1,  D];
@@ -113,7 +124,8 @@ function buildDangerGeom() {
 
 function buildScenicGeom() {
   // True 3D 5-pointed star: front/back centres + 10 perimeter alternating outer/inner
-  const outerR = 0.24, innerR = 0.10, depth = 0.07;
+  // v84: depth 0.07 → 0.16 (加厚 130%) — 让侧面厚度可见，自旋时不像贴纸
+  const outerR = 0.24, innerR = 0.10, depth = 0.16;
   const N = 5;
   const verts: [number, number, number][] = [
     [0, 0,  depth],
@@ -236,6 +248,20 @@ const PARTICLE_POSITIONS: Array<{ x: number; y: number; z: number; bobPhase: num
     const y = (((i * 47) % 100) / 100 - 0.5) * 0.40;
     const bobPhase = (i * 1.7) % (Math.PI * 2);
     arr.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r, bobPhase });
+  }
+  return arr;
+})();
+
+// v84: 新粒子环 — 24 颗 (从 50 减半)，半径 0.45-0.60 (拉远 icon)，
+// Y 范围压扁到 ±0.10m (从 ±0.20)，更像"环绕"而不是"散云"。
+const PARTICLE_COUNT_V84 = 24;
+const PARTICLE_POSITIONS_V84: Array<{ x: number; y: number; z: number }> = (() => {
+  const arr: Array<{ x: number; y: number; z: number }> = [];
+  for (let i = 0; i < PARTICLE_COUNT_V84; i++) {
+    const a = (i / PARTICLE_COUNT_V84) * Math.PI * 2 + (i * 0.137);
+    const r = 0.45 + ((i * 31) % 100) / 100 * 0.15;  // 0.45-0.60
+    const y = (((i * 47) % 100) / 100 - 0.5) * 0.20; // ±0.10 扁平
+    arr.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r });
   }
   return arr;
 })();
@@ -418,63 +444,110 @@ function CairnARScene(props: any) {
       const haloPng = require('../../assets/ar/halo_radial.png');
       for (const t of types) {
         const c = TYPE_COLOR_TRIPLET[t];
-        // v82 fix #2 (icon 像 2D 贴纸): Lambert + fresnelExponent 在 Viro 上
-        // 不工作 —— fresnelExponent 是 PhysicallyBased 材质属性，Lambert 不
-        // 识别；Viro 也没自定义 fragment shader 能力复刻 reference HTML 的
-        // ShaderMaterial Fresnel pow(1-V·N,2.0)。
-        // 改回 Constant lightingModel —— icon 自发光始终饱和亮色 + 强 bloom
-        // 光晕。失去精确边缘 Fresnel 高光，但收获 reference HTML 那种"亮颜
-        // 色块自带光晕"的视觉张力。
+        // v84: 3D 极致包 — icon 材质全面 PBR + shaderModifier Fresnel
+        //
+        // 改造思路 (从 v83 Constant 平面色升级):
+        // 1. lightingModel 'Constant' → 'PBR' — 受光阴影、金属反射全部工作
+        //    (这是 reference HTML MeshPhysicalMaterial 在 Viro 上的对应)
+        // 2. metalness: 0.6 + roughness: 0.25 — icon 像"釉面玻璃"，
+        //    既有金属反射又不死板
+        // 3. shaderModifiers.fragment 注入 Fresnel rim light —
+        //    pow(1-V·N, 2.0) 计算法向量与视线夹角，边缘 (法向 ⊥ 视线)
+        //    亮度拉满，正面 (法向 // 视线) 维持本色。这是 reference HTML
+        //    第 280 行 ShaderMaterial 的 1:1 复刻。
+        // 4. bloomThreshold 0.30 配合 bloom + hdr 启用，让 emissive 区域
+        //    扩散光晕。
         matDict[`icon${t}`] = {
-          lightingModel: 'Constant',
+          lightingModel: 'PBR',
           diffuseColor: c.mid,
+          metalness: 0.6,
+          roughness: 0.25,
           bloomThreshold: 0.30,
+          writesToDepthBuffer: true,
+          readsFromDepthBuffer: true,
+          shaderModifiers: {
+            fragment: {
+              uniforms: `
+                uniform vec3 u_inner_color;
+                uniform vec3 u_outer_color;
+              `,
+              body: `
+                // Viro PBR fragment shader 注入点 — _surface 已经包含
+                // 所有受光后的属性。我们在 PBR 输出之上叠加 Fresnel。
+                // _normal 是 view-space normal, _view 是 view-space view dir
+                // (Viro 内置 varying 名)。
+                vec3 V = normalize(_view);
+                vec3 N = normalize(_normal);
+                float fresnel = pow(1.0 - max(dot(V, N), 0.0), 2.0);
+                // 边缘 70% inner 亮色 + 30% outer 暗色 → 立体勾边
+                vec3 rim = mix(u_outer_color, u_inner_color, 0.7);
+                _surface.diffuse_color.rgb = mix(
+                  _surface.diffuse_color.rgb,
+                  rim,
+                  fresnel * 0.85
+                );
+                // 边缘亮度也乘 1.0 + fresnel*0.5 让边缘真的更亮 (bloom 触发条件)
+                _surface.diffuse_color.rgb *= (1.0 + fresnel * 0.5);
+              `,
+            },
+          },
+          materialUniforms: [
+            { name: 'u_inner_color', type: 'vec3', value: hexToVec3(c.inner) },
+            { name: 'u_outer_color', type: 'vec3', value: hexToVec3(c.outer) },
+          ],
         };
-        // v81 fix #1b: small inner core matches HTML reference (radius 0.10
-        // inside the icon geometry, additive constant lighting bright inner
-        // colour, opacity ~0.85). Restored brighter than v80's 0.65 so it
-        // gives the type icon clear "glowing from inside" volume.
+        // v84: inner core — PBR + 高 emissive (用 metalness=0 + roughness=1 +
+        // bloomThreshold=0.20 让它一直处于 bloom 阈值之上 → 永远发光).
         matDict[`core${t}`] = {
-          lightingModel: 'Constant',
+          lightingModel: 'PBR',
           diffuseColor: c.inner,
-          blendMode: 'Add',
-          bloomThreshold: 0.30,
+          metalness: 0.0,
+          roughness: 1.0,
+          bloomThreshold: 0.20,
+          writesToDepthBuffer: true,
+          readsFromDepthBuffer: true,
         };
-        // v81 fix #2 (透明圆形消失): bring back the atmospheric shell —
-        // a SphereGeometry with cullMode 'Back' so we see the INNER face
-        // (inside-out shell). This is the "transparent globe with type
-        // icon inside" look the reference HTML has via additive
-        // BackSide blending. cullMode='Back' culls back faces → renders
-        // front faces only. cullMode='Front' culls front faces → renders
-        // BACK faces (inside-out). REFERENCE uses BackSide which means
-        // back faces visible → cullMode='Front' is what shows the shell
-        // from inside out. That's actually what we have — but the issue
-        // was opacity was 0.10 (too faint). Bumped to 0.18 + adjusted
-        // tint and depth so the shell reads as a translucent globe.
+        // v84: shell — 半透明玻璃壳。reference HTML 用 MeshPhysicalMaterial
+        // transmission=0.92 + IOR=1.33。Viro 没 transmission，用 PBR
+        // metalness=0.0 + roughness=0.05 + 高反射 + 低 alpha 近似玻璃。
         matDict[`shell${t}`] = {
-          lightingModel: 'Constant',
+          lightingModel: 'PBR',
           diffuseColor: c.mid,
-          blendMode: 'Add',
+          metalness: 0.0,
+          roughness: 0.05,
+          blendMode: 'Alpha',
           cullMode: 'Front',
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
           bloomThreshold: 0.50,
         };
-        // v81: outer wisp halo — softer, larger, outermost atmospheric layer
+        // v84: outer wisp — Lambert 软光晕（PBR 在大半径低 opacity 上太亮）
         matDict[`wisp${t}`] = {
-          lightingModel: 'Constant',
+          lightingModel: 'Lambert',
           diffuseColor: c.outer,
-          blendMode: 'Add',
+          blendMode: 'Alpha',
           cullMode: 'Front',
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
-          bloomThreshold: 0.55,
         };
+        // v84: 粒子 — Constant + Add 保持发光感，bloom threshold 极低让
+        // 每颗粒子都触发 bloom 扩散
         matDict[`particle${t}`] = {
           lightingModel: 'Constant',
           diffuseColor: c.inner,
           blendMode: 'Add',
-          bloomThreshold: 0.30,
+          bloomThreshold: 0.15,
+          writesToDepthBuffer: false,
+          readsFromDepthBuffer: true,
+        };
+        // v84: backplate — 深色暗背板，把 icon 从背景里隔离出来。
+        // Apple Watch activity ring / Pokestop 都用类似手法。
+        matDict[`backplate${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: c.outer,
+          blendMode: 'Alpha',
+          writesToDepthBuffer: false,
+          readsFromDepthBuffer: true,
         };
         // v83 fix (halo 在白墙背景看不见): v81/v82 用 Add blend，物理上
         // Add(白色背景, halo色) ≈ 白色 → halo 完全融入白墙不可见。截图证据:
@@ -521,15 +594,31 @@ function CairnARScene(props: any) {
           duration: 1400,
           easing: 'EaseInEaseOut',
         },
-        // Slow Y rotation for the icon (so all faces are revealed)
+        // v84: 慢自旋 (从 12s → 20s) 让用户能看清 icon 3D 厚度
         iconSpin: {
           properties: { rotateY: '+=360' },
-          duration: 12000,
+          duration: 20000,
         },
-        // Particle ring spin — the 30 ViroSphere children inherit this
+        // v84: 呼吸动画 — icon 缓慢 0.95 ↔ 1.05 缩放 + opacity 明灭
+        // 用数组串联做 [up, down] 双向，避免累加飘走 (从 v82/v83 学到的教训)
+        iconBreatheUp: {
+          properties: { scaleX: 1.05, scaleY: 1.05, scaleZ: 1.05, opacity: 1.0 },
+          duration: 1800,
+          easing: 'EaseInEaseOut',
+        },
+        iconBreatheDown: {
+          properties: { scaleX: 0.95, scaleY: 0.95, scaleZ: 0.95, opacity: 0.85 },
+          duration: 1800,
+          easing: 'EaseInEaseOut',
+        },
+        iconBreathe: [
+          { properties: { scaleX: 1.05, scaleY: 1.05, scaleZ: 1.05, opacity: 1.0 }, duration: 1800, easing: 'EaseInEaseOut' },
+          { properties: { scaleX: 0.95, scaleY: 0.95, scaleZ: 0.95, opacity: 0.85 }, duration: 1800, easing: 'EaseInEaseOut' },
+        ],
+        // Particle ring spin — v84 慢转 (4.5s → 6s)
         particleRing: {
           properties: { rotateY: '+=360' },
-          duration: 4500,
+          duration: 6000,
         },
         // v83 (粒子飞天/飞地终极修复): v81 `+=0.10 loop` 永久累加飞天花板;
         // v82 改成数组 [up, down] 串联想抵消累加，但 ViroAnimations 数组形式
@@ -653,8 +742,32 @@ function CairnARScene(props: any) {
       onAnchorFound={onAnchorFound}
       onAnchorUpdated={onAnchorUpdated}
     >
-      <ViroAmbientLight color="#ffffff" intensity={400} />
-      <ViroDirectionalLight color="#ffffff" direction={[0, -1, -0.2]} intensity={800} />
+      {/* v84: 3D 极致包灯光配置 — 前后侧三点布光让 PBR 材质有真受光阴影。
+          - Ambient: 弱 (200) 给阴影区一点底色，避免黑成死
+          - Key Light: 强 (1100) 从右上前方打主光，定义主受光面
+          - Rim Light: 中强 (700) 从左后方打背光，勾出 icon 后缘的轮廓
+          - Fill Light: 弱蓝调 (300) 从下方补光，模拟环境反射
+
+          castsShadow:true 让主光真投影到 icon 下方的虚拟地面上 (Pokemon
+          Go 的 Pokestop 阴影感来源)。intensity 数值是 lumens，PBR 材质
+          下 800-1500 是经验值。 */}
+      <ViroAmbientLight color="#ffffff" intensity={200} />
+      <ViroDirectionalLight
+        color="#ffffff"
+        direction={[-0.4, -0.8, -0.5]}
+        intensity={1100}
+        castsShadow
+      />
+      <ViroDirectionalLight
+        color="#ffe5cc"
+        direction={[0.6, -0.2, 0.7]}
+        intensity={700}
+      />
+      <ViroDirectionalLight
+        color="#a8c8ff"
+        direction={[0.0, 0.7, 0.0]}
+        intensity={300}
+      />
       {materialsReady && cairnNodes.map((c) => (
         <CairnInstance
           key={c.id}
@@ -730,117 +843,127 @@ function CairnInstance(props: {
         opacity={0}
         animation={{ name: 'riseIn', run: tracking, loop: false }}
       >
-      {/* 1. Icon body (Viro geometry, spinning).
-          For known types we render the type-specific geometry.
-          v81: material upgraded to Lambert + fresnelExponent so edges
-          glow brighter than centre (matches reference HTML's Fresnel
-          ShaderMaterial). Icon is the dominant visual; halo + shell
-          surround it without washing it out. */}
+      {/* v84: 0. Backplate — 深色暗背板，billboard 朝相机，把 icon 从
+          复杂背景里隔离。Apple Watch activity ring / Pokestop 同款手法。
+          位于 icon 后方 0.05m，半径 0.45m，同色 outer 暗色版本。 */}
+      <ViroQuad
+        position={[0, 0, -0.05]}
+        height={0.95}
+        width={0.95}
+        materials={[M('backplate')]}
+        opacity={0.55}
+        transformBehaviors={['billboard']}
+      />
+
+      {/* v84: 1. Icon body — ViroGeometry, type-specific shape.
+          重大升级:
+          - PBR + shaderModifier Fresnel (材质层面注入 rim light)
+          - 慢自旋 (12s → 20s) 让用户能看清 3D 厚度
+          - 呼吸缩放动画 (0.95↔1.05)
+          - 颜色明灭 (opacity 0.85↔1.0) */}
       <ViroNode
         animation={{ name: 'iconSpin', run: tracking, loop: true }}
         scale={[ICON_SCALE, ICON_SCALE, ICON_SCALE]}
       >
-        {geom ? (
-          <ViroGeometry
-            vertices={geom.vertices}
-            triangleIndices={geom.triangleIndices}
-            materials={[M('icon')]}
-          />
-        ) : (
-          <ViroSphere
-            radius={0.18}
-            widthSegmentCount={20}
-            heightSegmentCount={16}
-            materials={[M('icon')]}
-          />
-        )}
+        <ViroNode animation={{ name: 'iconBreathe', run: tracking, loop: true }}>
+          {geom ? (
+            <ViroGeometry
+              vertices={geom.vertices}
+              triangleIndices={geom.triangleIndices}
+              materials={[M('icon')]}
+            />
+          ) : (
+            <ViroSphere
+              radius={0.18}
+              widthSegmentCount={32}
+              heightSegmentCount={24}
+              materials={[M('icon')]}
+            />
+          )}
+        </ViroNode>
       </ViroNode>
 
-      {/* 2. Inner core glow — small bright sphere INSIDE the type
-          geometry, so the icon reads as a glowing volume rather than a
-          flat shape. radius=0.08 sits well inside all four icon
-          geometries' inner clearance. */}
+      {/* v84: 2. Inner core — 双层提升立体感
+          - 内层 0.06m (亮中心)
+          - 外层 0.10m (中等亮度作为光晕过渡)
+          高细分 32×24 让球真的圆滑，不是六边形多面体。 */}
       <ViroSphere
-        radius={0.08}
-        widthSegmentCount={16}
-        heightSegmentCount={12}
+        radius={0.06}
+        widthSegmentCount={32}
+        heightSegmentCount={24}
         materials={[M('core')]}
-        opacity={0.85}
+        opacity={0.95}
+      />
+      <ViroSphere
+        radius={0.10}
+        widthSegmentCount={32}
+        heightSegmentCount={24}
+        materials={[M('core')]}
+        opacity={0.55}
       />
 
-      {/* 3. v81: Translucent atmospheric shell — the "transparent globe"
-          the user expects to see around the type icon. Reference HTML
-          uses additive BackSide blending so the inner-facing wall is
-          rendered (the front face is culled). Front-culled here to give
-          the same inside-out sphere effect, and depth-write disabled so
-          it never z-fights the icon. opacity 0.18 (was 0.10) so the
-          globe is actually visible against the camera feed. */}
+      {/* v84: 3. 多层透明玻璃壳 — Pokemon Go 半透明发光的标准手法。
+          3 层同心球，半径 1.0×/1.05×/1.10× icon 大小，opacity 递减。
+          外层折射感更弱，整体透出 "玻璃罩里有光" 的体积感。
+          PBR shell 材质 (metalness=0 + roughness=0.05) 模拟玻璃。 */}
+      <ViroSphere
+        radius={0.28}
+        widthSegmentCount={36}
+        heightSegmentCount={28}
+        materials={[M('shell')]}
+        opacity={0.20}
+      />
+      <ViroSphere
+        radius={0.30}
+        widthSegmentCount={36}
+        heightSegmentCount={28}
+        materials={[M('shell')]}
+        opacity={0.13}
+      />
       <ViroSphere
         radius={0.32}
-        widthSegmentCount={28}
-        heightSegmentCount={20}
+        widthSegmentCount={36}
+        heightSegmentCount={28}
         materials={[M('shell')]}
-        opacity={0.18}
-      />
-
-      {/* 4. v81: Three-layer billboard halo — matches reference HTML's
-          three radial-gradient sprites (inner small/bright, mid medium,
-          outer large/soft). Each ViroQuad is billboarded so it always
-          faces the camera; sizes mirror reference 0.55 / 1.10 / 1.70
-          local units.
-          With Add blending stacked on the same pixel, the centre
-          accumulates inner+mid+outer = bright glow; the outer fringe
-          only has outer = soft fade. This gives the "soft fog" look
-          a single quad couldn't produce. */}
-      <ViroQuad
-        height={0.55}
-        width={0.55}
-        materials={[M('haloInner')]}
-        opacity={0.65}
-        transformBehaviors={['billboard']}
-      />
-      <ViroQuad
-        height={1.10}
-        width={1.10}
-        materials={[M('haloMid')]}
-        opacity={0.50}
-        transformBehaviors={['billboard']}
-      />
-      <ViroQuad
-        height={1.70}
-        width={1.70}
-        materials={[M('haloOuter')]}
-        opacity={0.30}
-        transformBehaviors={['billboard']}
-      />
-
-      {/* 5. Outer wisp halo — softest, largest atmospheric layer (kept
-          for ambient glow even when halo billboards face away). */}
-      <ViroSphere
-        radius={0.55}
-        widthSegmentCount={20}
-        heightSegmentCount={16}
-        materials={[M('wisp')]}
         opacity={0.08}
       />
 
-      {/* 6. v83: Particle ring — 50 small spheres on a static ring. Only
-          the parent ViroNode rotates (4.5s/360°). Per-particle Y bob
-          REMOVED in v83 — both v81 (`+=` loop累加) and v82 (`[up, down]`
-          数组串联) caused particles to drift away from the icon. Without
-          a Three.js-style per-frame sin update Viro can't faithfully
-          replicate reference HTML's pulsing ring; we trade pulse for
-          stability. Particles remain visible & orbital, never漂走. */}
+      {/* v84: 4. 简化 halo — 从 v83 的 3 层 ViroQuad + 多层混乱光晕
+          减为 1 层柔光 + outer wisp。设计上让 icon 主导视觉，halo 当配角。 */}
+      <ViroQuad
+        height={1.30}
+        width={1.30}
+        materials={[M('haloMid')]}
+        opacity={0.45}
+        transformBehaviors={['billboard']}
+      />
+
+      {/* v84: 5. Outer wisp — 最外层雾感光晕，球面 Lambert，
+          受光面亮一点 (帮助强化 3D 立体感)。 */}
+      <ViroSphere
+        radius={0.55}
+        widthSegmentCount={28}
+        heightSegmentCount={20}
+        materials={[M('wisp')]}
+        opacity={0.10}
+      />
+
+      {/* v84: 6. 粒子环 — 高质量提升:
+          - 数量 50 → 24 (减半，避免视觉拥挤)
+          - 高细分 (segCount 6×4 → 14×10) 圆度大幅提升不再六边形
+          - 半径 PARTICLE_RADIUS=0.018 → 0.022 (略大更圆)
+          - bloom 阈值 0.15 让每颗粒子都触发 bloom 扩散
+          - 父 ViroNode 慢转 (4.5s → 6s) */}
       <ViroNode animation={{ name: 'particleRing', run: tracking, loop: true }}>
-        {PARTICLE_POSITIONS.map((p, i) => (
+        {PARTICLE_POSITIONS_V84.map((p, i) => (
           <ViroSphere
             key={i}
             position={[p.x, p.y, p.z]}
-            radius={PARTICLE_RADIUS}
-            widthSegmentCount={6}
-            heightSegmentCount={4}
+            radius={0.022}
+            widthSegmentCount={14}
+            heightSegmentCount={10}
             materials={[M('particle')]}
-            opacity={0.85}
+            opacity={0.9}
           />
         ))}
       </ViroNode>
@@ -953,14 +1076,17 @@ export function ViroAROverlay({
         autofocus
         worldAlignment="GravityAndHeading"
         provider="none"
-        // v83: 启用 HDR + bloom post-processing pipeline。这是 bloomThreshold
-        // 真正生效的前提！v81/v82 我设了 bloomThreshold 但完全没启用 bloom
-        // pipeline → 等于没设。截图证据: v82 icon 还是纯实色无光晕。
-        // 现在 hdrEnabled + bloomEnabled 一起开 → diffuseColor.luminance >
-        // bloomThreshold 的像素会真的产生光晕扩散。pbr 不需要 (我们没用 PBR
-        // 材质)，shadows/multisampling 也省 (AR 性能敏感)。
+        // v84: 3D 极致包 — 全开渲染管线
+        // hdrEnabled + bloomEnabled (v83 已加): bloom 后处理生效前提
+        // pbrEnabled (v84 新): 启用 PBR (Physically Based Rendering) 管线，
+        //   icon 材质切到 PBR 后受光阴影/金属反射全部工作
+        // shadowsEnabled (v84 新): castsShadow=true 的光源真的投影
+        // multisamplingEnabled (v84 新): MSAA 抗锯齿，icon 边缘从锯齿到柔顺
         hdrEnabled
         bloomEnabled
+        pbrEnabled
+        shadowsEnabled
+        multisamplingEnabled
         initialScene={{ scene: CairnARScene as any }}
         viroAppProps={{
           arkitOrigin: arkitOriginRef.current,
