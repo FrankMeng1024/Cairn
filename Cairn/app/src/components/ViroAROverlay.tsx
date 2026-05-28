@@ -1021,13 +1021,33 @@ function CairnInstance(props: {
           扁平 icon (三角+感叹号 / 5 角星) 暴露侧面缺陷.
           解法: icon ViroNode 加 billboard, 不再 spin, 永远朝相机正面.
           牺牲 spin 旋转动效, 但收获: 永远是 lucide 图标的正确正面. */}
-      {!isTestSphere && (
+      {/* v101 真融合: 球壳 + icon 在同一 ViroNode 树, 同一 transform.
+
+          根因 (用户反复反馈): 之前球壳 + icon 是 2 个独立兄弟 ViroNode,
+          球壳静止 + icon 加 iconBreathe (scale 0.95-1.05) → 两者抖动节奏
+          不一致, 看起来 "叠加" 而不是 "融合". 加上 icon 有 billboard 朝相机,
+          球壳没有 billboard, 从某角度看球在 icon 背后或前面 → 不像 "球套 icon".
+
+          v101 修法:
+          - 删除 iconBreathe 动画 (是叠加错觉元凶)
+          - 球壳 + icon 在同一 ViroNode 里, 共享 billboard + scale + position
+          - 球壳 radius 0.20 < icon 0.13 (icon 还是被球壳包住), 但确保两者
+            一起呼吸/旋转/移动
+          - 删除 iconSpin 留 billboard (不旋转避免侧面问题) */}
       <ViroNode
         transformBehaviors={['billboard']}
         scale={[ICON_SCALE, ICON_SCALE, ICON_SCALE]}
       >
-        <ViroNode animation={{ name: 'iconBreathe', run: tracking, loop: true }}>
-          {geom ? (
+        {/* 1) 外层球壳 (Blinn rgba transparent) */}
+        <ViroSphere
+          radius={0.32}
+          widthSegmentCount={36}
+          heightSegmentCount={28}
+          materials={[M('shellAlpha')]}
+        />
+        {/* 2) 内部 icon (跟球壳同 transform, 自然居中在球内) */}
+        {!isTestSphere && (
+          geom ? (
             <ViroGeometry
               vertices={geom.vertices}
               normals={geom.normals}
@@ -1041,52 +1061,15 @@ function CairnInstance(props: {
               heightSegmentCount={24}
               materials={[M('icon')]}
             />
-          )}
-        </ViroNode>
+          )
+        )}
       </ViroNode>
-      )}
 
-      {/* v100: 严格按 Viro 官方 transparentMaterial 配方:
-          alpha 在 material diffuseColor 'rgba(...)' 字符串里, 不用 opacity prop.
-          ViroSphere 不传 opacity (默认 1.0), 实际透明度在 material 里. */}
-      {isTestSphere && (
-        <ViroSphere
-          radius={0.20}
-          widthSegmentCount={36}
-          heightSegmentCount={28}
-          materials={[M('icon')]}
-        />
-      )}
+      {/* v101: 删除独立 isTestSphere ViroSphere (现在合并到上面 ViroNode);
+          删除独立 shellAdd / shellAlpha ViroSphere (合并到上面 ViroNode);
+          删除 iconBreathe 动画引用 (元凶). */}
 
-      {/* v89: 删除 inner core 双层 (radius 0.06 + 0.10).
-          Reference HTML 没有 core sphere — 我之前 v81 加的 inner core 是
-          想"icon 内部发光", 但实际 reference 是 icon 自己用 ShaderMaterial
-          fresnel + emissive 发光, 不依赖额外 sphere.
-          用户反馈"我不知道这是啥" — 这就是它们没存在感的证据.
-          删了让 shell 内部干净, 只看到 type icon. */}
-
-      {/* v90 Hybrid shell: Add 主层 (reference 灵魂, 暗背景出彩)
-          + Alpha 备份层 (AR 亮背景兜底勾轮廓). 半径差 4mm 防 z-fight. */}
-      <ViroSphere
-        radius={0.318}
-        widthSegmentCount={36}
-        heightSegmentCount={28}
-        materials={[M('shellAdd')]}
-        opacity={0.10}
-      />
-      <ViroSphere
-        radius={0.322}
-        widthSegmentCount={36}
-        heightSegmentCount={28}
-        materials={[M('shellAlpha')]}
-      />
-
-      {/* v89: halo 恢复 3 层 — 严格对齐 reference HTML line 506-508:
-            g.add(makeHaloSprite(tc.inner, 0.40, 0.55));
-            g.add(makeHaloSprite(tc.mid,   0.50, 1.10));
-            g.add(makeHaloSprite(tc.outer, 0.30, 1.70));
-          v83-v88 我们简化到 1 层是误判. 3 层 sprite billboard 提供"光晕从
-          中心向外扩散"的渐变发光感, 这是 reference 视觉的核心. */}
+      {/* v89: halo 恢复 3 层 — 严格对齐 reference HTML line 506-508. */}
       <ViroQuad
         height={0.55}
         width={0.55}
