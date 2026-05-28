@@ -31,7 +31,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 //
 // Bump rule: increment by 1 immediately before running `eas update`.
 // Never reuse a number, never decrement.
-export const OTA_VERSION = 89;
+export const OTA_VERSION = 90;
 
 type OtaState =
   | 'idle'          // checked, no update — "Up to date"
@@ -124,11 +124,21 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
       // 15s was too tight for EAS production endpoint cold-starts; users
       // were forced to tap "retry" themselves when patience would have
       // worked. Now: try, if fail try once more, only THEN show error.
+      //
+      // v89 + 1 升级: 错误分类 — 只对 timeout 重试，对其他错误 (DNS/TLS/
+      // 401/auth) 不重试 (重试也是失败). 用户反馈 v85+ 仍偶遇 retry,
+      // 真因可能是 _不可恢复错误_ 重试 N 次白等 60s 才出 error.
+      const TIMEOUT_ERROR = 'ota-timeout';
       const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
         new Promise((resolve, reject) => {
-          const t = setTimeout(() => reject(new Error('ota-timeout')), ms);
+          const t = setTimeout(() => reject(new Error(TIMEOUT_ERROR)), ms);
           p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
         });
+      // 判断错误是否值得重试. 只重试 timeout (临时性). 其他错误重试也无用.
+      const isRetryableError = (err: any): boolean => {
+        const msg = String(err?.message || err || '').toLowerCase();
+        return msg.includes(TIMEOUT_ERROR);
+      };
       try {
         const Updates = await import('expo-updates');
         if (!Updates.isEnabled) {
@@ -144,19 +154,18 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
           await Updates.reloadAsync();
           return;
         }
-        // v82.1: check phase with auto-retry. Try 30s, on timeout try
-        // once more (another 30s). Only after both attempts fail do we
-        // surface 'error'. Total worst-case wait: 60s — but the user
-        // sees "Checking" the whole time, never a misleading retry
-        // prompt for what's actually just a slow network.
+        // v89+1: check phase 错误分类重试. 只对 timeout 重试 1 次.
         const checkOnce = () => withTimeout(Updates.checkForUpdateAsync(), 30000);
         let result;
         try {
           result = await checkOnce();
-        } catch {
+        } catch (err) {
           if (cancelled) return;
-          // Stay in 'checking' — user shouldn't see a flash of error
-          // just because the first attempt was slow. Silent retry.
+          if (!isRetryableError(err)) {
+            // 不可恢复错误 (DNS/TLS/401), 立即报错不重试.
+            throw err;
+          }
+          // Timeout — silent retry. 用户全程看到 "Checking" 不闪 error.
           result = await checkOnce();
         }
         if (cancelled) return;
@@ -165,14 +174,15 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
           return;
         }
         setState('downloading');
-        // Download phase — also retry once if it fails. 60s per attempt
-        // is generous; bundles are typically <2 MB so 60s only triggers
-        // on truly broken connections. Retry catches transient hiccups.
+        // v89+1: download phase 同样错误分类.
         const fetchOnce = () => withTimeout(Updates.fetchUpdateAsync(), 60000);
         try {
           await fetchOnce();
-        } catch {
+        } catch (err) {
           if (cancelled) return;
+          if (!isRetryableError(err)) {
+            throw err;
+          }
           await fetchOnce();
         }
         if (cancelled) return;
@@ -186,8 +196,7 @@ export function OtaBadge({ inline = false, idleHidden = false }: Props) {
         // otherwise the reload feels like a random crash.
         setTimeout(() => { Updates.reloadAsync().catch(() => {}); }, 600);
       } catch {
-        // Both attempts failed. Surface honest error; user can manually
-        // retry. This branch should be rare now that we auto-retry.
+        // 重试用尽 (timeout 都失败) 或不可恢复错误 → 显示 error.
         if (!cancelled) setState('error');
       }
     })();

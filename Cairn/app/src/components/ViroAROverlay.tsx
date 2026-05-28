@@ -156,8 +156,13 @@ function buildScenicGeom() {
 }
 
 function buildSupplyGeom() {
-  // Lathed water droplet — pointed top, fat bottom
-  const segs = 14, sides = 14;
+  // v90: lathe 几何加密 + analytic vertex normals.
+  // 用户反馈: "里面图标水滴都不圆润". 根因 (a) ViroGeometry 没传 normals
+  // → flat shading 显 facet; (b) 细分 14×14 远低于 reference HTML segs=28
+  // sides=32 (顶点 196 → 928, 4×).
+  // 修法: 完全对齐 reference HTML LatheGeometry(28, 32) + 算 lathe analytic
+  // 法向量 (meridian-plane tangent rotate 90° 后绕 Y 轴 unfold).
+  const segs = 28, sides = 32;
   const TOP_Y = 0.26, BOT_Y = -0.20, MAX_R = 0.16;
   const profile: { y: number; r: number }[] = [];
   for (let i = 0; i <= segs; i++) {
@@ -165,14 +170,34 @@ function buildSupplyGeom() {
     const y = TOP_Y + (BOT_Y - TOP_Y) * t;
     const tEff = Math.pow(t, 1.55);
     const r = MAX_R * Math.pow(Math.sin(tEff * Math.PI), 0.85);
-    profile.push({ y, r: (i === 0 || i === segs) ? 0.0001 : Math.max(r, 0.0001) });
+    profile.push({ y, r: (i === 0 || i === segs) ? 0 : Math.max(r, 0.0001) });
   }
+  // Analytic lathe normal in meridian (r,y) plane.
+  // Profile tangent T = (dr/dt, dy/dt) (central diff).
+  // Outward meridian normal M = (dy, -dr) normalised — 90° CW rotation.
+  const meridianN: { mx: number; my: number }[] = [];
+  for (let i = 0; i <= segs; i++) {
+    let dr: number, dy: number;
+    if (i === 0)         { dr = profile[1].r - profile[0].r;       dy = profile[1].y - profile[0].y; }
+    else if (i === segs) { dr = profile[segs].r - profile[segs - 1].r; dy = profile[segs].y - profile[segs - 1].y; }
+    else                 { dr = (profile[i + 1].r - profile[i - 1].r) / 2; dy = (profile[i + 1].y - profile[i - 1].y) / 2; }
+    let mx = dy, my = -dr;
+    const len = Math.hypot(mx, my) || 1;
+    meridianN.push({ mx: mx / len, my: my / len });
+  }
+  // Apex caps: degenerate radius → use pure axial normals.
+  meridianN[0]    = { mx: 0, my: 1 };
+  meridianN[segs] = { mx: 0, my: -1 };
+
   const verts: [number, number, number][] = [];
+  const normals: [number, number, number][] = [];
   for (let i = 0; i <= segs; i++) {
     for (let j = 0; j < sides; j++) {
       const ang = (j / sides) * Math.PI * 2;
-      const p = profile[i];
-      verts.push([Math.cos(ang) * p.r, p.y, Math.sin(ang) * p.r]);
+      const cosA = Math.cos(ang), sinA = Math.sin(ang);
+      const p = profile[i], n = meridianN[i];
+      verts.push([cosA * p.r, p.y, sinA * p.r]);
+      normals.push([cosA * n.mx, n.my, sinA * n.mx]);
     }
   }
   const idx: [number, number, number][] = [];
@@ -186,7 +211,7 @@ function buildSupplyGeom() {
       idx.push([a, d, c]);
     }
   }
-  return { vertices: verts, triangleIndices: idx };
+  return { vertices: verts, normals, triangleIndices: idx };
 }
 
 function buildJunctionGeom() {
@@ -234,7 +259,7 @@ function buildJunctionGeom() {
   return { vertices: verts, triangleIndices: idx };
 }
 
-const ICON_GEOM: Record<string, { vertices: [number, number, number][]; triangleIndices: [number, number, number][] }> = {
+const ICON_GEOM: Record<string, { vertices: [number, number, number][]; normals?: [number, number, number][]; triangleIndices: [number, number, number][] }> = {
   danger:   buildDangerGeom(),
   scenic:   buildScenicGeom(),
   supply:   buildSupplyGeom(),
@@ -479,6 +504,24 @@ function CairnARScene(props: any) {
           writesToDepthBuffer: true,
           readsFromDepthBuffer: true,
         };
+        // v90: supply 水滴单独材质. 用户反馈"水滴不圆润不像水".
+        // Reference HTML 用 MeshPhysicalMaterial transmission=0.92 ior=1.33
+        // roughness=0.08 — 真透明水玻璃. Viro 不支持 transmission/ior, 但
+        // 可以用 metalness=0 + 极低 roughness + 反射 cubemap 模拟"湿玻璃" 质感.
+        // 其他 type (danger/scenic/junction) 维持 metalness=0.85 金属感, 用户
+        // 没投诉. 只 supply 单独覆盖.
+        if (t === 'supply') {
+          matDict[`icon${t}`] = {
+            lightingModel: 'PBR',
+            diffuseColor: c.mid,
+            metalness: 0.0,             // 水是非金属 (跟 reference 一致)
+            roughness: 0.05,             // 锐利高光像玻璃
+            reflectiveTexture: cubeMap,
+            bloomThreshold: 0.30,
+            writesToDepthBuffer: true,
+            readsFromDepthBuffer: true,
+          };
+        }
         // v84: inner core — PBR + 高 emissive (用 metalness=0 + roughness=1 +
         // bloomThreshold=0.20 让它一直处于 bloom 阈值之上 → 永远发光).
         matDict[`core${t}`] = {
@@ -490,15 +533,16 @@ function CairnARScene(props: any) {
           writesToDepthBuffer: true,
           readsFromDepthBuffer: true,
         };
-        // v89 严格对齐 reference HTML: line 495-503
-        // const glow = new THREE.Mesh(SphereGeometry(0.32),
-        //   MeshBasicMaterial({ color: tc.mid, opacity: 0.10,
-        //     blending: AdditiveBlending, depthWrite: false, side: BackSide }))
-        // 关键: AdditiveBlending + opacity=0.10 (极透) + BackSide (内壁) = 球轮廓
-        // 隐隐发光但完全透视内部. 我们之前用 Alpha 0.20 + cullMode='Front'
-        // 是错误的近似. 回到 Add + 0.10 + cullMode='Front' (Viro Front-cull
-        // = Three.js BackSide, 行为一致).
-        matDict[`shell${t}`] = {
+        // v90: Hybrid shell — Add 主层 (reference 灵魂) + Alpha 备份层 (AR 兜底).
+        // v89 用户反馈球壳完全消失. 根因: Add(亮背景, mid×0.10) ≈ 亮背景, 球
+        // 被吞没. Add 在 reference HTML 黑背景下是球的灵魂, 但 AR 摄像头亮
+        // 背景下失效.
+        // 修法: 双层 ViroSphere 同心 (半径差 4mm 防 z-fight),
+        //   - shellAdd: reference 兼容 Add blend opacity 0.10
+        //   - shellAlpha: AR 兜底 Alpha blend opacity 0.06 (亮背景下勾出轮廓,
+        //     暗背景下因 opacity 极低几乎不可见, 让 Add 主导)
+        // 两层都 cullMode='Front' (= Three.js BackSide), 不挡 icon.
+        matDict[`shellAdd${t}`] = {
           lightingModel: 'Constant',
           diffuseColor: c.mid,
           blendMode: 'Add',
@@ -507,6 +551,17 @@ function CairnARScene(props: any) {
           readsFromDepthBuffer: true,
           bloomThreshold: 0.50,
         };
+        matDict[`shellAlpha${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: c.mid,
+          blendMode: 'Alpha',
+          cullMode: 'Front',
+          writesToDepthBuffer: false,
+          readsFromDepthBuffer: true,
+          bloomThreshold: 1.10,  // > 1.0 = 关 bloom (这层只勾轮廓不发光)
+        };
+        // Backwards-compat alias.
+        matDict[`shell${t}`] = matDict[`shellAdd${t}`];
         // v84: outer wisp — Lambert 软光晕（PBR 在大半径低 opacity 上太亮）
         matDict[`wisp${t}`] = {
           lightingModel: 'Lambert',
@@ -844,6 +899,7 @@ function CairnInstance(props: {
           {geom ? (
             <ViroGeometry
               vertices={geom.vertices}
+              normals={geom.normals}
               triangleIndices={geom.triangleIndices}
               materials={[M('icon')]}
             />
@@ -865,16 +921,21 @@ function CairnInstance(props: {
           用户反馈"我不知道这是啥" — 这就是它们没存在感的证据.
           删了让 shell 内部干净, 只看到 type icon. */}
 
-      {/* v89 严格对齐 reference HTML cairn_icons_3d.html line 495-503:
-          单层 shell radius=0.32 + Add blend + opacity=0.10 + BackSide.
-          Reference 实际只有 1 层 atmospheric glow (我们 v85+ 误以为多层壳
-          更立体, 实际 Three.js 单层就够). */}
+      {/* v90 Hybrid shell: Add 主层 (reference 灵魂, 暗背景出彩)
+          + Alpha 备份层 (AR 亮背景兜底勾轮廓). 半径差 4mm 防 z-fight. */}
       <ViroSphere
-        radius={0.32}
+        radius={0.318}
         widthSegmentCount={36}
         heightSegmentCount={28}
-        materials={[M('shell')]}
+        materials={[M('shellAdd')]}
         opacity={0.10}
+      />
+      <ViroSphere
+        radius={0.322}
+        widthSegmentCount={36}
+        heightSegmentCount={28}
+        materials={[M('shellAlpha')]}
+        opacity={0.06}
       />
 
       {/* v89: halo 恢复 3 层 — 严格对齐 reference HTML line 506-508:
