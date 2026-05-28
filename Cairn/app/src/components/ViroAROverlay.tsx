@@ -71,6 +71,18 @@ function hexToVec3(hex: string): [number, number, number] {
   return [r, g, b];
 }
 
+// v100: hex '#rrggbb' + alpha → 'rgba(R,G,B,A)' 字符串.
+// Viro 官方 transparentMaterial 配方要求 diffuseColor 是 rgba 字符串,
+// alpha 写在颜色里, 不通过 ViroSphere opacity prop. PBR + Alpha 在 Viro
+// 不工作, 必须用 Blinn lighting + rgba diffuse.
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 // ── Constants ──────────────────────────────────────────────────
 const ORB_RADIUS = 0.4;       // 80cm diameter (~2x basketball)
 // v68: cairn Y is now relative to ARKit camera Y at origin time, not "1.5m
@@ -595,24 +607,25 @@ function CairnARScene(props: any) {
             readsFromDepthBuffer: true,
           };
         }
-        // v99: cairn (Sphere) test type — 改为真 "玻璃罐" 视觉.
-        // 用户反馈 v97/v98 球 opacity 0.85 太实心, "套在 icon 上会看不清里面图标".
-        // 改法: PBR + metalness=0 + roughness=0.10 + cubemap → 球面真高光反射;
-        //       用 outer (深色) 作 diffuseColor, 跟 icon mid (亮色) 形成对比;
-        //       blendMode='Alpha' + opacity 0.25 → 透明可视内部;
-        //       cullMode='None' 双面渲染防剔除.
+        // v100: 严格按 Viro 官方文档 transparentMaterial 配方:
+        //   lightingModel: 'Blinn' (不是 PBR! PBR + Alpha 在 Viro 不兼容)
+        //   diffuseColor: 'rgba(R,G,B,A)' (alpha 写在颜色字符串里)
+        //   blendMode: 'Alpha'
+        //   cullMode: 'None' (双面渲染)
+        //   shininess: 2.0 (Blinn 高光)
+        // 反复试 PBR + reflectiveTexture + opacity prop 所有组合, 都失败.
+        // 文档唯一 transparent 例子是 Blinn + rgba, 这是真实工作的配方.
         if (t === 'cairn') {
+          // mid 颜色 hex → rgba(... 0.40) 透明玻璃
+          const rgba = hexToRgba(c.mid, 0.40);
           matDict[`icon${t}`] = {
-            lightingModel: 'PBR',
-            diffuseColor: c.outer,
-            metalness: 0.0,
-            roughness: 0.10,
-            reflectiveTexture: cubeMap,
+            lightingModel: 'Blinn',
+            diffuseColor: rgba,
             blendMode: 'Alpha',
             cullMode: 'None',
+            shininess: 2.0,
             writesToDepthBuffer: false,
             readsFromDepthBuffer: true,
-            bloomThreshold: 0.40,
           };
         }
         // v84: inner core — PBR + 高 emissive (用 metalness=0 + roughness=1 +
@@ -644,21 +657,18 @@ function CairnARScene(props: any) {
           readsFromDepthBuffer: true,
           bloomThreshold: 0.50,
         };
-        // v99: shellAlpha 改用 cairn test sphere 同款 "透明玻璃罐" 配方.
-        // 用户反馈 v98 cairn type 球终于可见, 但说 "套在 icon 上会看不清里面图标".
-        // 把 cairn 的成功配方应用到 4 个真 type:
-        //   PBR + metalness 0 + roughness 0.10 + cubemap → 球面真高光反射
-        //   diffuseColor: c.outer (深色) → 跟 icon mid (亮色) 形成对比
-        //   blendMode 'Alpha' + cullMode 'None' → 双面渲染防失败
-        // 配合 ViroSphere opacity 0.25 (从 0.30) 让球更透明 icon 能看清.
+        // v100: shellAlpha 严格按 Viro 官方 transparentMaterial 配方.
+        // PBR + reflectiveTexture + Alpha 在 Viro 不兼容 (反复试 v85-v99).
+        // 唯一文档示例的 transparent: Blinn + rgba diffuse + Alpha + None + shininess.
+        // diffuseColor 用 'rgba(R,G,B,0.30)' alpha 在颜色字符串里.
+        // 不用 ViroSphere opacity prop (官方 transparent 不依赖它).
+        const shellRgba = hexToRgba(c.mid, 0.30);
         matDict[`shellAlpha${t}`] = {
-          lightingModel: 'PBR',
-          diffuseColor: c.outer,
-          metalness: 0.0,
-          roughness: 0.10,
-          reflectiveTexture: cubeMap,
+          lightingModel: 'Blinn',
+          diffuseColor: shellRgba,
           blendMode: 'Alpha',
           cullMode: 'None',
+          shininess: 2.0,
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
           bloomThreshold: 1.10,
@@ -1036,17 +1046,15 @@ function CairnInstance(props: {
       </ViroNode>
       )}
 
-      {/* v99: cairn 透明玻璃罐 — opacity 0.85 → 0.25, 让球能透视内部.
-          给 4 个真 type 的 cairn 都套这个透明玻璃罐效果, 而不只是 cairn
-          test type. 这样 danger/scenic/supply/junction 都被一个透明球壳
-          包裹, 像 Pokestop 透明圆球里的小精灵. */}
+      {/* v100: 严格按 Viro 官方 transparentMaterial 配方:
+          alpha 在 material diffuseColor 'rgba(...)' 字符串里, 不用 opacity prop.
+          ViroSphere 不传 opacity (默认 1.0), 实际透明度在 material 里. */}
       {isTestSphere && (
         <ViroSphere
           radius={0.20}
           widthSegmentCount={36}
           heightSegmentCount={28}
           materials={[M('icon')]}
-          opacity={0.25}
         />
       )}
 
@@ -1071,7 +1079,6 @@ function CairnInstance(props: {
         widthSegmentCount={36}
         heightSegmentCount={28}
         materials={[M('shellAlpha')]}
-        opacity={0.25}
       />
 
       {/* v89: halo 恢复 3 层 — 严格对齐 reference HTML line 506-508:
