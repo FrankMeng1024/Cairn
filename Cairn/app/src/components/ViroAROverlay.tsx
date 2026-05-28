@@ -105,42 +105,52 @@ const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presen
 //
 // Coordinate convention: +Y = up, +Z = front (icon faces +Z).
 function buildDangerGeom() {
-  // v92: 改为 lucide TriangleAlert 真三角形 + 感叹号几何 (跟系统底部
-  // "Danger" 按钮 icon 一致). 用户反馈 v91 三棱柱 prism 跟系统图标完全
-  // 不一致 (系统是三角形+!).
-  // SVG 原图 (viewBox 24×24): 顶点 (12,4) 底左 (4,21) 底右 (21.73,21).
-  // 我们映射到本地坐标: x [-0.24, 0.24], y [-0.20, 0.26], z 加薄厚度 0.04
-  // 让正面看是三角, 侧面有点厚度 (像奖章雕花).
-  // 感叹号: 用一根细圆柱 (bar) + 一颗小球 (dot), 都比三角形稍微突出 z+0.05
-  // 让感叹号"嵌"在三角形上而不是埋进去.
+  // v93: lucide TriangleAlert 几何修正版.
+  // 用户反馈 v92 "危险的反了 下面小上面大应该" — 用户希望视觉上是
+  // "顶尖向上, 底部宽" (传统警示三角形). 我们之前 (0, 0.26) 顶 + (±0.24, -0.20)
+  // 底数学上正确, 但用户截图里看像倒三角. 可能 root cause:
+  //   (a) iconSpin Y 轴旋转 180° 时刚好截到反向角度
+  //   (b) ViroGeometry CCW/CW 默认面剔除问题, 用户看到的是后面 (BackSide)
+  // 修法: 几何明确顶尖在 +Y, 底在 -Y, 同时 CCW 三角面顺序确保 front face
+  // 是 +Z 方向. 增大底宽 (从 ±0.24 → ±0.26) + 顶部稍尖 (0.26 → 0.27) 让
+  // "下宽上尖" 更明显. 三角形侧壁 D=0.04 厚度.
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-  const D = 0.04;  // 三角形前后半厚度
+  const D = 0.04;
+  const TOP_Y = 0.27;
+  const BOT_Y = -0.20;
+  const HALF_W = 0.26;
 
-  // ── 三角形外框 (实心, 前后两面 + 三个侧壁) ──
-  // 顶点 0..2 = 前面三角 (z=+D), 3..5 = 后面三角 (z=-D)
-  // SVG (12,4)/(4,21)/(21.73,21) 映射到 (0, 0.26)/(-0.24, -0.20)/(0.24, -0.20)
-  verts.push([0, 0.26, D]);          // 0 前顶
-  verts.push([-0.24, -0.20, D]);     // 1 前左下
-  verts.push([0.24, -0.20, D]);      // 2 前右下
-  verts.push([0, 0.26, -D]);         // 3 后顶
-  verts.push([-0.24, -0.20, -D]);    // 4 后左下
-  verts.push([0.24, -0.20, -D]);     // 5 后右下
-  // 前面 (CCW 看从 +z) + 后面
-  idx.push([0, 1, 2]);
-  idx.push([3, 5, 4]);
-  // 三个侧壁 (前后顶点连接)
-  idx.push([0, 2, 5]); idx.push([0, 5, 3]);  // 右侧
-  idx.push([2, 1, 4]); idx.push([2, 4, 5]);  // 底
-  idx.push([1, 0, 3]); idx.push([1, 3, 4]);  // 左侧
+  // 前面三角 (z=+D): CCW 顺序 (从 +Z 看是逆时针 = front face)
+  verts.push([0,        TOP_Y, D]);  // 0 前顶
+  verts.push([-HALF_W,  BOT_Y, D]);  // 1 前左下
+  verts.push([HALF_W,   BOT_Y, D]);  // 2 前右下
+  // 后面三角 (z=-D)
+  verts.push([0,        TOP_Y, -D]); // 3 后顶
+  verts.push([-HALF_W,  BOT_Y, -D]); // 4 后左下
+  verts.push([HALF_W,   BOT_Y, -D]); // 5 后右下
+  // 前面 (CCW from +Z): 0→2→1
+  idx.push([0, 2, 1]);
+  // 后面 (CCW from -Z): 3→4→5
+  idx.push([3, 4, 5]);
+  // 三个侧壁 quad (前后顶点连接, CCW 朝外)
+  idx.push([0, 1, 4]); idx.push([0, 4, 3]);  // 左侧 (顶→左下→后左下→后顶)
+  idx.push([1, 2, 5]); idx.push([1, 5, 4]);  // 底
+  idx.push([2, 0, 3]); idx.push([2, 3, 5]);  // 右侧
 
-  // ── 感叹号竖 (bar) ──
-  // SVG M12 9 v4 (中心 x=0, y 从 9 到 13, viewBox 4-21 映射 -> -0.10 ~ -0.02)
-  // bar 宽 0.025, 高 0.10, 中心 (0, -0.06, D+0.02), 突出三角形面 0.02 让 emboss
-  const barW = 0.025, barH = 0.10, barCY = -0.04, barZ = D + 0.02;
-  const barT = 0.012;  // bar 厚度 (z 方向)
+  // 感叹号位置 — 重新计算 SVG → 3D 映射
+  // SVG viewBox (24×24), y 轴向下. lucide TriangleAlert:
+  //   bar M12 9 v4 (mid y=11, SVG 偏上)
+  //   dot M12 17 (SVG 偏下)
+  // 3D 映射: world center y = 0.03, scale = 0.46/24 ≈ 0.0192/SVG-unit
+  //   bar mid y_svg=11 → y_3d = (12.5-11) × 0.0192 = +0.029
+  //   dot y_svg=17    → y_3d = (12.5-17) × 0.0192 = -0.086
+  // v92 我把 bar=-0.04 dot=-0.16 (颠倒了 SVG y 翻转 sign)
+
+  // ── 感叹号竖 (bar) — 在三角形上半部 ──
+  const barW = 0.025, barH = 0.10, barCY = 0.029, barZ = D + 0.025;
+  const barT = 0.012;
   const bbase = verts.length;
-  // box 8 顶点
   verts.push([-barW, barCY - barH/2, barZ - barT]);  // 0
   verts.push([ barW, barCY - barH/2, barZ - barT]);  // 1
   verts.push([ barW, barCY - barH/2, barZ + barT]);  // 2
@@ -149,26 +159,22 @@ function buildDangerGeom() {
   verts.push([ barW, barCY + barH/2, barZ - barT]);  // 5
   verts.push([ barW, barCY + barH/2, barZ + barT]);  // 6
   verts.push([-barW, barCY + barH/2, barZ + barT]);  // 7
-  // 6 面三角化
-  idx.push([bbase+0, bbase+1, bbase+2], [bbase+0, bbase+2, bbase+3]);  // 底
-  idx.push([bbase+4, bbase+6, bbase+5], [bbase+4, bbase+7, bbase+6]);  // 顶
-  idx.push([bbase+0, bbase+5, bbase+1], [bbase+0, bbase+4, bbase+5]);  // 后
-  idx.push([bbase+2, bbase+6, bbase+3], [bbase+3, bbase+6, bbase+7]);  // 前
-  idx.push([bbase+1, bbase+5, bbase+6], [bbase+1, bbase+6, bbase+2]);  // 右
-  idx.push([bbase+0, bbase+3, bbase+7], [bbase+0, bbase+7, bbase+4]);  // 左
+  idx.push([bbase+0, bbase+1, bbase+2], [bbase+0, bbase+2, bbase+3]);
+  idx.push([bbase+4, bbase+6, bbase+5], [bbase+4, bbase+7, bbase+6]);
+  idx.push([bbase+0, bbase+5, bbase+1], [bbase+0, bbase+4, bbase+5]);
+  idx.push([bbase+2, bbase+6, bbase+3], [bbase+3, bbase+6, bbase+7]);
+  idx.push([bbase+1, bbase+5, bbase+6], [bbase+1, bbase+6, bbase+2]);
+  idx.push([bbase+0, bbase+3, bbase+7], [bbase+0, bbase+7, bbase+4]);
 
-  // ── 感叹号圆点 (dot) ──
-  // SVG M12 17 (中心 x=0, y=17 viewBox 4-21 映射 -> -0.13)
-  // 用一个 8-面体 (octahedron) 简化代替球, 12 顶点不到, 渲染廉价
-  const dotR = 0.022, dotY = -0.16, dotZ = D + 0.025;
+  // ── 感叹号圆点 (dot) — 在三角形下半部 ──
+  const dotR = 0.022, dotY = -0.086, dotZ = D + 0.025;
   const dbase = verts.length;
-  verts.push([0, dotY + dotR, dotZ]);          // 0 上
-  verts.push([0, dotY - dotR, dotZ]);          // 1 下
-  verts.push([dotR, dotY, dotZ]);              // 2 右
-  verts.push([-dotR, dotY, dotZ]);             // 3 左
-  verts.push([0, dotY, dotZ + dotR]);          // 4 前
-  verts.push([0, dotY, dotZ - dotR]);          // 5 后
-  // 8 三角面
+  verts.push([0, dotY + dotR, dotZ]);
+  verts.push([0, dotY - dotR, dotZ]);
+  verts.push([dotR, dotY, dotZ]);
+  verts.push([-dotR, dotY, dotZ]);
+  verts.push([0, dotY, dotZ + dotR]);
+  verts.push([0, dotY, dotZ - dotR]);
   idx.push([dbase+0, dbase+4, dbase+2], [dbase+0, dbase+2, dbase+5]);
   idx.push([dbase+0, dbase+5, dbase+3], [dbase+0, dbase+3, dbase+4]);
   idx.push([dbase+1, dbase+2, dbase+4], [dbase+1, dbase+5, dbase+2]);
@@ -631,17 +637,27 @@ function CairnARScene(props: any) {
           bloomThreshold: 0.50,
         };
         matDict[`shellAlpha${t}`] = {
-          // v92: 退回 Constant lightingModel. v91 的 PBR + cubemap 让球壳
-          // 反射环境跟背景颜色融合 = 球消失. Constant + Alpha + 高 opacity
-          // 是 AR 上"看得到 3D 球壳"最稳定的组合.
-          // opacity 0.25→0.35 进一步加强可见度.
-          lightingModel: 'Constant',
+          // v93: 回到 v85 配方 — PBR + cubemap + cullMode='None' 双面渲染.
+          // 用户反馈 "之前几个版本不是出现过外圈么? 只是透明度问题".
+          // 那个就是 v85 PBR shell + reflectiveTexture, 用户当时说 "看到
+          // 立体感了". v91-v92 我各种试错都没回到那个配方.
+          // 关键改动:
+          //   - lightingModel: 'PBR' (有真受光高光)
+          //   - metalness 0 + roughness 0.10 (玻璃质感)
+          //   - reflectiveTexture: cubeMap (反射环境产生球面变化)
+          //   - cullMode: 'None' (双面渲染, 球永远可见不被剔除)
+          //   - opacity 0.30 (清晰可见但通透)
+          //   - bloomThreshold 1.10 关 bloom (避免 bloom 把球边缘吞了)
+          lightingModel: 'PBR',
           diffuseColor: c.mid,
+          metalness: 0.0,
+          roughness: 0.10,
+          reflectiveTexture: cubeMap,
           blendMode: 'Alpha',
-          cullMode: 'Front',
+          cullMode: 'None',
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
-          bloomThreshold: 1.10,  // 关 bloom (这层只勾轮廓)
+          bloomThreshold: 1.10,
         };
         // Backwards-compat alias.
         matDict[`shell${t}`] = matDict[`shellAdd${t}`];
@@ -1020,7 +1036,7 @@ function CairnInstance(props: {
         widthSegmentCount={36}
         heightSegmentCount={28}
         materials={[M('shellAlpha')]}
-        opacity={0.35}
+        opacity={0.30}
       />
 
       {/* v89: halo 恢复 3 层 — 严格对齐 reference HTML line 506-508:
