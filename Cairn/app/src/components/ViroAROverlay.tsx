@@ -46,9 +46,11 @@ const TYPE_COLOR_TRIPLET: Record<string, { inner: string; mid: string; outer: st
   scenic:   { inner: '#eefff4', mid: '#3ad8a4', outer: '#186a82' },
   supply:   { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
   junction: { inner: '#fff4d8', mid: '#f0a838', outer: '#8a4a18' },
-  // v70: catch-all for legacy/non-typed markers (`cairn`, `free`, empty).
-  // Renders a neutral grey orb so the user doesn't see junction-orange
-  // by accident. Geometry falls back to a sphere (no icon shape).
+  // v94: cairn type 作为测试球. 仅渲染纯色玻璃球壳 + 内部一个 emissive 光球,
+  // 不渲染任何复杂 icon 几何 (没三棱柱/水滴/星形). 用来验证球壳本身是否
+  // 在 AR 现实场景下可见. 颜色用 stone-grey, 跟 markerTypes.ts cairn 一致.
+  cairn:    { inner: '#f5e6d0', mid: '#b5823d', outer: '#5a3d18' },
+  // v70: catch-all for legacy/non-typed markers (`free`, empty).
   generic:  { inner: '#f0f0f0', mid: '#9aa0a6', outer: '#3a3d40' },
 };
 // Legacy single-color map kept for backwards compatibility — same mid colour.
@@ -105,80 +107,70 @@ const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presen
 //
 // Coordinate convention: +Y = up, +Z = front (icon faces +Z).
 function buildDangerGeom() {
-  // v93: lucide TriangleAlert 几何修正版.
-  // 用户反馈 v92 "危险的反了 下面小上面大应该" — 用户希望视觉上是
-  // "顶尖向上, 底部宽" (传统警示三角形). 我们之前 (0, 0.26) 顶 + (±0.24, -0.20)
-  // 底数学上正确, 但用户截图里看像倒三角. 可能 root cause:
-  //   (a) iconSpin Y 轴旋转 180° 时刚好截到反向角度
-  //   (b) ViroGeometry CCW/CW 默认面剔除问题, 用户看到的是后面 (BackSide)
-  // 修法: 几何明确顶尖在 +Y, 底在 -Y, 同时 CCW 三角面顺序确保 front face
-  // 是 +Z 方向. 增大底宽 (从 ±0.24 → ±0.26) + 顶部稍尖 (0.26 → 0.27) 让
-  // "下宽上尖" 更明显. 三角形侧壁 D=0.04 厚度.
+  // v94: 重写为 "扁三角 + 嵌入感叹号" 而不是 v93 的 "三角板 + 突出浮雕".
+  // 用户反馈 v93 感叹号是 "单侧突出" — 问题是 v93 把 bar/dot 放在 z=+0.025
+  // 突出三角形正面 0.025m, 当 iconSpin 转到侧面时看到独立长条/球.
+  // v94 完全压扁: 整个 icon 厚度 D=0.012, bar/dot 跟三角形同一 z 平面
+  // (z=+D), 但用 inner 亮色而不是 mid 暗色, 形成 "颜色嵌入" 效果而不是
+  // "几何浮雕". 配合 v94 的 billboard (不 spin), 永远只看到正面.
+  // 顶尖向上正三角形 (用户反馈 "下面小上面大应该" = 顶尖朝上 = 我们要的).
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-  const D = 0.04;
+  const D = 0.012;  // icon 总厚度极薄, 减少侧面问题
   const TOP_Y = 0.27;
   const BOT_Y = -0.20;
   const HALF_W = 0.26;
 
-  // 前面三角 (z=+D): CCW 顺序 (从 +Z 看是逆时针 = front face)
-  verts.push([0,        TOP_Y, D]);  // 0 前顶
-  verts.push([-HALF_W,  BOT_Y, D]);  // 1 前左下
-  verts.push([HALF_W,   BOT_Y, D]);  // 2 前右下
-  // 后面三角 (z=-D)
-  verts.push([0,        TOP_Y, -D]); // 3 后顶
-  verts.push([-HALF_W,  BOT_Y, -D]); // 4 后左下
-  verts.push([HALF_W,   BOT_Y, -D]); // 5 后右下
-  // 前面 (CCW from +Z): 0→2→1
+  // ── 主三角板 (用 mid 颜色, materials index 0) ──
+  // 8 顶点 = 前后两个三角形, 顶尖在 +Y
+  verts.push([0,        TOP_Y,  D]);   // 0 前顶
+  verts.push([-HALF_W,  BOT_Y,  D]);   // 1 前左下
+  verts.push([HALF_W,   BOT_Y,  D]);   // 2 前右下
+  verts.push([0,        TOP_Y, -D]);   // 3 后顶
+  verts.push([-HALF_W,  BOT_Y, -D]);   // 4 后左下
+  verts.push([HALF_W,   BOT_Y, -D]);   // 5 后右下
+  // 前面 (CCW from +Z = front)
   idx.push([0, 2, 1]);
-  // 后面 (CCW from -Z): 3→4→5
+  // 后面 (CCW from -Z = back)
   idx.push([3, 4, 5]);
-  // 三个侧壁 quad (前后顶点连接, CCW 朝外)
-  idx.push([0, 1, 4]); idx.push([0, 4, 3]);  // 左侧 (顶→左下→后左下→后顶)
-  idx.push([1, 2, 5]); idx.push([1, 5, 4]);  // 底
-  idx.push([2, 0, 3]); idx.push([2, 3, 5]);  // 右侧
+  // 三个侧壁
+  idx.push([0, 1, 4]); idx.push([0, 4, 3]);
+  idx.push([1, 2, 5]); idx.push([1, 5, 4]);
+  idx.push([2, 0, 3]); idx.push([2, 3, 5]);
 
-  // 感叹号位置 — 重新计算 SVG → 3D 映射
-  // SVG viewBox (24×24), y 轴向下. lucide TriangleAlert:
-  //   bar M12 9 v4 (mid y=11, SVG 偏上)
-  //   dot M12 17 (SVG 偏下)
-  // 3D 映射: world center y = 0.03, scale = 0.46/24 ≈ 0.0192/SVG-unit
-  //   bar mid y_svg=11 → y_3d = (12.5-11) × 0.0192 = +0.029
-  //   dot y_svg=17    → y_3d = (12.5-17) × 0.0192 = -0.086
-  // v92 我把 bar=-0.04 dot=-0.16 (颠倒了 SVG y 翻转 sign)
-
-  // ── 感叹号竖 (bar) — 在三角形上半部 ──
-  const barW = 0.025, barH = 0.10, barCY = 0.029, barZ = D + 0.025;
-  const barT = 0.012;
+  // ── 感叹号 bar (放在三角面前 z=+D + 0.001 epsilon 避免 z-fight) ──
+  // 占同一 z 平面, 颜色由 material 决定 (但 ViroGeometry 单 material).
+  // 简化: bar 也用 mid 颜色, 但用更高 emissive (后续 ViroQuad 加亮)
+  // 或: bar/dot 保留稍微 inset z=+D-0.002 让它显得像 "嵌入" 而不是浮雕.
+  // 这里采用方案 B: bar/dot 略低于三角板正面 (z=+D-0.002), 看上去像
+  // 雕刻凹下去的感叹号.
+  const eps = 0.002;
+  const barW = 0.030, barH = 0.10, barCY = 0.029;
+  // bar 放在 z=+D 三角形正面 (跟正面同一平面, ~ z=+D)
+  // 简化: 4 顶点矩形 quad, 用 mid 颜色 (跟三角同色, 只用尺寸+位置区分)
+  // 实际上 ViroGeometry 一个 material, 想做颜色对比只能多 mesh. 这里
+  // 不再用浮雕, 直接接受 "感叹号位置标识但不强调颜色" 的折衷.
   const bbase = verts.length;
-  verts.push([-barW, barCY - barH/2, barZ - barT]);  // 0
-  verts.push([ barW, barCY - barH/2, barZ - barT]);  // 1
-  verts.push([ barW, barCY - barH/2, barZ + barT]);  // 2
-  verts.push([-barW, barCY - barH/2, barZ + barT]);  // 3
-  verts.push([-barW, barCY + barH/2, barZ - barT]);  // 4
-  verts.push([ barW, barCY + barH/2, barZ - barT]);  // 5
-  verts.push([ barW, barCY + barH/2, barZ + barT]);  // 6
-  verts.push([-barW, barCY + barH/2, barZ + barT]);  // 7
+  // 跟三角面同色, 但稍微突出 z=+D + eps 让 bar 实际能盖住三角面
+  const barZ = D + eps;
+  verts.push([-barW, barCY - barH/2, barZ]);  // 0
+  verts.push([ barW, barCY - barH/2, barZ]);  // 1
+  verts.push([ barW, barCY + barH/2, barZ]);  // 2
+  verts.push([-barW, barCY + barH/2, barZ]);  // 3
+  // 前面 (CCW from +Z)
   idx.push([bbase+0, bbase+1, bbase+2], [bbase+0, bbase+2, bbase+3]);
-  idx.push([bbase+4, bbase+6, bbase+5], [bbase+4, bbase+7, bbase+6]);
-  idx.push([bbase+0, bbase+5, bbase+1], [bbase+0, bbase+4, bbase+5]);
-  idx.push([bbase+2, bbase+6, bbase+3], [bbase+3, bbase+6, bbase+7]);
-  idx.push([bbase+1, bbase+5, bbase+6], [bbase+1, bbase+6, bbase+2]);
-  idx.push([bbase+0, bbase+3, bbase+7], [bbase+0, bbase+7, bbase+4]);
+  // 后面 (面朝 +Z 的反面 quad, CCW from -Z)
+  // 不需要后面 — bar 比三角形薄, 后面用三角形遮挡
 
-  // ── 感叹号圆点 (dot) — 在三角形下半部 ──
-  const dotR = 0.022, dotY = -0.086, dotZ = D + 0.025;
+  // ── 感叹号 dot — 简单 quad 矩形 ──
+  const dotSize = 0.038, dotY = -0.086;
+  const dotZ = D + eps;
   const dbase = verts.length;
-  verts.push([0, dotY + dotR, dotZ]);
-  verts.push([0, dotY - dotR, dotZ]);
-  verts.push([dotR, dotY, dotZ]);
-  verts.push([-dotR, dotY, dotZ]);
-  verts.push([0, dotY, dotZ + dotR]);
-  verts.push([0, dotY, dotZ - dotR]);
-  idx.push([dbase+0, dbase+4, dbase+2], [dbase+0, dbase+2, dbase+5]);
-  idx.push([dbase+0, dbase+5, dbase+3], [dbase+0, dbase+3, dbase+4]);
-  idx.push([dbase+1, dbase+2, dbase+4], [dbase+1, dbase+5, dbase+2]);
-  idx.push([dbase+1, dbase+3, dbase+5], [dbase+1, dbase+4, dbase+3]);
+  verts.push([-dotSize/2, dotY - dotSize/2, dotZ]);
+  verts.push([ dotSize/2, dotY - dotSize/2, dotZ]);
+  verts.push([ dotSize/2, dotY + dotSize/2, dotZ]);
+  verts.push([-dotSize/2, dotY + dotSize/2, dotZ]);
+  idx.push([dbase+0, dbase+1, dbase+2], [dbase+0, dbase+2, dbase+3]);
 
   return { vertices: verts, triangleIndices: idx };
 }
@@ -255,7 +247,7 @@ function buildSupplyGeom() {
       // sin(0)=0 (起点), sin(π/2)=1 (末点)
       y = yStart + yRange * Math.sin(ang);
     }
-    profile.push({ y, r: (i === 0 || i === segs) ? 0 : Math.max(r, 0.0001) });
+    profile.push({ y, r: (i === 0) ? 0 : Math.max(r, 0.005) });
   }
   // Analytic lathe normal in meridian (r,y) plane.
   // Profile tangent T = (dr/dt, dy/dt) (central diff).
@@ -295,6 +287,19 @@ function buildSupplyGeom() {
       idx.push([a, b, d]);
       idx.push([a, d, c]);
     }
+  }
+  // v94: 底部封口 cap. 之前 i=segs 强制 r=0 形成 fan singularity → 用户
+  // 反馈 "水滴底部有个奇怪的点". 现在末段 r 不收 0 留 0.005 残留, 然后
+  // 加一个 center vertex + fan triangles 把底部封住成圆面.
+  const capCenterIdx = verts.length;
+  verts.push([0, BOT_Y, 0]);  // 底部圆心
+  normals.push([0, -1, 0]);    // 朝 -Y
+  const lastRing = segs * sides;
+  for (let j = 0; j < sides; j++) {
+    const a = lastRing + j;
+    const b = lastRing + (j + 1) % sides;
+    // CCW from -Y (从底部往上看 = 顺时针 from +Y)
+    idx.push([capCenterIdx, b, a]);
   }
   return { vertices: verts, normals, triangleIndices: idx };
 }
@@ -557,7 +562,7 @@ function CairnARScene(props: any) {
   //   5. particle{type}— small 30-orbit particles (Constant + Add)
   useEffect(() => {
     try {
-      const types = ['danger', 'scenic', 'supply', 'junction', 'generic'] as const;
+      const types = ['danger', 'scenic', 'supply', 'junction', 'cairn', 'generic'] as const;
       const matDict: Record<string, any> = {};
       // v81: register the halo PNG once (reused across all types — colour
       // tint is applied per-type via diffuseColor on the per-type material).
@@ -950,13 +955,15 @@ function CairnInstance(props: {
   onPress?: (id: string) => void;
 }) {
   const { id, type, x, y, z, tracking, beaming, note, onPress } = props;
+  // v94: cairn type 是 "test sphere" — 没 icon 几何, 只有外壳球 + 内部光球.
+  // 这样用户能在 AR 里测试 "纯球壳" 是否真的可见, 排除 icon 干扰.
+  const isTestSphere = type === 'cairn';
   // v70: known type → use specific geometry. Unknown type (legacy 'cairn',
   // 'free', or anything else) → render a neutral grey sphere with the
-  // 'generic' colour palette. No more "scenic blue → junction orange"
-  // surprises from a silent fallback to junction.
-  const knownType = type in TYPE_COLOR_TRIPLET && type in ICON_GEOM ? type : null;
+  // 'generic' colour palette.
+  const knownType = !isTestSphere && (type in TYPE_COLOR_TRIPLET && type in ICON_GEOM) ? type : null;
   const geom = knownType ? ICON_GEOM[knownType] : null;
-  const tName = knownType ?? 'generic';
+  const tName = isTestSphere ? 'cairn' : (knownType ?? 'generic');
   const M = (n: string) => `${n}${tName}`;       // material name helper
   const onPressCb = useCallback(() => {
     crashLogger.breadcrumb(`viro:cairn:press id=${id.slice(-6)}`);
@@ -992,8 +999,16 @@ function CairnInstance(props: {
           - 慢自旋 (12s → 20s) 让用户能看清 3D 厚度
           - 呼吸缩放动画 (0.95↔1.05)
           - 颜色明灭 (opacity 0.85↔1.0) */}
+      {/* v94: danger/scenic icon 用 billboard transformBehavior 永远朝相机.
+          用户反馈 v93 "danger 上下反了 + 感叹号单侧突出" — 根因是 iconSpin
+          转 Y 轴时, 转到 90° 看到的是 danger 三角形薄薄的侧面 + bar 单侧
+          浮雕 像独立长条. iconSpin 在 3D 立体几何 (lathe 水滴) OK, 但对
+          扁平 icon (三角+感叹号 / 5 角星) 暴露侧面缺陷.
+          解法: icon ViroNode 加 billboard, 不再 spin, 永远朝相机正面.
+          牺牲 spin 旋转动效, 但收获: 永远是 lucide 图标的正确正面. */}
+      {!isTestSphere && (
       <ViroNode
-        animation={{ name: 'iconSpin', run: tracking, loop: true }}
+        transformBehaviors={['billboard']}
         scale={[ICON_SCALE, ICON_SCALE, ICON_SCALE]}
       >
         <ViroNode animation={{ name: 'iconBreathe', run: tracking, loop: true }}>
@@ -1014,6 +1029,7 @@ function CairnInstance(props: {
           )}
         </ViroNode>
       </ViroNode>
+      )}
 
       {/* v89: 删除 inner core 双层 (radius 0.06 + 0.10).
           Reference HTML 没有 core sphere — 我之前 v81 加的 inner core 是

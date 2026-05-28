@@ -104,6 +104,7 @@ export const PRIMARY_MARKER_TYPES: MarkerType[] = [
   'scenic',
   'supply',
   'junction',
+  'cairn',  // v94: 加 cairn 给用户测试纯球渲染 (AR 里 cairn type = 纯彩色玻璃球, 无内部 icon)
 ];
 
 export function getMarkerMeta(type: MarkerType | undefined | null): MarkerTypeMeta | null {
