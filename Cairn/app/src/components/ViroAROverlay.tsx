@@ -79,7 +79,7 @@ const ALT_THRESHOLD_M = 5;    // GPS alt noise floor (deprecated — kept for sa
 // Reason: 5km made the AR view feel cluttered with distant cairns the user
 // couldn't actually see anyway.
 const VISIBLE_RANGE_M = 30;
-const ICON_SCALE = 2.0;        // v70: bumped 1.4 → 2.0 (50% bigger)
+const ICON_SCALE = 0.7;        // v82: 2.0 → 0.7. v81 的 2.0 撑爆屏幕(icon 半径 0.48m → 直径 ~1m 挂在 1-2m 远处占满半屏)，且只缩放 icon 不缩放 halo/shell/粒子，导致 icon 比 halo(0.55) 还大彻底遮挡光晕。0.7 让 icon 半径 ≈ 0.17m，远小于 halo 0.55，光晕可见。reference HTML 是给整个 orb group 1.55x，我们只缩 icon。
 const PARTICLE_COUNT = 50;     // v70: bumped 30 → 50 (denser orbit)
 const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presence
 
@@ -418,16 +418,17 @@ function CairnARScene(props: any) {
       const haloPng = require('../../assets/ar/halo_radial.png');
       for (const t of types) {
         const c = TYPE_COLOR_TRIPLET[t];
-        // v81 fix #1 (光感生硬): icon now uses Lambert + fresnelExponent so
-        // edges glow brighter than centre — matches reference HTML's
-        // ShaderMaterial Fresnel pow(1-V·N, 2.0). bloomThreshold lowered
-        // 0.55 → 0.40 so the colour itself blooms in HDR. inner colour
-        // used as diffuse so the icon reads as glowing-from-inside.
+        // v82 fix #2 (icon 像 2D 贴纸): Lambert + fresnelExponent 在 Viro 上
+        // 不工作 —— fresnelExponent 是 PhysicallyBased 材质属性，Lambert 不
+        // 识别；Viro 也没自定义 fragment shader 能力复刻 reference HTML 的
+        // ShaderMaterial Fresnel pow(1-V·N,2.0)。
+        // 改回 Constant lightingModel —— icon 自发光始终饱和亮色 + 强 bloom
+        // 光晕。失去精确边缘 Fresnel 高光，但收获 reference HTML 那种"亮颜
+        // 色块自带光晕"的视觉张力。
         matDict[`icon${t}`] = {
-          lightingModel: 'Lambert',
+          lightingModel: 'Constant',
           diffuseColor: c.mid,
-          fresnelExponent: 2.0,
-          bloomThreshold: 0.40,
+          bloomThreshold: 0.30,
         };
         // v81 fix #1b: small inner core matches HTML reference (radius 0.10
         // inside the icon geometry, additive constant lighting bright inner
@@ -529,25 +530,26 @@ function CairnARScene(props: any) {
           properties: { rotateY: '+=360' },
           duration: 4500,
         },
-        // v81: per-particle Y bob — register 3 phase variants so the ring
-        // pulses with shifted rhythm rather than rigid synchronized
-        // up/down. Each variant is a 2-step cycle going up by `bob`,
-        // then back. Particles get assigned variant by index%3.
-        particleBobA: {
-          properties: { positionY: '+=0.12' },
-          duration: 1100,
-          easing: 'EaseInEaseOut',
-        },
-        particleBobB: {
-          properties: { positionY: '+=0.10' },
-          duration: 1300,
-          easing: 'EaseInEaseOut',
-        },
-        particleBobC: {
-          properties: { positionY: '+=0.14' },
-          duration: 950,
-          easing: 'EaseInEaseOut',
-        },
+        // v82 fix #3 (粒子飞天花板): v81 用 `+=0.12` + loop:true 永久累加，
+        // 50 个粒子每 1.1s 加 0.12m，几分钟就漂到 1-3m 高 → 撞天花板。
+        // 截图证据: 0528_1.jpg 粒子飞到天花板呈喷泉散开，离 icon 极远。
+        // reference HTML 用 sin(t*0.9 + i)*0.10 ±0.10m 摆动，不累加。
+        // Viro 不支持 sin，但 ViroAnimations 支持数组形式 = 串联动画
+        // (见 ViroAnimations.ts ViroRegisterableAnimation[])。
+        // 用 [up, down] 2 段串联 → loop 时正负相消，粒子永远在初始 Y ±bob
+        // 范围内。3 个 phase 错相位 (不同 duration) 让环呼吸不齐。
+        particleBobA: [
+          { properties: { positionY: '+=0.10' }, duration: 1100, easing: 'EaseInEaseOut' },
+          { properties: { positionY: '-=0.10' }, duration: 1100, easing: 'EaseInEaseOut' },
+        ],
+        particleBobB: [
+          { properties: { positionY: '+=0.08' }, duration: 1300, easing: 'EaseInEaseOut' },
+          { properties: { positionY: '-=0.08' }, duration: 1300, easing: 'EaseInEaseOut' },
+        ],
+        particleBobC: [
+          { properties: { positionY: '+=0.12' }, duration: 950,  easing: 'EaseInEaseOut' },
+          { properties: { positionY: '-=0.12' }, duration: 950,  easing: 'EaseInEaseOut' },
+        ],
         // Plant rise: cairn jumps in from -1m below ground to its target Y over 1.4s.
         // We attach this as the orb wrapper's animation when first mounted; once
         // the rise completes, idle animations take over.
