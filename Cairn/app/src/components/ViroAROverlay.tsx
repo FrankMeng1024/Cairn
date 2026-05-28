@@ -89,8 +89,11 @@ const ALT_THRESHOLD_M = 5;    // GPS alt noise floor (deprecated — kept for sa
 // Reason: 5km made the AR view feel cluttered with distant cairns the user
 // couldn't actually see anyway.
 const VISIBLE_RANGE_M = 30;
-const ICON_SCALE = 0.55;       // v88: 0.7 → 0.55. 让 icon 不再撑爆 shell.
-                                // 实际 icon 半径 = 0.24 × 0.55 ≈ 0.13m, 远小于 shell 0.42-0.48.
+const ICON_SCALE = 0.7;        // v89: 0.55 → 0.7. v88 用户反馈 "type 太大撑爆球"
+                                // 实际是 v88 shell opacity 0.20 太透, 看不清球
+                                // 边缘. 现在 v89 shell Add+0.10 恢复 reference,
+                                // 球轮廓清晰可见, ICON_SCALE 0.7 不再撑爆.
+                                // Reference HTML scale.setScalar(1.55) for whole orb.
 const PARTICLE_COUNT = 50;     // v70: bumped 30 → 50 (denser orbit)
 const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presence
 
@@ -257,17 +260,17 @@ const PARTICLE_POSITIONS: Array<{ x: number; y: number; z: number; bobPhase: num
   return arr;
 })();
 
-// v87 root cause #4 修: 粒子在视野各处散布, 整个屏幕都是大白点.
-// v86 把 ring radius 拉远到 0.65-0.85, 但相机距 cairn 只有 1-3m,
-// 0.85m 半径环 = 屏幕上 ±20-30° 视角范围 = 粒子覆盖整个屏幕中心.
-// 修法: 拉回贴近 icon (0.32-0.42m), 粒子环跟 icon 占同一视觉块.
-const PARTICLE_COUNT_V84 = 16;
+// v89 严格对齐 reference HTML particleClassic line 533-561:
+//   N=30, size=0.022, color=tc.inner, opacity=0.85, AdditiveBlending
+//   pos: r 0.22-0.36, y ±0.20 baseY
+// v87/v88 把数量减半 + size 缩小 + 拉远 — 全错了. 回到 reference 原值.
+const PARTICLE_COUNT_V84 = 30;
 const PARTICLE_POSITIONS_V84: Array<{ x: number; y: number; z: number }> = (() => {
   const arr: Array<{ x: number; y: number; z: number }> = [];
   for (let i = 0; i < PARTICLE_COUNT_V84; i++) {
     const a = (i / PARTICLE_COUNT_V84) * Math.PI * 2 + (i * 0.137);
-    const r = 0.32 + ((i * 31) % 100) / 100 * 0.10;  // 0.32-0.42 贴 icon
-    const y = (((i * 47) % 100) / 100 - 0.5) * 0.12;
+    const r = 0.22 + ((i * 31) % 100) / 100 * 0.14;  // reference 0.22-0.36
+    const y = (((i * 47) % 100) / 100 - 0.5) * 0.40; // reference ±0.20
     arr.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r });
   }
   return arr;
@@ -487,18 +490,18 @@ function CairnARScene(props: any) {
           writesToDepthBuffer: true,
           readsFromDepthBuffer: true,
         };
-        // v87 root cause #3 修: shell 远距离变蓝色方块.
-        // v86 给 shell 加了 reflectiveTexture cube map, 但 shell 不是金属
-        // (metalness=0), reflectiveTexture 在透明球壳上的渲染在远距离
-        // 退化为单色矩形 imposter (LOD 优化). 截图证据: 12m 远的 supply
-        // 显示成蓝色大方块.
-        // 删 reflectiveTexture, shell 回到纯透明玻璃壳.
+        // v89 严格对齐 reference HTML: line 495-503
+        // const glow = new THREE.Mesh(SphereGeometry(0.32),
+        //   MeshBasicMaterial({ color: tc.mid, opacity: 0.10,
+        //     blending: AdditiveBlending, depthWrite: false, side: BackSide }))
+        // 关键: AdditiveBlending + opacity=0.10 (极透) + BackSide (内壁) = 球轮廓
+        // 隐隐发光但完全透视内部. 我们之前用 Alpha 0.20 + cullMode='Front'
+        // 是错误的近似. 回到 Add + 0.10 + cullMode='Front' (Viro Front-cull
+        // = Three.js BackSide, 行为一致).
         matDict[`shell${t}`] = {
-          lightingModel: 'PBR',
+          lightingModel: 'Constant',
           diffuseColor: c.mid,
-          metalness: 0.0,
-          roughness: 0.05,
-          blendMode: 'Alpha',
+          blendMode: 'Add',
           cullMode: 'Front',
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
@@ -855,67 +858,51 @@ function CairnInstance(props: {
         </ViroNode>
       </ViroNode>
 
-      {/* v84: 2. Inner core — 双层提升立体感
-          - 内层 0.06m (亮中心)
-          - 外层 0.10m (中等亮度作为光晕过渡)
-          高细分 32×24 让球真的圆滑，不是六边形多面体。 */}
+      {/* v89: 删除 inner core 双层 (radius 0.06 + 0.10).
+          Reference HTML 没有 core sphere — 我之前 v81 加的 inner core 是
+          想"icon 内部发光", 但实际 reference 是 icon 自己用 ShaderMaterial
+          fresnel + emissive 发光, 不依赖额外 sphere.
+          用户反馈"我不知道这是啥" — 这就是它们没存在感的证据.
+          删了让 shell 内部干净, 只看到 type icon. */}
+
+      {/* v89 严格对齐 reference HTML cairn_icons_3d.html line 495-503:
+          单层 shell radius=0.32 + Add blend + opacity=0.10 + BackSide.
+          Reference 实际只有 1 层 atmospheric glow (我们 v85+ 误以为多层壳
+          更立体, 实际 Three.js 单层就够). */}
       <ViroSphere
-        radius={0.06}
-        widthSegmentCount={32}
-        heightSegmentCount={24}
-        materials={[M('core')]}
-        opacity={0.95}
-      />
-      <ViroSphere
-        radius={0.10}
-        widthSegmentCount={32}
-        heightSegmentCount={24}
-        materials={[M('core')]}
-        opacity={0.55}
+        radius={0.32}
+        widthSegmentCount={36}
+        heightSegmentCount={28}
+        materials={[M('shell')]}
+        opacity={0.10}
       />
 
-      {/* v88: 多层透明玻璃壳放大 — Pokemon Go 半透明发光的标准手法。
-          shell radius 0.28-0.32 → 0.42-0.48, 让 icon (半径 0.13) 在中央
-          有充足空间. 三层同心球 opacity 递减保持玻璃罩体积感.
-          PBR shell 材质 (metalness=0 + roughness=0.05) 模拟玻璃. */}
-      <ViroSphere
-        radius={0.42}
-        widthSegmentCount={36}
-        heightSegmentCount={28}
-        materials={[M('shell')]}
-        opacity={0.20}
-      />
-      <ViroSphere
-        radius={0.45}
-        widthSegmentCount={36}
-        heightSegmentCount={28}
-        materials={[M('shell')]}
-        opacity={0.13}
-      />
-      <ViroSphere
-        radius={0.48}
-        widthSegmentCount={36}
-        heightSegmentCount={28}
-        materials={[M('shell')]}
-        opacity={0.08}
-      />
-
-      {/* v88: halo 1.30 → 1.80 配合 shell 放大 */}
+      {/* v89: halo 恢复 3 层 — 严格对齐 reference HTML line 506-508:
+            g.add(makeHaloSprite(tc.inner, 0.40, 0.55));
+            g.add(makeHaloSprite(tc.mid,   0.50, 1.10));
+            g.add(makeHaloSprite(tc.outer, 0.30, 1.70));
+          v83-v88 我们简化到 1 层是误判. 3 层 sprite billboard 提供"光晕从
+          中心向外扩散"的渐变发光感, 这是 reference 视觉的核心. */}
       <ViroQuad
-        height={1.80}
-        width={1.80}
-        materials={[M('haloMid')]}
-        opacity={0.45}
+        height={0.55}
+        width={0.55}
+        materials={[M('haloInner')]}
+        opacity={0.40}
         transformBehaviors={['billboard']}
       />
-
-      {/* v88: outer wisp 0.55 → 0.75 同步放大 */}
-      <ViroSphere
-        radius={0.75}
-        widthSegmentCount={28}
-        heightSegmentCount={20}
-        materials={[M('wisp')]}
-        opacity={0.10}
+      <ViroQuad
+        height={1.10}
+        width={1.10}
+        materials={[M('haloMid')]}
+        opacity={0.50}
+        transformBehaviors={['billboard']}
+      />
+      <ViroQuad
+        height={1.70}
+        width={1.70}
+        materials={[M('haloOuter')]}
+        opacity={0.30}
+        transformBehaviors={['billboard']}
       />
 
       {/* v84: 6. 粒子环 — 高质量提升:
@@ -929,11 +916,11 @@ function CairnInstance(props: {
           <ViroSphere
             key={i}
             position={[p.x, p.y, p.z]}
-            radius={0.014}
-            widthSegmentCount={12}
-            heightSegmentCount={8}
+            radius={0.022}
+            widthSegmentCount={14}
+            heightSegmentCount={10}
             materials={[M('particle')]}
-            opacity={0.95}
+            opacity={0.85}
           />
         ))}
       </ViroNode>
