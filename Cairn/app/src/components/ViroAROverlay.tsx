@@ -167,9 +167,38 @@ function buildSupplyGeom() {
   const profile: { y: number; r: number }[] = [];
   for (let i = 0; i <= segs; i++) {
     const t = i / segs;
-    const y = TOP_Y + (BOT_Y - TOP_Y) * t;
-    const tEff = Math.pow(t, 1.55);
-    const r = MAX_R * Math.pow(Math.sin(tEff * Math.PI), 0.85);
+    // v91: 底部 dome 收口 — 用户反馈 "水滴某些角度底部圆润, 有些角度尖尖".
+    // 根因: 原 profile 末段 i=segs 强制 r=0 形成单点尖角, 从 silhouette
+    // 经过该尖点的角度看 = 尖, 其他角度看不到 = 圆. reference HTML 因
+    // transmission 透明 + 32 sides 高密度顶点, 视觉上不显尖, 但 Viro 没
+    // transmission, 任何 silhouette 经过尖点都暴露.
+    // 修法: 末段 30% (t > 0.7) 用 半圆 dome 函数收口, 而不是 sin 直接收到 0.
+    //   - t ≤ 0.70: 维持原 profile (顶尖到肚子)
+    //   - t >  0.70: dome 收口 — y 仍线性下降, r 用 sqrt(1 - (t')^2) 半圆
+    //     形成圆顶 (像水滴底部本身就是 round 不是 sharp point)
+    let r: number;
+    let y: number;
+    if (t <= 0.70) {
+      y = TOP_Y + (BOT_Y - TOP_Y) * t;
+      const tEff = Math.pow(t, 1.55);
+      r = MAX_R * Math.pow(Math.sin(tEff * Math.PI), 0.85);
+    } else {
+      // dome 段: 用半圆方程 r = rStart * sqrt(1 - tDome^2) 真正圆顶收口.
+      // sqrt 在 tDome=1 处切线垂直 Y 轴 = silhouette 在底部完全圆滑. cos
+      // 函数底部仍有微尖 (导数 -sin(π/2)=-1 不为 0).
+      // y 也用半圆方程让 Y 在末段拉伸更陡, 形成"鸭蛋底"圆润感.
+      const tDome = (t - 0.70) / 0.30;  // 0..1 in dome region
+      const tEffStart = Math.pow(0.70, 1.55);
+      const rStart = MAX_R * Math.pow(Math.sin(tEffStart * Math.PI), 0.85);
+      const yStart = TOP_Y + (BOT_Y - TOP_Y) * 0.70;
+      const yRange = BOT_Y - yStart;
+      // 半圆参数: 用 angle 0→π/2 同时驱动 r 和 y, 形成 quarter-circle 圆顶.
+      const ang = tDome * Math.PI / 2;
+      r = rStart * Math.cos(ang);     // cos(0)=1, cos(π/2)=0
+      // y 用 sin 让末段拉伸接近 yEnd 速度变缓: y = yStart + yRange * sin(ang)
+      // sin(0)=0 (起点), sin(π/2)=1 (末点)
+      y = yStart + yRange * Math.sin(ang);
+    }
     profile.push({ y, r: (i === 0 || i === segs) ? 0 : Math.max(r, 0.0001) });
   }
   // Analytic lathe normal in meridian (r,y) plane.
@@ -552,8 +581,15 @@ function CairnARScene(props: any) {
           bloomThreshold: 0.50,
         };
         matDict[`shellAlpha${t}`] = {
-          lightingModel: 'Constant',
+          // v91: 从 Constant 升 PBR — 让球壳真有 3D 受光感 (用户反馈
+          // "除了水滴都会显得很 2D 平面, 需要那个 3D 圆球包裹着").
+          // metalness=0.0 + roughness=0.10 + cubemap → 玻璃球反射环境, 球面
+          // 有真高光, 一眼能看出是 3D 球不是 flat 贴纸.
+          lightingModel: 'PBR',
           diffuseColor: c.mid,
+          metalness: 0.0,
+          roughness: 0.10,
+          reflectiveTexture: cubeMap,
           blendMode: 'Alpha',
           cullMode: 'Front',
           writesToDepthBuffer: false,
@@ -571,12 +607,14 @@ function CairnARScene(props: any) {
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
         };
-        // v87: 粒子 — Constant + Add 保持发光感 (留着备用)
+        // v91: 粒子 — 更像光不像球. 用户反馈 "周围旋转的光粒太大了 很不真实".
+        // 修法: size 0.022→0.010 (减半), opacity 0.85→0.7, bloomThreshold
+        // 0.15→0.08 让粒子真正触发 bloom 扩散光晕, 视觉上像光点不像实体球.
         matDict[`particle${t}`] = {
           lightingModel: 'Constant',
           diffuseColor: c.inner,
           blendMode: 'Add',
-          bloomThreshold: 0.15,
+          bloomThreshold: 0.08,
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
         };
@@ -935,7 +973,7 @@ function CairnInstance(props: {
         widthSegmentCount={36}
         heightSegmentCount={28}
         materials={[M('shellAlpha')]}
-        opacity={0.06}
+        opacity={0.25}
       />
 
       {/* v89: halo 恢复 3 层 — 严格对齐 reference HTML line 506-508:
@@ -977,11 +1015,11 @@ function CairnInstance(props: {
           <ViroSphere
             key={i}
             position={[p.x, p.y, p.z]}
-            radius={0.022}
-            widthSegmentCount={14}
-            heightSegmentCount={10}
+            radius={0.010}
+            widthSegmentCount={10}
+            heightSegmentCount={8}
             materials={[M('particle')]}
-            opacity={0.85}
+            opacity={0.7}
           />
         ))}
       </ViroNode>
