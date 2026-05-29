@@ -648,59 +648,16 @@ function CairnARScene(props: any) {
           readsFromDepthBuffer: true,
           bloomThreshold: 0.50,
         };
-        // v103 实验 — 4 个 type 4 种 shell material 配方并行测试.
-        // 用户反复 "没球", 不知道是 lightingModel/blendMode/cullMode 哪个原因.
-        // 直接 4 种配方各跑一个, 用户测看哪个真出现球壳, 一次锁定配方.
-        if (t === 'danger') {
-          // 配方 A: Constant 最简, 无 blendMode (透明完全靠 opacity prop)
-          matDict[`shellAlpha${t}`] = {
-            lightingModel: 'Constant',
-            diffuseColor: c.mid,
-            writesToDepthBuffer: false,
-            readsFromDepthBuffer: true,
-          };
-        } else if (t === 'scenic') {
-          // 配方 B: Lambert + Alpha + 默认 cullMode (Back, 不写 None)
-          matDict[`shellAlpha${t}`] = {
-            lightingModel: 'Lambert',
-            diffuseColor: c.mid,
-            blendMode: 'Alpha',
-            writesToDepthBuffer: false,
-            readsFromDepthBuffer: true,
-          };
-        } else if (t === 'supply') {
-          // 配方 C: Phong + Alpha + None + shininess
-          matDict[`shellAlpha${t}`] = {
-            lightingModel: 'Phong',
-            diffuseColor: c.mid,
-            blendMode: 'Alpha',
-            cullMode: 'None',
-            shininess: 1.0,
-            writesToDepthBuffer: false,
-            readsFromDepthBuffer: true,
-          };
-        } else if (t === 'junction') {
-          // 配方 D: Constant + diffuseTexture (halo PNG) + Alpha
-          matDict[`shellAlpha${t}`] = {
-            lightingModel: 'Constant',
-            diffuseColor: c.mid,
-            diffuseTexture: haloPng,
-            blendMode: 'Alpha',
-            cullMode: 'None',
-            writesToDepthBuffer: false,
-            readsFromDepthBuffer: true,
-          };
-        } else {
-          // cairn / generic 用默认 Lambert
-          matDict[`shellAlpha${t}`] = {
-            lightingModel: 'Lambert',
-            diffuseColor: c.mid,
-            blendMode: 'Alpha',
-            cullMode: 'None',
-            writesToDepthBuffer: false,
-            readsFromDepthBuffer: true,
-          };
-        }
+        // v104: halo 是 root cause (3 层 alpha quad 把球壳遮了, 已删除).
+        // 球壳 material 回到统一最简 Constant 配方, 4 type 一致.
+        matDict[`shellAlpha${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: c.mid,
+          blendMode: 'Alpha',
+          cullMode: 'None',
+          writesToDepthBuffer: false,
+          readsFromDepthBuffer: true,
+        };
         // Backwards-compat alias.
         matDict[`shell${t}`] = matDict[`shellAdd${t}`];
         // v84: outer wisp — Lambert 软光晕（PBR 在大半径低 opacity 上太亮）
@@ -1094,28 +1051,11 @@ function CairnInstance(props: {
           删除独立 shellAdd / shellAlpha ViroSphere (合并到上面 ViroNode);
           删除 iconBreathe 动画引用 (元凶). */}
 
-      {/* v89: halo 恢复 3 层 — 严格对齐 reference HTML line 506-508. */}
-      <ViroQuad
-        height={0.55}
-        width={0.55}
-        materials={[M('haloInner')]}
-        opacity={0.40}
-        transformBehaviors={['billboard']}
-      />
-      <ViroQuad
-        height={1.10}
-        width={1.10}
-        materials={[M('haloMid')]}
-        opacity={0.50}
-        transformBehaviors={['billboard']}
-      />
-      <ViroQuad
-        height={1.70}
-        width={1.70}
-        materials={[M('haloOuter')]}
-        opacity={0.30}
-        transformBehaviors={['billboard']}
-      />
+      {/* v104: 删除 3 层 halo billboard ViroQuad (v89 加的)!
+          ROOT CAUSE 找到了: 3 层 halo size 1.70 + 1.10 + 0.55 billboard 永远
+          朝相机, 在球壳后面渲染. 3 层 alpha 叠加 = 79% 不透明 → 把球壳完全
+          遮住. 这就是用户反复反馈 "没球" 的真正原因.
+          删除后 ViroSphere 球壳应该真正可见. */}
 
       {/* v84: 6. 粒子环 — 高质量提升:
           - 数量 50 → 24 (减半，避免视觉拥挤)
