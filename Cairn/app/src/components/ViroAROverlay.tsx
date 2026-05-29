@@ -501,7 +501,10 @@ function CairnARScene(props: any) {
           easing: 'EaseOutQuint',
         },
       });
-      crashLogger.breadcrumb('viro:materials-registered v105');
+      crashLogger.breadcrumb(
+        `viro:materials-registered v105.1 types=[${types.join(',')}] ` +
+        `geomKeys=[${Object.keys(ICON_GEOM).join(',')}]`,
+      );
       setMaterialsReady(true);
     } catch (err: any) {
       crashLogger.breadcrumb(`viro:materials-error ${String(err?.message || err).slice(0, 100)}`);
@@ -533,11 +536,23 @@ function CairnARScene(props: any) {
         const horizontal = Math.hypot(x, z);
         if (horizontal > VISIBLE_RANGE_M) return null;
         const y = cairnY;
-        crashLogger.breadcrumb(`viro:cairn-pos id=${m.id.slice(-4)} x=${x.toFixed(2)} y=${y.toFixed(2)} z=${z.toFixed(2)} ground=${ground === null ? 'null' : ground.toFixed(2)}`);
+        // v105.1 增强 log: 加 type 信息 + dist + 距离段标记 (near/mid)
+        const distBand = horizontal <= NEAR_THRESHOLD_M ? 'near' : 'mid';
+        crashLogger.breadcrumb(
+          `viro:cairn-pos id=${m.id.slice(-4)} type=${m.type} ` +
+          `xyz=(${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}) ` +
+          `dist=${horizontal.toFixed(1)}m band=${distBand} ` +
+          `ground=${ground === null ? 'null' : ground.toFixed(2)}`,
+        );
         return { id: m.id, type: m.type, x, y, z, dist: horizontal, note: m.note ?? '' };
       })
       .filter((c): c is NonNullable<typeof c> => c !== null);
     cairnNodesRef.current = nodes;
+    // v105.1 加 summary log: 总 marker 数, 可见 nodes 数, 距离分布
+    crashLogger.breadcrumb(
+      `viro:scene:nodes total=${markers.length} visible=${nodes.length} ` +
+      `range=${VISIBLE_RANGE_M}m ground=${ground === null ? 'null' : ground.toFixed(2)}`,
+    );
     return nodes;
   }, [markers, arkitOrigin?.lat, arkitOrigin?.lng, arkitOrigin?.alt, groundYTick]);
 
@@ -675,12 +690,34 @@ function CairnInstance(props: {
     const t = Math.min(1, (dist - NEAR_THRESHOLD_M) / (VISIBLE_RANGE_M - NEAR_THRESHOLD_M));
     scale = ICON_SCALE_NEAR + (ICON_SCALE_FAR - ICON_SCALE_NEAR) * t;
   }
+  // v105.1 hotfix: type normalize. 旧 DB 记录 'supply'/'scenic'/'free' 必须
+  // 映射到新 type 名 (water/cairn), 否则 M('icon') 拼成 'iconsupply' 但
+  // material 没注册 ('supply' 不在 types 数组) → ViroGeometry 引用空 material
+  // → AR 闪退. 这就是 v105 进 AR 闪退的 root cause.
+  const TYPE_REMAP: Record<string, string> = {
+    supply: 'water',   // v105 重命名
+    scenic: 'cairn',   // 吸收
+    free:   'cairn',   // 吸收
+  };
+  const normalizedType = TYPE_REMAP[type] ?? type;
   // v105: cairn 现在是真石堆 3D 几何 (sphere-stack), 不再 test sphere.
   // 5 type 全部走同一个渲染路径.
-  const knownType = (type in TYPE_COLOR_TRIPLET && type in ICON_GEOM) ? type : null;
+  const knownType = (normalizedType in TYPE_COLOR_TRIPLET && normalizedType in ICON_GEOM) ? normalizedType : null;
   const geom = knownType ? ICON_GEOM[knownType] : null;
   const tName = knownType ?? 'generic';
   const M = (n: string) => `${n}${tName}`;       // material name helper
+
+  // v105.1 加足量 log 诊断 (跟之前 AR 位置 bug 排查同样的策略)
+  // 每个 cairn 渲染时打印: 原 type, normalize 后 type, 是否 known, material 名,
+  // 几何顶点数. 这样闪退或视觉错时能直接看 breadcrumb 锁定问题.
+  useEffect(() => {
+    const vCount = geom?.vertices.length ?? 0;
+    const tCount = geom?.triangleIndices.length ?? 0;
+    crashLogger.breadcrumb(
+      `viro:cairn:render id=${id.slice(-6)} type=${type} norm=${normalizedType} ` +
+      `known=${knownType ?? 'no'} mat=${M('icon')} v=${vCount} tri=${tCount}`,
+    );
+  }, [id, type, normalizedType, knownType, geom]);
   const onPressCb = useCallback(() => {
     crashLogger.breadcrumb(`viro:cairn:press id=${id.slice(-6)}`);
     onPress?.(id);
