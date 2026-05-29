@@ -39,22 +39,33 @@ import {
 import type { Marker } from '../store/useMarkerStore';
 import { crashLogger } from '../services/crashLogger';
 
-// ── Type colours (matches cairn_icons_3d demo) ───────────────────
+// ── Type colours (NZ palette, v111) ──────────────────────────────
 // 3-layer gradient: inner (bright core) → mid (signature colour) → outer (deep rim)
+//
+// v111 配色重构 (用户反馈 v110 颜色"太深太丑"):
+// 新西兰传统象征色:
+//   pounamu (绿玉): 深绿 — 神圣/cairn 标记 (保留 v110)
+//   kowhai (国花黄): 暖黄-橙 — 警告 (取代深红)
+//   paua (鲍鱼壳): 蓝绿渐变 — 路口分叉 (取代深橙)
+//   ocean blue: 浅蓝 — 水源 (保留)
+//   manuka (麦卢卡蜂蜜): 柔棕 — 山屋 (取代深棕)
 const TYPE_COLOR_TRIPLET: Record<string, { inner: string; mid: string; outer: string }> = {
-  danger:   { inner: '#fff0c8', mid: '#ff5a3a', outer: '#8a2218' },
-  junction: { inner: '#fff4d8', mid: '#f0a838', outer: '#8a4a18' },
+  // Danger: kowhai 黄-橙 (NZ 国花) — 比深红更明亮, 警告但不阴沉
+  danger:   { inner: '#fff5d6', mid: '#f5b73c', outer: '#a06a18' },
+  // Junction: paua 蓝绿 — 鲍鱼壳渐变, 方向感 + NZ 海洋感
+  junction: { inner: '#d8f0e8', mid: '#4d8a8a', outer: '#1f4848' },
+  // Water: ocean blue (保留)
   water:    { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
-  hut:      { inner: '#f5e6d0', mid: '#b5823d', outer: '#5a3d18' },
-  // v110: cairn 颜色换成 logo 同色 (CairnLogo.tsx 默认 #5d7c46 绿色, 比棕色更协调)
+  // Hut: manuka 柔棕 — 比 v110 深棕亮 30%
+  hut:      { inner: '#f8e4cc', mid: '#c47e52', outer: '#6e3f1f' },
+  // Cairn: pounamu 绿 (logo 同色, 保留 v110)
   cairn:    { inner: '#a8c690', mid: '#5d7c46', outer: '#2e3f1d' },
-  // v70: catch-all for unknown types.
+  // Catch-all for unknown types
   generic:  { inner: '#f0f0f0', mid: '#9aa0a6', outer: '#3a3d40' },
-  // v105 backwards-compat: legacy DB records may still have 'supply' / 'scenic' / 'free'.
-  // Map them to closest new type colour so old markers still render.
+  // v105 backwards-compat: legacy DB records 'supply'/'scenic'/'free'
   supply:   { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },  // → water
-  scenic:   { inner: '#f5e6d0', mid: '#b5823d', outer: '#5a3d18' },  // → cairn (吸收 scenic)
-  free:     { inner: '#f5e6d0', mid: '#b5823d', outer: '#5a3d18' },  // → cairn (吸收 free)
+  scenic:   { inner: '#f8e4cc', mid: '#c47e52', outer: '#6e3f1f' },  // → hut/cairn 棕
+  free:     { inner: '#f8e4cc', mid: '#c47e52', outer: '#6e3f1f' },  // → hut/cairn 棕
 };
 // v105 cleanup: 删除 TYPE_COLORS legacy single-color map (无人调用).
 
@@ -122,92 +133,71 @@ const ICON_SCALE = ICON_SCALE_NEAR;
 //       cairn (sphere stack) — v107 新 type, 不再用 scenic 几何
 // 修水滴底部黑点 — cap fan 法向量错 (v107 修).
 
-// Danger 火焰 (v110 重做): 用户反馈 v109 火焰形不像.
-// 设计思路: 真实火焰 = 底部圆球 (燃料/木炭) + 上方水滴形火舌 + 顶尖右弯
+// Danger 闪电 (v111 重做): 用户选定 picker D4 闪电.
+// 经典 ⚡ 形状 = 7 点不对称多边形 (顶部右偏 → 中部左折 → 底部右偏).
+// path-extrude 成 prism, 厚度 0.05m. 比火焰更"危险电击"识别度.
 //
-// 几何分两段:
-//   下半 (y -0.25 → -0.10): lathe 旋转球形底座 (像燃烧的炭球)
-//   上半 (y -0.10 → 0.30): 火焰 path-extrude
-//     - 底窄 (-0.10 处 ±0.04 宽) 跟底座连接
-//     - 中胖 (0.05 处 ±0.16 宽) 火焰最旺位置
-//     - 顶尖 (0.30 处) 偏右 0.06 给"摇曳感"
+// 顶点轮廓 (从顶尖顺时针):
+//   顶尖偏右上 → 右上肩内凹 → 中折点向右上 → 中折点向左下
+//   → 底尖偏左下 → 左下肩内凹 → 中折点 → 闭合
 function buildDangerGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
 
-  // ── 下半: 球形燃料底座 (lathe 全圆球) ──
-  // 球心 (-0.18), 半径 0.08, 像燃烧的木炭球
-  const baseCY = -0.18, baseR = 0.08;
-  const baseLat = 12, baseLon = 16;
-  const baseStart = verts.length;
-  for (let i = 0; i <= baseLat; i++) {
-    const lat = (i / baseLat) * Math.PI;
-    const sinLat = Math.sin(lat), cosLat = Math.cos(lat);
-    for (let j = 0; j <= baseLon; j++) {
-      const lon = (j / baseLon) * Math.PI * 2;
-      verts.push([
-        baseR * sinLat * Math.cos(lon),
-        baseCY + baseR * cosLat,
-        baseR * sinLat * Math.sin(lon),
-      ]);
-    }
-  }
-  for (let i = 0; i < baseLat; i++) {
-    for (let j = 0; j < baseLon; j++) {
-      const a = baseStart + i * (baseLon + 1) + j;
-      const b = baseStart + i * (baseLon + 1) + (j + 1);
-      const c = baseStart + (i + 1) * (baseLon + 1) + j;
-      const d = baseStart + (i + 1) * (baseLon + 1) + (j + 1);
-      idx.push([a, b, d], [a, d, c]);
-    }
-  }
-
-  // ── 上半: 火焰 path-extrude ──
-  // 16 顶点拟合火焰轮廓: 底窄 → 中胖 → 顶尖偏右
-  // 左侧轮廓 (y 从 -0.10 升到 0.30 顶尖)
-  // 右侧轮廓 (y 从 0.30 顶尖降到 -0.10)
-  const flamePts: { x: number; y: number }[] = [
-    // 起点 (左侧底)
-    { x: -0.04, y: -0.10 },
-    { x: -0.10, y: -0.04 },   // 左侧下凸
-    { x: -0.15, y:  0.05 },   // 左中胖 (火焰最宽)
-    { x: -0.13, y:  0.13 },
-    { x: -0.08, y:  0.20 },
-    { x: -0.02, y:  0.26 },
-    // 顶尖 (略偏右给摇曳感)
-    { x:  0.04, y:  0.30 },
-    // 右侧从顶往下 (跳一个稍内凹给火焰"舔"的感觉)
-    { x:  0.06, y:  0.22 },
-    { x:  0.12, y:  0.15 },
-    { x:  0.16, y:  0.05 },   // 右中胖
-    { x:  0.13, y: -0.02 },
-    { x:  0.06, y: -0.08 },
-    { x:  0.04, y: -0.10 },   // 闭合到底
+  // 闪电 7 点不对称轮廓 (经典 ⚡):
+  //   顶尖 → 右上肩 → 中部右折 (内) → 底尖 → 左下肩 → 中部左折 (内) → 闭合
+  const boltPts: { x: number; y: number }[] = [
+    { x:  0.06, y:  0.30 },   // 0 顶尖 (略偏右上)
+    { x:  0.14, y:  0.10 },   // 1 右上外肩
+    { x:  0.02, y:  0.05 },   // 2 中部内折 (右内)
+    { x:  0.10, y: -0.02 },   // 3 中部外凸 (右下转折)
+    { x: -0.06, y: -0.30 },   // 4 底尖 (略偏左下)
+    { x: -0.14, y: -0.10 },   // 5 左下外肩
+    { x: -0.02, y: -0.05 },   // 6 中部内折 (左内)
+    { x: -0.10, y:  0.02 },   // 7 中部外凸 (左上转折)
   ];
-  const FLAME_DEPTH = 0.04;
-  const flameStart = verts.length;
-  // 前面顶点 (z=+depth)
-  for (const p of flamePts) {
-    verts.push([p.x, p.y, FLAME_DEPTH]);
+  const BOLT_DEPTH = 0.05;
+  const N = boltPts.length;
+  const start = verts.length;
+  // 前面 (z = +depth)
+  for (const p of boltPts) verts.push([p.x, p.y,  BOLT_DEPTH]);
+  // 后面 (z = -depth)
+  for (const p of boltPts) verts.push([p.x, p.y, -BOLT_DEPTH]);
+
+  // 闪电不是 convex — fan 三角剖分需要从 0 点扇形.
+  // 闪电形状勉强 star-shape from 中心: 用三角扇会有自交.
+  // 改用手动三角列表 (8 顶点 → 6 三角):
+  //   (0,1,2) (0,2,3) (0,3,4) (0,4,7) — 上半
+  //   等等, 还是不行 0→4 跨过 (5,6).
+  //
+  // 简单稳妥: 用扇形从顶点 2 (中部内折右) 扇形:
+  //   闪电从 2 出发可见所有其他点 (2 是凹处 — 但其实它能看到 0/1/3/4/5/6/7 大部分).
+  // 实测: 7 点 fan-from-2 会有几个三角穿过空隙. 还是要手动列表.
+  //
+  // 手工切分 (经过点检):
+  //   (0,1,2) (0,2,7) (2,3,7) (3,4,7) (4,5,6) (4,6,7)
+  // 每个三角形顺时针面向 +Z (CCW from outside +Z).
+  const TRIS: [number, number, number][] = [
+    [0, 1, 2],
+    [0, 2, 7],
+    [2, 3, 7],
+    [3, 4, 7],
+    [4, 5, 6],
+    [4, 6, 7],
+  ];
+  for (const [a, b, c] of TRIS) {
+    // 前面 (CCW from +Z)
+    idx.push([start + a, start + b, start + c]);
+    // 后面 (CCW from -Z = 反序)
+    idx.push([start + N + a, start + N + c, start + N + b]);
   }
-  // 后面顶点 (z=-depth)
-  for (const p of flamePts) {
-    verts.push([p.x, p.y, -FLAME_DEPTH]);
-  }
-  const N = flamePts.length;
-  // 前面 fan (用第一点扇形): N-2 个三角形
-  for (let i = 1; i < N - 1; i++) {
-    idx.push([flameStart, flameStart + i, flameStart + i + 1]);
-    // 后面 (镜像 CCW from -Z = 顶点顺序反转)
-    idx.push([flameStart + N, flameStart + N + i + 1, flameStart + N + i]);
-  }
-  // 侧壁 (前后顶点连接)
+  // 侧壁 (前后连接)
   for (let i = 0; i < N; i++) {
     const i2 = (i + 1) % N;
-    const fa = flameStart + i;
-    const fb = flameStart + i2;
-    const ba = flameStart + N + i;
-    const bb = flameStart + N + i2;
+    const fa = start + i;
+    const fb = start + i2;
+    const ba = start + N + i;
+    const bb = start + N + i2;
     idx.push([fa, ba, bb]);
     idx.push([fa, bb, fb]);
   }
@@ -390,21 +380,21 @@ function buildJunctionGeom() {
     idx.push([o+2, o+7, o+3], [o+2, o+6, o+7]);          // 侧面 3
     idx.push([o+3, o+4, o+0], [o+3, o+7, o+4]);          // 侧面 4
   }
-  // ── J2 Split (v110 重做): 主杆和分叉箭头之间有 gap ──
-  // 用户反馈 "希望像 picker 网页 J2 那样有断开" — picker 里 J2 是: 主杆短,
-  // 上方两个独立的分叉箭头, 它们之间有 ~0.10m 间隙 (不连接).
+  // ── J2 Split asymmetric (v111): 一边连接, 一边断开 ──
+  // 用户反馈 picker J2 的精髓 = 不对称: 一支连接主杆, 一支独立浮在空中.
+  // 视觉象征: "主路 vs 分岔" — 一条延续, 一条新开.
   //
   // 几何:
-  //   主杆: (0, -0.25) → (0, -0.10)  (下端 0.15 长)
-  //   <空隙 0.10>
-  //   左箭头杆: (-0.05, 0.0) → (-0.20, 0.20)  (杆 + 锥头)
-  //   右箭头杆: (0.05, 0.0) → (0.20, 0.20)
+  //   主杆: (0, -0.25) → (0, 0.05)   (上端略高, 跟右支自然连接)
+  //   右分支 (连接): 从 (0, 0.05) 出发 → (0.20, 0.20)  + 锥头
+  //   左分支 (断开): (-0.05, 0.0) → (-0.20, 0.20) + 锥头
+  //                  起点 -0.05, 0.0 与主杆顶 (0, 0.05) 之间空 0.07m gap
   //   底脚装饰球
-  pushPole(0, -0.25, 0, 0, -0.10, 0, 0.045);   // 底座主杆 (短)
-  // 左分支杆 (起点上移到 -0.05, 0.0, 跟主杆顶有间隙)
+  pushPole(0, -0.25, 0, 0, 0.05, 0, 0.045);    // 主杆 (右支连续延伸自此)
+  // 右分支 — 跟主杆顶连接 (起点 = 主杆顶 0, 0.05)
+  pushPole(0, 0.05, 0, 0.20, 0.20, 0, 0.038);
+  // 左分支 — 浮起, 起点离主杆 0.07m gap
   pushPole(-0.05, 0.00, 0, -0.20, 0.20, 0, 0.038);
-  // 右分支杆
-  pushPole( 0.05, 0.00, 0,  0.20, 0.20, 0, 0.038);
 
   // ── 左箭头头 (cone) ──
   // 箭头位置: 左分支末端 (-0.18, 0.18), 朝外左上方 (-0.28, 0.30)
@@ -480,149 +470,72 @@ function buildJunctionGeom() {
   return { vertices: verts, triangleIndices: idx };
 }
 
-// Hut Castle 城堡 (v109): 用户选定 H3.
-// 几何: 中央主体 box + 4 个角塔 (圆柱) + 4 个塔顶圆锥
-// 跨文化"避难城堡"识别, 比简单 House 更视觉丰富
-// Hut 城堡 (v110 重做): 用户反馈 v109 4-角塔+锥顶丑.
-// 新设计 = 真实城堡 silhouette: 大 keep (主楼) + 上方 battlements (城垛) +
-// 前方 gate notch (拱门凹口) + 2 侧塔 (而非 4 角塔, 让正面看更主).
+// Hut Tent 帐篷 (v111 重做): 用户选定 picker H2.
+// 城堡 v110 被否, 帐篷更符合 NZ tramping (DOC hut → backcountry tent).
 //
-// 几何 layout (正面 = +Z):
-//   主 keep: 大 box, 略宽, 后中.
-//   左/右侧塔: 2 圆柱 + 圆顶, 左右两边而非 4 角.
-//   battlements: 主 keep 顶上 5 个矩形小块 (城垛), 间隔感.
-//   gate: 主 keep 前面下半中央留 1 个矩形 notch (拱门).
+// 几何 = 三角棱柱 (sliced prism) + 正面门 box.
+//   主体: 三角形侧面 (正三角, 顶尖 +0.3, 底 ±0.30 半宽), 沿 Z 拉伸 ±0.30.
+//   门: 正面中央薄长方体, 略凸出于前三角面 (z = +0.30 + ε).
 //
-// 不再用 4 角锥顶塔 — 视觉太"迪士尼", 不像石头城堡.
+// 不再 keep + battlements + tower 的复杂城堡 — 用户审美明确.
 function buildHutGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
 
-  // Helper: push closed box with explicit normals not needed (flat shading via
-  // separate triangle vertices not needed here — Viro flat-shades fine).
+  // ── 三角棱柱主体 (帐篷) ──
+  // 前三角 (z = +halfD), 后三角 (z = -halfD).
+  // 三角顶点: 顶尖 (0, tipY), 底左 (-halfW, baseY), 底右 (+halfW, baseY).
+  const tipY    =  0.30;
+  const baseY   = -0.25;
+  const halfW   =  0.28;
+  const halfD   =  0.28;
+
+  const front = verts.length;
+  verts.push([     0, tipY,   halfD]);   // 0 前顶尖
+  verts.push([-halfW, baseY,  halfD]);   // 1 前底左
+  verts.push([ halfW, baseY,  halfD]);   // 2 前底右
+  verts.push([     0, tipY,  -halfD]);   // 3 后顶尖
+  verts.push([-halfW, baseY, -halfD]);   // 4 后底左
+  verts.push([ halfW, baseY, -halfD]);   // 5 后底右
+
+  // 前三角 (CCW from +Z = 0,1,2 顺时针看 = (0,1,2) 逆时针)
+  idx.push([front + 0, front + 1, front + 2]);
+  // 后三角 (CCW from -Z = 反序)
+  idx.push([front + 3, front + 5, front + 4]);
+  // 左侧斜面 (顶尖 → 底左, 前后两顶点) — 0,1, 4,3
+  idx.push([front + 0, front + 4, front + 1]);
+  idx.push([front + 0, front + 3, front + 4]);
+  // 右侧斜面 — 0,2, 5,3
+  idx.push([front + 0, front + 2, front + 5]);
+  idx.push([front + 0, front + 5, front + 3]);
+  // 底面 — 1,2, 5,4 (CCW from below = -Y)
+  idx.push([front + 1, front + 4, front + 5]);
+  idx.push([front + 1, front + 5, front + 2]);
+
+  // ── 正面门 (薄长方体, 略凸出于前三角面) ──
+  // 门高度从底到三角中部 (~y = 0.0), 宽度 ±0.06, 厚度 0.012, z 略大于 halfD.
   function pushBox(cx: number, cy: number, cz: number, hw: number, hh: number, hd: number) {
     const s = verts.length;
-    // 8 corners: 0-3 bottom (CCW from +x+z), 4-7 top
-    verts.push([cx - hw, cy - hh, cz + hd]);  // 0 front-left-bottom
-    verts.push([cx + hw, cy - hh, cz + hd]);  // 1 front-right-bottom
-    verts.push([cx + hw, cy - hh, cz - hd]);  // 2 back-right-bottom
-    verts.push([cx - hw, cy - hh, cz - hd]);  // 3 back-left-bottom
-    verts.push([cx - hw, cy + hh, cz + hd]);  // 4 front-left-top
-    verts.push([cx + hw, cy + hh, cz + hd]);  // 5 front-right-top
-    verts.push([cx + hw, cy + hh, cz - hd]);  // 6 back-right-top
-    verts.push([cx - hw, cy + hh, cz - hd]);  // 7 back-left-top
-    idx.push([s+0, s+2, s+1], [s+0, s+3, s+2]);     // bottom (CCW from below)
-    idx.push([s+0, s+1, s+5], [s+0, s+5, s+4]);     // front (+Z, CCW from outside)
-    idx.push([s+1, s+2, s+6], [s+1, s+6, s+5]);     // right (+X)
-    idx.push([s+2, s+3, s+7], [s+2, s+7, s+6]);     // back  (-Z)
-    idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);     // left  (-X)
-    idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);     // top
+    verts.push([cx - hw, cy - hh, cz + hd]);
+    verts.push([cx + hw, cy - hh, cz + hd]);
+    verts.push([cx + hw, cy - hh, cz - hd]);
+    verts.push([cx - hw, cy - hh, cz - hd]);
+    verts.push([cx - hw, cy + hh, cz + hd]);
+    verts.push([cx + hw, cy + hh, cz + hd]);
+    verts.push([cx + hw, cy + hh, cz - hd]);
+    verts.push([cx - hw, cy + hh, cz - hd]);
+    idx.push([s+0, s+2, s+1], [s+0, s+3, s+2]);
+    idx.push([s+0, s+1, s+5], [s+0, s+5, s+4]);
+    idx.push([s+1, s+2, s+6], [s+1, s+6, s+5]);
+    idx.push([s+2, s+3, s+7], [s+2, s+7, s+6]);
+    idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);
+    idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
   }
-
-  // ── 主 keep (大主楼) ──
-  // 略宽中央 box. 中心 y=0, 半宽 0.16, 半高 0.18, 半深 0.12.
-  // 不渲染上面 (顶将被 battlements 覆盖) — 但渲染没事, battlements 会盖住.
-  const keepHW = 0.16, keepHH = 0.18, keepHD = 0.12;
-  const keepCY = 0.00;
-  pushBox(0, keepCY, 0, keepHW, keepHH, keepHD);
-
-  // ── Battlements (城垛): 5 个小矩形块沿 keep 顶面前缘 + 后缘 ──
-  // 城堡顶端最具识别性的特征. 每块半宽 0.025, 高 0.04, 深贴 keep 边缘.
-  const merlonHW = 0.022, merlonHH = 0.04, merlonHD = 0.022;
-  const merlonY = keepCY + keepHH + merlonHH;  // 顶面之上
-  // 5 个前缘 (z = +keepHD - merlonHD, 内贴顶面前缘)
-  // x 均匀分布 -keepHW+merlonHW ... +keepHW-merlonHW
-  const nMer: number = 5;
-  for (let i = 0; i < nMer; i++) {
-    const t = nMer === 1 ? 0.5 : i / (nMer - 1);
-    const x = -keepHW + merlonHW + t * (2 * keepHW - 2 * merlonHW);
-    pushBox(x, merlonY,  keepHD - merlonHD, merlonHW, merlonHH, merlonHD);
-    pushBox(x, merlonY, -keepHD + merlonHD, merlonHW, merlonHH, merlonHD);
-  }
-  // 左/右两侧也加 3 个 (z 中部) 让侧面看也有 battlements 节奏
-  for (let i = 1; i < 4; i++) {
-    const t = i / 4;
-    const z = -keepHD + merlonHD + t * (2 * keepHD - 2 * merlonHD);
-    pushBox( keepHW - merlonHW, merlonY, z, merlonHW, merlonHH, merlonHD);
-    pushBox(-keepHW + merlonHW, merlonY, z, merlonHW, merlonHH, merlonHD);
-  }
-
-  // ── Gate notch (拱门凹口): 在 keep 正面下半中央, 推一个小 box 略出于前面 ──
-  // 不真挖 hole (会破坏 box 三角形), 而是用一个深色"门框"box 浮雕在前面.
-  // 门框: 半宽 0.04, 半高 0.06 (下半), 深极薄 0.005, z 在 keep 前面之外 0.005.
-  const gateHW = 0.04, gateHH = 0.06, gateHD = 0.005;
-  const gateCY = keepCY - keepHH + gateHH;       // 顶面与 keep 底齐
-  pushBox(0, gateCY, keepHD + gateHD, gateHW, gateHH, gateHD);
-
-  // ── 左/右两侧塔 (圆柱 + 半球顶) ──
-  // 比 keep 高一点, 半径 0.05. 左右贴 keep 外缘.
-  function pushTower(cx: number, cz: number, baseR: number, towerH: number) {
-    const baseY = keepCY - keepHH;       // 塔底齐 keep 底
-    const topY  = baseY + towerH;        // 塔顶
-    const sides = 14;
-    const ts = verts.length;
-    // 底环 + 顶环 (圆柱侧面)
-    for (let j = 0; j < sides; j++) {
-      const ang = (j / sides) * Math.PI * 2;
-      verts.push([cx + baseR * Math.cos(ang), baseY, cz + baseR * Math.sin(ang)]);
-    }
-    for (let j = 0; j < sides; j++) {
-      const ang = (j / sides) * Math.PI * 2;
-      verts.push([cx + baseR * Math.cos(ang), topY, cz + baseR * Math.sin(ang)]);
-    }
-    for (let j = 0; j < sides; j++) {
-      const a = ts + j;
-      const b = ts + (j + 1) % sides;
-      const c = ts + sides + j;
-      const d = ts + sides + (j + 1) % sides;
-      idx.push([a, b, d], [a, d, c]);
-    }
-    // 半球顶 (lathe 半圆 — 替代 v109 锥顶, 更像真实石塔 dome)
-    const domeLat = 6;
-    const domeR = baseR;
-    const domeStart = verts.length;
-    // 顶环已经存在 ts+sides...ts+2*sides-1 (= dome 第一圈)
-    // 再生成 domeLat 圈到顶尖
-    for (let i = 1; i <= domeLat; i++) {
-      const lat = (i / domeLat) * (Math.PI / 2);  // 0..π/2
-      const y = topY + domeR * Math.sin(lat);
-      const r = domeR * Math.cos(lat);
-      if (i === domeLat) {
-        // 顶尖单点
-        verts.push([cx, y, cz]);
-      } else {
-        for (let j = 0; j < sides; j++) {
-          const ang = (j / sides) * Math.PI * 2;
-          verts.push([cx + r * Math.cos(ang), y, cz + r * Math.sin(ang)]);
-        }
-      }
-    }
-    // dome 三角形: 第一圈是 ts+sides (顶环), 之后 domeLat-1 圈在 domeStart...
-    let prevRingStart = ts + sides;
-    for (let i = 1; i < domeLat; i++) {
-      const curRingStart = domeStart + (i - 1) * sides;
-      for (let j = 0; j < sides; j++) {
-        const a = prevRingStart + j;
-        const b = prevRingStart + (j + 1) % sides;
-        const c = curRingStart + j;
-        const d = curRingStart + (j + 1) % sides;
-        idx.push([a, b, d], [a, d, c]);
-      }
-      prevRingStart = curRingStart;
-    }
-    // 最后一圈到顶尖
-    const tipIdx = verts.length - 1;
-    for (let j = 0; j < sides; j++) {
-      const a = prevRingStart + j;
-      const b = prevRingStart + (j + 1) % sides;
-      idx.push([a, b, tipIdx]);
-    }
-  }
-  const towerR = 0.045;
-  const towerH = keepHH * 2 + 0.04;   // 比 keep 高一点
-  const towerX = keepHW + towerR * 0.6;
-  pushTower(-towerX, 0, towerR, towerH);
-  pushTower( towerX, 0, towerR, towerH);
+  // 门: 沿前三角面对称中央, 宽 0.06, 高 0.18, 厚 0.012, z = halfD + 0.006
+  // 把门向上抬 0.18/2 让底部贴 baseY.
+  const doorHW = 0.06, doorHH = 0.18, doorHD = 0.012;
+  const doorCY = baseY + doorHH;
+  pushBox(0, doorCY, halfD + doorHD + 0.001, doorHW, doorHH, doorHD);
 
   return { vertices: verts, triangleIndices: idx };
 }
