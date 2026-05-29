@@ -46,7 +46,8 @@ const TYPE_COLOR_TRIPLET: Record<string, { inner: string; mid: string; outer: st
   junction: { inner: '#fff4d8', mid: '#f0a838', outer: '#8a4a18' },
   water:    { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
   hut:      { inner: '#f5e6d0', mid: '#b5823d', outer: '#5a3d18' },
-  cairn:    { inner: '#f5e6d0', mid: '#b5823d', outer: '#5a3d18' },
+  // v110: cairn 颜色换成 logo 同色 (CairnLogo.tsx 默认 #5d7c46 绿色, 比棕色更协调)
+  cairn:    { inner: '#a8c690', mid: '#5d7c46', outer: '#2e3f1d' },
   // v70: catch-all for unknown types.
   generic:  { inner: '#f0f0f0', mid: '#9aa0a6', outer: '#3a3d40' },
   // v105 backwards-compat: legacy DB records may still have 'supply' / 'scenic' / 'free'.
@@ -121,98 +122,92 @@ const ICON_SCALE = ICON_SCALE_NEAR;
 //       cairn (sphere stack) — v107 新 type, 不再用 scenic 几何
 // 修水滴底部黑点 — cap fan 法向量错 (v107 修).
 
-// Danger 火焰 (v109): 用户选定 D5 Flame.
-// 设计: 底部 lathe 旋转水滴底 (跟 water 同算法不同 profile) + 上部
-// path-extrude 火焰板. 用户视角看 = 熊熊火焰. billboard 让上部永远朝相机.
+// Danger 火焰 (v110 重做): 用户反馈 v109 火焰形不像.
+// 设计思路: 真实火焰 = 底部圆球 (燃料/木炭) + 上方水滴形火舌 + 顶尖右弯
 //
 // 几何分两段:
-//   下半 (y < 0.05): lathe segs=14 sides=20, 旋转出窄圆锥水滴底
-//   上半 (y > 0.05): 火焰 path 用 12 段折线拟合 Bezier, extrude depth=0.06
+//   下半 (y -0.25 → -0.10): lathe 旋转球形底座 (像燃烧的炭球)
+//   上半 (y -0.10 → 0.30): 火焰 path-extrude
+//     - 底窄 (-0.10 处 ±0.04 宽) 跟底座连接
+//     - 中胖 (0.05 处 ±0.16 宽) 火焰最旺位置
+//     - 顶尖 (0.30 处) 偏右 0.06 给"摇曳感"
 function buildDangerGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
 
-  // ── 下半: lathe 圆形底座 ──
-  // profile: y -0.20 → 0.05, r 0 → 0.10
-  // 视觉: 收尖在下, 圆肚在上 = 火焰底座
-  const baseSegs = 14, baseSides = 20;
-  const baseY0 = -0.20, baseY1 = 0.05, baseRMax = 0.13;
-  const basePts: { y: number; r: number }[] = [];
-  for (let i = 0; i <= baseSegs; i++) {
-    const t = i / baseSegs;
-    const y = baseY0 + (baseY1 - baseY0) * t;
-    // 形状: 底窄 (0.5*rMax) → 中宽 (rMax) → 顶窄过渡 (0.7*rMax) 接火焰
-    const r = baseRMax * (0.5 + 0.5 * Math.sin(t * Math.PI * 0.85));
-    basePts.push({ y, r: Math.max(r, 0.005) });
-  }
-  // lathe 顶点
-  for (let i = 0; i <= baseSegs; i++) {
-    for (let j = 0; j < baseSides; j++) {
-      const ang = (j / baseSides) * Math.PI * 2;
-      verts.push([Math.cos(ang) * basePts[i].r, basePts[i].y, Math.sin(ang) * basePts[i].r]);
+  // ── 下半: 球形燃料底座 (lathe 全圆球) ──
+  // 球心 (-0.18), 半径 0.08, 像燃烧的木炭球
+  const baseCY = -0.18, baseR = 0.08;
+  const baseLat = 12, baseLon = 16;
+  const baseStart = verts.length;
+  for (let i = 0; i <= baseLat; i++) {
+    const lat = (i / baseLat) * Math.PI;
+    const sinLat = Math.sin(lat), cosLat = Math.cos(lat);
+    for (let j = 0; j <= baseLon; j++) {
+      const lon = (j / baseLon) * Math.PI * 2;
+      verts.push([
+        baseR * sinLat * Math.cos(lon),
+        baseCY + baseR * cosLat,
+        baseR * sinLat * Math.sin(lon),
+      ]);
     }
   }
-  // lathe 三角面
-  for (let i = 0; i < baseSegs; i++) {
-    for (let j = 0; j < baseSides; j++) {
-      const a = i * baseSides + j;
-      const b = i * baseSides + (j + 1) % baseSides;
-      const c = (i + 1) * baseSides + j;
-      const d = (i + 1) * baseSides + (j + 1) % baseSides;
+  for (let i = 0; i < baseLat; i++) {
+    for (let j = 0; j < baseLon; j++) {
+      const a = baseStart + i * (baseLon + 1) + j;
+      const b = baseStart + i * (baseLon + 1) + (j + 1);
+      const c = baseStart + (i + 1) * (baseLon + 1) + j;
+      const d = baseStart + (i + 1) * (baseLon + 1) + (j + 1);
       idx.push([a, b, d], [a, d, c]);
     }
   }
-  // 底封口
-  const baseCapIdx = verts.length;
-  verts.push([0, baseY0, 0]);
-  for (let j = 0; j < baseSides; j++) {
-    const a = j, b = (j + 1) % baseSides;
-    idx.push([baseCapIdx, b, a]);
-  }
 
-  // ── 上半: 火焰 path extrude ──
-  // 火焰轮廓 (12 个点拟合 Bezier): 底窄 (y=0.05) → 中胖 (y=0.18) → 顶尖 (y=0.32)
-  // 左侧轮廓 (从底到顶) + 右侧轮廓 (从顶到底)
+  // ── 上半: 火焰 path-extrude ──
+  // 16 顶点拟合火焰轮廓: 底窄 → 中胖 → 顶尖偏右
+  // 左侧轮廓 (y 从 -0.10 升到 0.30 顶尖)
+  // 右侧轮廓 (y 从 0.30 顶尖降到 -0.10)
   const flamePts: { x: number; y: number }[] = [
-    // 左侧 (从底中心起, 逆时针)
-    { x: -0.02, y: 0.05 },   // 底连接点 (略宽于底座 0.10)
-    { x: -0.10, y: 0.10 },
-    { x: -0.13, y: 0.16 },   // 中胖
-    { x: -0.10, y: 0.22 },
-    { x: -0.04, y: 0.27 },
-    // 顶尖
-    { x:  0.02, y: 0.34 },   // 顶尖偏右一点 (火焰摇曳感)
-    // 右侧 (从顶下来)
-    { x:  0.06, y: 0.27 },
-    { x:  0.11, y: 0.22 },
-    { x:  0.13, y: 0.16 },
-    { x:  0.10, y: 0.10 },
-    { x:  0.05, y: 0.07 },
-    { x:  0.02, y: 0.05 },   // 闭合到底
+    // 起点 (左侧底)
+    { x: -0.04, y: -0.10 },
+    { x: -0.10, y: -0.04 },   // 左侧下凸
+    { x: -0.15, y:  0.05 },   // 左中胖 (火焰最宽)
+    { x: -0.13, y:  0.13 },
+    { x: -0.08, y:  0.20 },
+    { x: -0.02, y:  0.26 },
+    // 顶尖 (略偏右给摇曳感)
+    { x:  0.04, y:  0.30 },
+    // 右侧从顶往下 (跳一个稍内凹给火焰"舔"的感觉)
+    { x:  0.06, y:  0.22 },
+    { x:  0.12, y:  0.15 },
+    { x:  0.16, y:  0.05 },   // 右中胖
+    { x:  0.13, y: -0.02 },
+    { x:  0.06, y: -0.08 },
+    { x:  0.04, y: -0.10 },   // 闭合到底
   ];
-  const FLAME_DEPTH = 0.05;
-  const flameStartIdx = verts.length;
-  // 前面 + 后面顶点
+  const FLAME_DEPTH = 0.04;
+  const flameStart = verts.length;
+  // 前面顶点 (z=+depth)
   for (const p of flamePts) {
-    verts.push([p.x, p.y, FLAME_DEPTH]);   // 前面 z=+depth
+    verts.push([p.x, p.y, FLAME_DEPTH]);
   }
+  // 后面顶点 (z=-depth)
   for (const p of flamePts) {
-    verts.push([p.x, p.y, -FLAME_DEPTH]);  // 后面 z=-depth
+    verts.push([p.x, p.y, -FLAME_DEPTH]);
   }
-  // 前面: fan 三角 (中心 = 第 0 个点, 其他点环绕)
-  // 用 ear-clipping 简化 — 假设凸多边形, 从顶点 0 fan
   const N = flamePts.length;
+  // 前面 fan (用第一点扇形): N-2 个三角形
   for (let i = 1; i < N - 1; i++) {
-    idx.push([flameStartIdx + 0, flameStartIdx + i, flameStartIdx + i + 1]);     // 前面 CCW from +Z
-    idx.push([flameStartIdx + N + 0, flameStartIdx + N + i + 1, flameStartIdx + N + i]); // 后面 CCW from -Z
+    idx.push([flameStart, flameStart + i, flameStart + i + 1]);
+    // 后面 (镜像 CCW from -Z = 顶点顺序反转)
+    idx.push([flameStart + N, flameStart + N + i + 1, flameStart + N + i]);
   }
   // 侧壁 (前后顶点连接)
   for (let i = 0; i < N; i++) {
     const i2 = (i + 1) % N;
-    const fa = flameStartIdx + i;        // 前 i
-    const fb = flameStartIdx + i2;       // 前 i+1
-    const ba = flameStartIdx + N + i;    // 后 i
-    const bb = flameStartIdx + N + i2;   // 后 i+1
+    const fa = flameStart + i;
+    const fb = flameStart + i2;
+    const ba = flameStart + N + i;
+    const bb = flameStart + N + i2;
     idx.push([fa, ba, bb]);
     idx.push([fa, bb, fb]);
   }
@@ -395,14 +390,21 @@ function buildJunctionGeom() {
     idx.push([o+2, o+7, o+3], [o+2, o+6, o+7]);          // 侧面 3
     idx.push([o+3, o+4, o+0], [o+3, o+7, o+4]);          // 侧面 4
   }
-  // ── J2 Split (v109): 双箭头分叉 ──
-  // 底部短杆 + 两个分叉箭头 (左斜 / 右斜) 各带圆锥头
-  // 跟 J1 Y-fork 不同: J2 是"主杆+两支箭头"更明确"路径分裂"
-  pushPole(0, -0.22, 0, 0, -0.05, 0, 0.045);          // 底座垂直主杆 (略粗)
-  // 左分支杆 (从 -0.05 → 左上 (-0.18, 0.18))
-  pushPole(0, -0.05, 0, -0.18, 0.18, 0, 0.038);
-  // 右分支杆 (从 -0.05 → 右上 (0.18, 0.18))
-  pushPole(0, -0.05, 0,  0.18, 0.18, 0, 0.038);
+  // ── J2 Split (v110 重做): 主杆和分叉箭头之间有 gap ──
+  // 用户反馈 "希望像 picker 网页 J2 那样有断开" — picker 里 J2 是: 主杆短,
+  // 上方两个独立的分叉箭头, 它们之间有 ~0.10m 间隙 (不连接).
+  //
+  // 几何:
+  //   主杆: (0, -0.25) → (0, -0.10)  (下端 0.15 长)
+  //   <空隙 0.10>
+  //   左箭头杆: (-0.05, 0.0) → (-0.20, 0.20)  (杆 + 锥头)
+  //   右箭头杆: (0.05, 0.0) → (0.20, 0.20)
+  //   底脚装饰球
+  pushPole(0, -0.25, 0, 0, -0.10, 0, 0.045);   // 底座主杆 (短)
+  // 左分支杆 (起点上移到 -0.05, 0.0, 跟主杆顶有间隙)
+  pushPole(-0.05, 0.00, 0, -0.20, 0.20, 0, 0.038);
+  // 右分支杆
+  pushPole( 0.05, 0.00, 0,  0.20, 0.20, 0, 0.038);
 
   // ── 左箭头头 (cone) ──
   // 箭头位置: 左分支末端 (-0.18, 0.18), 朝外左上方 (-0.28, 0.30)
@@ -444,10 +446,10 @@ function buildJunctionGeom() {
       idx.push([baseCenter, a, b]);
     }
   }
-  // 左箭头: 杆终点 (-0.18, 0.18) 是箭头底, 尖在更外 (-0.28, 0.30)
-  pushArrowHead(-0.28, 0.30, -0.18, 0.18, 0.07);
+  // 左箭头: 杆终点 (-0.20, 0.20) 是箭头底, 尖在更外 (-0.30, 0.32)
+  pushArrowHead(-0.30, 0.32, -0.20, 0.20, 0.07);
   // 右箭头
-  pushArrowHead(0.28, 0.30, 0.18, 0.18, 0.07);
+  pushArrowHead(0.30, 0.32, 0.20, 0.20, 0.07);
 
   // 底脚小球 (装饰)
   function pushBall(cx: number, cy: number, cz: number, r: number) {
@@ -474,85 +476,153 @@ function buildJunctionGeom() {
       }
     }
   }
-  pushBall(0, -0.22, 0, 0.06);           // 底脚装饰球
+  pushBall(0, -0.25, 0, 0.06);           // 底脚装饰球 (跟主杆底 -0.25 对齐)
   return { vertices: verts, triangleIndices: idx };
 }
 
 // Hut Castle 城堡 (v109): 用户选定 H3.
 // 几何: 中央主体 box + 4 个角塔 (圆柱) + 4 个塔顶圆锥
 // 跨文化"避难城堡"识别, 比简单 House 更视觉丰富
+// Hut 城堡 (v110 重做): 用户反馈 v109 4-角塔+锥顶丑.
+// 新设计 = 真实城堡 silhouette: 大 keep (主楼) + 上方 battlements (城垛) +
+// 前方 gate notch (拱门凹口) + 2 侧塔 (而非 4 角塔, 让正面看更主).
+//
+// 几何 layout (正面 = +Z):
+//   主 keep: 大 box, 略宽, 后中.
+//   左/右侧塔: 2 圆柱 + 圆顶, 左右两边而非 4 角.
+//   battlements: 主 keep 顶上 5 个矩形小块 (城垛), 间隔感.
+//   gate: 主 keep 前面下半中央留 1 个矩形 notch (拱门).
+//
+// 不再用 4 角锥顶塔 — 视觉太"迪士尼", 不像石头城堡.
 function buildHutGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
 
-  // ── 中央主体 (BoxGeometry W=0.36, H=0.28, D=0.24, Y center=-0.05) ──
-  const bodyW = 0.18, bodyH = 0.14, bodyD = 0.12;
-  const bodyCY = -0.05;
-  // 8 box 顶点
-  const bodyStart = verts.length;
-  verts.push([-bodyW, bodyCY - bodyH,  bodyD]);  // 0 前左下
-  verts.push([ bodyW, bodyCY - bodyH,  bodyD]);  // 1 前右下
-  verts.push([ bodyW, bodyCY - bodyH, -bodyD]);  // 2 后右下
-  verts.push([-bodyW, bodyCY - bodyH, -bodyD]);  // 3 后左下
-  verts.push([-bodyW, bodyCY + bodyH,  bodyD]);  // 4 前左上
-  verts.push([ bodyW, bodyCY + bodyH,  bodyD]);  // 5 前右上
-  verts.push([ bodyW, bodyCY + bodyH, -bodyD]);  // 6 后右上
-  verts.push([-bodyW, bodyCY + bodyH, -bodyD]);  // 7 后左上
-  const bs = bodyStart;
-  idx.push([bs+0, bs+1, bs+2], [bs+0, bs+2, bs+3]);     // 底
-  idx.push([bs+0, bs+4, bs+5], [bs+0, bs+5, bs+1]);     // 前
-  idx.push([bs+1, bs+5, bs+6], [bs+1, bs+6, bs+2]);     // 右
-  idx.push([bs+2, bs+6, bs+7], [bs+2, bs+7, bs+3]);     // 后
-  idx.push([bs+3, bs+7, bs+4], [bs+3, bs+4, bs+0]);     // 左
-  idx.push([bs+4, bs+7, bs+6], [bs+4, bs+6, bs+5]);     // 顶 (城堡顶平面, 不是 pitched)
+  // Helper: push closed box with explicit normals not needed (flat shading via
+  // separate triangle vertices not needed here — Viro flat-shades fine).
+  function pushBox(cx: number, cy: number, cz: number, hw: number, hh: number, hd: number) {
+    const s = verts.length;
+    // 8 corners: 0-3 bottom (CCW from +x+z), 4-7 top
+    verts.push([cx - hw, cy - hh, cz + hd]);  // 0 front-left-bottom
+    verts.push([cx + hw, cy - hh, cz + hd]);  // 1 front-right-bottom
+    verts.push([cx + hw, cy - hh, cz - hd]);  // 2 back-right-bottom
+    verts.push([cx - hw, cy - hh, cz - hd]);  // 3 back-left-bottom
+    verts.push([cx - hw, cy + hh, cz + hd]);  // 4 front-left-top
+    verts.push([cx + hw, cy + hh, cz + hd]);  // 5 front-right-top
+    verts.push([cx + hw, cy + hh, cz - hd]);  // 6 back-right-top
+    verts.push([cx - hw, cy + hh, cz - hd]);  // 7 back-left-top
+    idx.push([s+0, s+2, s+1], [s+0, s+3, s+2]);     // bottom (CCW from below)
+    idx.push([s+0, s+1, s+5], [s+0, s+5, s+4]);     // front (+Z, CCW from outside)
+    idx.push([s+1, s+2, s+6], [s+1, s+6, s+5]);     // right (+X)
+    idx.push([s+2, s+3, s+7], [s+2, s+7, s+6]);     // back  (-Z)
+    idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);     // left  (-X)
+    idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);     // top
+  }
 
-  // ── 4 个角塔 (圆柱) + 锥顶 ──
-  function pushTower(cx: number, cz: number, baseR: number, towerH: number, coneH: number) {
-    const baseY = bodyCY - bodyH;       // 塔底跟主体底齐
-    const topY = baseY + towerH;        // 塔顶
-    const coneTipY = topY + coneH;      // 锥尖
-    const sides = 12;
-    const towerStart = verts.length;
-    // 底环 + 顶环
+  // ── 主 keep (大主楼) ──
+  // 略宽中央 box. 中心 y=0, 半宽 0.16, 半高 0.18, 半深 0.12.
+  // 不渲染上面 (顶将被 battlements 覆盖) — 但渲染没事, battlements 会盖住.
+  const keepHW = 0.16, keepHH = 0.18, keepHD = 0.12;
+  const keepCY = 0.00;
+  pushBox(0, keepCY, 0, keepHW, keepHH, keepHD);
+
+  // ── Battlements (城垛): 5 个小矩形块沿 keep 顶面前缘 + 后缘 ──
+  // 城堡顶端最具识别性的特征. 每块半宽 0.025, 高 0.04, 深贴 keep 边缘.
+  const merlonHW = 0.022, merlonHH = 0.04, merlonHD = 0.022;
+  const merlonY = keepCY + keepHH + merlonHH;  // 顶面之上
+  // 5 个前缘 (z = +keepHD - merlonHD, 内贴顶面前缘)
+  // x 均匀分布 -keepHW+merlonHW ... +keepHW-merlonHW
+  const nMer: number = 5;
+  for (let i = 0; i < nMer; i++) {
+    const t = nMer === 1 ? 0.5 : i / (nMer - 1);
+    const x = -keepHW + merlonHW + t * (2 * keepHW - 2 * merlonHW);
+    pushBox(x, merlonY,  keepHD - merlonHD, merlonHW, merlonHH, merlonHD);
+    pushBox(x, merlonY, -keepHD + merlonHD, merlonHW, merlonHH, merlonHD);
+  }
+  // 左/右两侧也加 3 个 (z 中部) 让侧面看也有 battlements 节奏
+  for (let i = 1; i < 4; i++) {
+    const t = i / 4;
+    const z = -keepHD + merlonHD + t * (2 * keepHD - 2 * merlonHD);
+    pushBox( keepHW - merlonHW, merlonY, z, merlonHW, merlonHH, merlonHD);
+    pushBox(-keepHW + merlonHW, merlonY, z, merlonHW, merlonHH, merlonHD);
+  }
+
+  // ── Gate notch (拱门凹口): 在 keep 正面下半中央, 推一个小 box 略出于前面 ──
+  // 不真挖 hole (会破坏 box 三角形), 而是用一个深色"门框"box 浮雕在前面.
+  // 门框: 半宽 0.04, 半高 0.06 (下半), 深极薄 0.005, z 在 keep 前面之外 0.005.
+  const gateHW = 0.04, gateHH = 0.06, gateHD = 0.005;
+  const gateCY = keepCY - keepHH + gateHH;       // 顶面与 keep 底齐
+  pushBox(0, gateCY, keepHD + gateHD, gateHW, gateHH, gateHD);
+
+  // ── 左/右两侧塔 (圆柱 + 半球顶) ──
+  // 比 keep 高一点, 半径 0.05. 左右贴 keep 外缘.
+  function pushTower(cx: number, cz: number, baseR: number, towerH: number) {
+    const baseY = keepCY - keepHH;       // 塔底齐 keep 底
+    const topY  = baseY + towerH;        // 塔顶
+    const sides = 14;
+    const ts = verts.length;
+    // 底环 + 顶环 (圆柱侧面)
     for (let j = 0; j < sides; j++) {
       const ang = (j / sides) * Math.PI * 2;
-      const x = cx + baseR * Math.cos(ang);
-      const z = cz + baseR * Math.sin(ang);
-      verts.push([x, baseY, z]);
+      verts.push([cx + baseR * Math.cos(ang), baseY, cz + baseR * Math.sin(ang)]);
     }
     for (let j = 0; j < sides; j++) {
       const ang = (j / sides) * Math.PI * 2;
-      const x = cx + baseR * Math.cos(ang);
-      const z = cz + baseR * Math.sin(ang);
-      verts.push([x, topY, z]);
+      verts.push([cx + baseR * Math.cos(ang), topY, cz + baseR * Math.sin(ang)]);
     }
-    // 圆柱侧面
     for (let j = 0; j < sides; j++) {
-      const a = towerStart + j;
-      const b = towerStart + (j + 1) % sides;
-      const c = towerStart + sides + j;
-      const d = towerStart + sides + (j + 1) % sides;
+      const a = ts + j;
+      const b = ts + (j + 1) % sides;
+      const c = ts + sides + j;
+      const d = ts + sides + (j + 1) % sides;
       idx.push([a, b, d], [a, d, c]);
     }
-    // 锥顶
-    const coneTipIdx = verts.length;
-    verts.push([cx, coneTipY, cz]);
+    // 半球顶 (lathe 半圆 — 替代 v109 锥顶, 更像真实石塔 dome)
+    const domeLat = 6;
+    const domeR = baseR;
+    const domeStart = verts.length;
+    // 顶环已经存在 ts+sides...ts+2*sides-1 (= dome 第一圈)
+    // 再生成 domeLat 圈到顶尖
+    for (let i = 1; i <= domeLat; i++) {
+      const lat = (i / domeLat) * (Math.PI / 2);  // 0..π/2
+      const y = topY + domeR * Math.sin(lat);
+      const r = domeR * Math.cos(lat);
+      if (i === domeLat) {
+        // 顶尖单点
+        verts.push([cx, y, cz]);
+      } else {
+        for (let j = 0; j < sides; j++) {
+          const ang = (j / sides) * Math.PI * 2;
+          verts.push([cx + r * Math.cos(ang), y, cz + r * Math.sin(ang)]);
+        }
+      }
+    }
+    // dome 三角形: 第一圈是 ts+sides (顶环), 之后 domeLat-1 圈在 domeStart...
+    let prevRingStart = ts + sides;
+    for (let i = 1; i < domeLat; i++) {
+      const curRingStart = domeStart + (i - 1) * sides;
+      for (let j = 0; j < sides; j++) {
+        const a = prevRingStart + j;
+        const b = prevRingStart + (j + 1) % sides;
+        const c = curRingStart + j;
+        const d = curRingStart + (j + 1) % sides;
+        idx.push([a, b, d], [a, d, c]);
+      }
+      prevRingStart = curRingStart;
+    }
+    // 最后一圈到顶尖
+    const tipIdx = verts.length - 1;
     for (let j = 0; j < sides; j++) {
-      const a = towerStart + sides + j;
-      const b = towerStart + sides + (j + 1) % sides;
-      idx.push([coneTipIdx, b, a]);   // CCW from outside
+      const a = prevRingStart + j;
+      const b = prevRingStart + (j + 1) % sides;
+      idx.push([a, b, tipIdx]);
     }
   }
-  // 4 角: 主体宽 ±bodyW, 主体深 ±bodyD, 塔半径 0.05
-  const towerR = 0.05;
-  const towerH = 0.36;       // 塔高
-  const coneH = 0.10;        // 锥顶高
-  const tx = bodyW + towerR * 0.5;  // 塔中心略外移
-  const tz = bodyD + towerR * 0.5;
-  pushTower(-tx, -tz, towerR, towerH, coneH);
-  pushTower( tx, -tz, towerR, towerH, coneH);
-  pushTower( tx,  tz, towerR, towerH, coneH);
-  pushTower(-tx,  tz, towerR, towerH, coneH);
+  const towerR = 0.045;
+  const towerH = keepHH * 2 + 0.04;   // 比 keep 高一点
+  const towerX = keepHW + towerR * 0.6;
+  pushTower(-towerX, 0, towerR, towerH);
+  pushTower( towerX, 0, towerR, towerH);
 
   return { vertices: verts, triangleIndices: idx };
 }
