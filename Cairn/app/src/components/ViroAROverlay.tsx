@@ -121,44 +121,102 @@ const ICON_SCALE = ICON_SCALE_NEAR;
 //       cairn (sphere stack) — v107 新 type, 不再用 scenic 几何
 // 修水滴底部黑点 — cap fan 法向量错 (v107 修).
 
-// Danger 倒三角 + 感叹号 (v97 用户认可版本)
+// Danger 火焰 (v109): 用户选定 D5 Flame.
+// 设计: 底部 lathe 旋转水滴底 (跟 water 同算法不同 profile) + 上部
+// path-extrude 火焰板. 用户视角看 = 熊熊火焰. billboard 让上部永远朝相机.
+//
+// 几何分两段:
+//   下半 (y < 0.05): lathe segs=14 sides=20, 旋转出窄圆锥水滴底
+//   上半 (y > 0.05): 火焰 path 用 12 段折线拟合 Bezier, extrude depth=0.06
 function buildDangerGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-  const D = 0.012;
-  const TIP_Y = -0.20;
-  const BASE_Y = 0.27;
-  const HALF_W = 0.26;
-  // 主三角板 (倒立: 1 个尖角下, 2 个角上)
-  verts.push([0,        TIP_Y,   D]);
-  verts.push([-HALF_W,  BASE_Y,  D]);
-  verts.push([HALF_W,   BASE_Y,  D]);
-  verts.push([0,        TIP_Y,  -D]);
-  verts.push([-HALF_W,  BASE_Y, -D]);
-  verts.push([HALF_W,   BASE_Y, -D]);
-  idx.push([0, 2, 1]);
-  idx.push([3, 4, 5]);
-  idx.push([0, 1, 4]); idx.push([0, 4, 3]);
-  idx.push([1, 2, 5]); idx.push([1, 5, 4]);
-  idx.push([2, 0, 3]); idx.push([2, 3, 5]);
-  // 感叹号 bar (在下) + dot (在上)
-  const eps = 0.002;
-  const barW = 0.030, barH = 0.10, barCY = -0.029;
-  const bbase = verts.length;
-  const barZ = D + eps;
-  verts.push([-barW, barCY - barH/2, barZ]);
-  verts.push([ barW, barCY - barH/2, barZ]);
-  verts.push([ barW, barCY + barH/2, barZ]);
-  verts.push([-barW, barCY + barH/2, barZ]);
-  idx.push([bbase+0, bbase+1, bbase+2], [bbase+0, bbase+2, bbase+3]);
-  const dotSize = 0.038, dotY = 0.086;
-  const dotZ = D + eps;
-  const dbase = verts.length;
-  verts.push([-dotSize/2, dotY - dotSize/2, dotZ]);
-  verts.push([ dotSize/2, dotY - dotSize/2, dotZ]);
-  verts.push([ dotSize/2, dotY + dotSize/2, dotZ]);
-  verts.push([-dotSize/2, dotY + dotSize/2, dotZ]);
-  idx.push([dbase+0, dbase+1, dbase+2], [dbase+0, dbase+2, dbase+3]);
+
+  // ── 下半: lathe 圆形底座 ──
+  // profile: y -0.20 → 0.05, r 0 → 0.10
+  // 视觉: 收尖在下, 圆肚在上 = 火焰底座
+  const baseSegs = 14, baseSides = 20;
+  const baseY0 = -0.20, baseY1 = 0.05, baseRMax = 0.13;
+  const basePts: { y: number; r: number }[] = [];
+  for (let i = 0; i <= baseSegs; i++) {
+    const t = i / baseSegs;
+    const y = baseY0 + (baseY1 - baseY0) * t;
+    // 形状: 底窄 (0.5*rMax) → 中宽 (rMax) → 顶窄过渡 (0.7*rMax) 接火焰
+    const r = baseRMax * (0.5 + 0.5 * Math.sin(t * Math.PI * 0.85));
+    basePts.push({ y, r: Math.max(r, 0.005) });
+  }
+  // lathe 顶点
+  for (let i = 0; i <= baseSegs; i++) {
+    for (let j = 0; j < baseSides; j++) {
+      const ang = (j / baseSides) * Math.PI * 2;
+      verts.push([Math.cos(ang) * basePts[i].r, basePts[i].y, Math.sin(ang) * basePts[i].r]);
+    }
+  }
+  // lathe 三角面
+  for (let i = 0; i < baseSegs; i++) {
+    for (let j = 0; j < baseSides; j++) {
+      const a = i * baseSides + j;
+      const b = i * baseSides + (j + 1) % baseSides;
+      const c = (i + 1) * baseSides + j;
+      const d = (i + 1) * baseSides + (j + 1) % baseSides;
+      idx.push([a, b, d], [a, d, c]);
+    }
+  }
+  // 底封口
+  const baseCapIdx = verts.length;
+  verts.push([0, baseY0, 0]);
+  for (let j = 0; j < baseSides; j++) {
+    const a = j, b = (j + 1) % baseSides;
+    idx.push([baseCapIdx, b, a]);
+  }
+
+  // ── 上半: 火焰 path extrude ──
+  // 火焰轮廓 (12 个点拟合 Bezier): 底窄 (y=0.05) → 中胖 (y=0.18) → 顶尖 (y=0.32)
+  // 左侧轮廓 (从底到顶) + 右侧轮廓 (从顶到底)
+  const flamePts: { x: number; y: number }[] = [
+    // 左侧 (从底中心起, 逆时针)
+    { x: -0.02, y: 0.05 },   // 底连接点 (略宽于底座 0.10)
+    { x: -0.10, y: 0.10 },
+    { x: -0.13, y: 0.16 },   // 中胖
+    { x: -0.10, y: 0.22 },
+    { x: -0.04, y: 0.27 },
+    // 顶尖
+    { x:  0.02, y: 0.34 },   // 顶尖偏右一点 (火焰摇曳感)
+    // 右侧 (从顶下来)
+    { x:  0.06, y: 0.27 },
+    { x:  0.11, y: 0.22 },
+    { x:  0.13, y: 0.16 },
+    { x:  0.10, y: 0.10 },
+    { x:  0.05, y: 0.07 },
+    { x:  0.02, y: 0.05 },   // 闭合到底
+  ];
+  const FLAME_DEPTH = 0.05;
+  const flameStartIdx = verts.length;
+  // 前面 + 后面顶点
+  for (const p of flamePts) {
+    verts.push([p.x, p.y, FLAME_DEPTH]);   // 前面 z=+depth
+  }
+  for (const p of flamePts) {
+    verts.push([p.x, p.y, -FLAME_DEPTH]);  // 后面 z=-depth
+  }
+  // 前面: fan 三角 (中心 = 第 0 个点, 其他点环绕)
+  // 用 ear-clipping 简化 — 假设凸多边形, 从顶点 0 fan
+  const N = flamePts.length;
+  for (let i = 1; i < N - 1; i++) {
+    idx.push([flameStartIdx + 0, flameStartIdx + i, flameStartIdx + i + 1]);     // 前面 CCW from +Z
+    idx.push([flameStartIdx + N + 0, flameStartIdx + N + i + 1, flameStartIdx + N + i]); // 后面 CCW from -Z
+  }
+  // 侧壁 (前后顶点连接)
+  for (let i = 0; i < N; i++) {
+    const i2 = (i + 1) % N;
+    const fa = flameStartIdx + i;        // 前 i
+    const fb = flameStartIdx + i2;       // 前 i+1
+    const ba = flameStartIdx + N + i;    // 后 i
+    const bb = flameStartIdx + N + i2;   // 后 i+1
+    idx.push([fa, ba, bb]);
+    idx.push([fa, bb, fb]);
+  }
+
   return { vertices: verts, triangleIndices: idx };
 }
 
@@ -337,14 +395,61 @@ function buildJunctionGeom() {
     idx.push([o+2, o+7, o+3], [o+2, o+6, o+7]);          // 侧面 3
     idx.push([o+3, o+4, o+0], [o+3, o+7, o+4]);          // 侧面 4
   }
-  // Y 形分叉路口:
-  //   底座柱: (0, -0.20) → (0, -0.05)  (垂直)
-  //   左分支: (0, -0.05) → (-0.18, 0.22)  (左上斜)
-  //   右分支: (0, -0.05) → (0.18, 0.22)   (右上斜)
-  pushPole(0, -0.20, 0, 0, -0.05, 0, 0.04);          // 底座垂直柱
-  pushPole(0, -0.05, 0, -0.18, 0.22, 0, 0.04);       // 左分支
-  pushPole(0, -0.05, 0,  0.18, 0.22, 0, 0.04);       // 右分支
-  // 在 3 个端点加小圆球 (类似指示牌的端帽)
+  // ── J2 Split (v109): 双箭头分叉 ──
+  // 底部短杆 + 两个分叉箭头 (左斜 / 右斜) 各带圆锥头
+  // 跟 J1 Y-fork 不同: J2 是"主杆+两支箭头"更明确"路径分裂"
+  pushPole(0, -0.22, 0, 0, -0.05, 0, 0.045);          // 底座垂直主杆 (略粗)
+  // 左分支杆 (从 -0.05 → 左上 (-0.18, 0.18))
+  pushPole(0, -0.05, 0, -0.18, 0.18, 0, 0.038);
+  // 右分支杆 (从 -0.05 → 右上 (0.18, 0.18))
+  pushPole(0, -0.05, 0,  0.18, 0.18, 0, 0.038);
+
+  // ── 左箭头头 (cone) ──
+  // 箭头位置: 左分支末端 (-0.18, 0.18), 朝外左上方 (-0.28, 0.30)
+  function pushArrowHead(tipX: number, tipY: number, baseX: number, baseY: number, baseR: number) {
+    // tip = 箭头尖, base = 箭头底圆心 (圆锥底)
+    const dx = tipX - baseX, dy = tipY - baseY;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.001) return;
+    // 箭头方向单位向量
+    const ax = dx / len, ay = dy / len;
+    // 垂直方向 (XY 平面内, 在 XZ 平面)
+    const px = -ay, py = ax;  // 90° rotate in XY
+    const start = verts.length;
+    // 顶尖
+    verts.push([tipX, tipY, 0]);
+    // 底圆 (8 段)
+    const sides = 12;
+    for (let j = 0; j < sides; j++) {
+      const ang = (j / sides) * Math.PI * 2;
+      // 底圆在垂直平面 (px,py) + Z 轴
+      const cx = baseX + baseR * Math.cos(ang) * px;
+      const cy = baseY + baseR * Math.cos(ang) * py;
+      const cz = baseR * Math.sin(ang);
+      verts.push([cx, cy, cz]);
+    }
+    // 底圆心
+    const baseCenter = verts.length;
+    verts.push([baseX, baseY, 0]);
+    // 侧面 fan: tip → 底圆环
+    for (let j = 0; j < sides; j++) {
+      const a = start + 1 + j;
+      const b = start + 1 + ((j + 1) % sides);
+      idx.push([start, b, a]);   // CCW from outside
+    }
+    // 底面 fan: baseCenter → 底圆环
+    for (let j = 0; j < sides; j++) {
+      const a = start + 1 + j;
+      const b = start + 1 + ((j + 1) % sides);
+      idx.push([baseCenter, a, b]);
+    }
+  }
+  // 左箭头: 杆终点 (-0.18, 0.18) 是箭头底, 尖在更外 (-0.28, 0.30)
+  pushArrowHead(-0.28, 0.30, -0.18, 0.18, 0.07);
+  // 右箭头
+  pushArrowHead(0.28, 0.30, 0.18, 0.18, 0.07);
+
+  // 底脚小球 (装饰)
   function pushBall(cx: number, cy: number, cz: number, r: number) {
     const start = verts.length;
     const segs = 8;
@@ -369,49 +474,109 @@ function buildJunctionGeom() {
       }
     }
   }
-  pushBall(0, -0.20, 0, 0.05);           // 底脚球
-  pushBall(-0.18, 0.22, 0, 0.06);        // 左端球
-  pushBall(0.18, 0.22, 0, 0.06);         // 右端球
+  pushBall(0, -0.22, 0, 0.06);           // 底脚装饰球
   return { vertices: verts, triangleIndices: idx };
 }
 
-// Hut (cube + pitched roof): v107 新 type 几何, 跨文化"小屋"
+// Hut Castle 城堡 (v109): 用户选定 H3.
+// 几何: 中央主体 box + 4 个角塔 (圆柱) + 4 个塔顶圆锥
+// 跨文化"避难城堡"识别, 比简单 House 更视觉丰富
 function buildHutGeom() {
-  const W = 0.18;
-  const H = 0.10;
-  const ROOF_PEAK = 0.18;
-  const cubeBottomY = -0.18;
-  const cubeTopY = cubeBottomY + 2 * H;
-  const roofPeakY = cubeTopY + ROOF_PEAK;
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-  verts.push([-W, cubeBottomY,  W]);
-  verts.push([ W, cubeBottomY,  W]);
-  verts.push([ W, cubeBottomY, -W]);
-  verts.push([-W, cubeBottomY, -W]);
-  verts.push([-W, cubeTopY,     W]);
-  verts.push([ W, cubeTopY,     W]);
-  verts.push([ W, cubeTopY,    -W]);
-  verts.push([-W, cubeTopY,    -W]);
-  idx.push([0, 1, 2], [0, 2, 3]);
-  idx.push([0, 4, 5], [0, 5, 1]);
-  idx.push([1, 5, 6], [1, 6, 2]);
-  idx.push([2, 6, 7], [2, 7, 3]);
-  idx.push([3, 7, 4], [3, 4, 0]);
-  verts.push([0, roofPeakY,  W]);
-  verts.push([0, roofPeakY, -W]);
-  idx.push([4, 5, 8]);
-  idx.push([6, 7, 9]);
-  idx.push([5, 6, 9], [5, 9, 8]);
-  idx.push([7, 4, 8], [7, 8, 9]);
+
+  // ── 中央主体 (BoxGeometry W=0.36, H=0.28, D=0.24, Y center=-0.05) ──
+  const bodyW = 0.18, bodyH = 0.14, bodyD = 0.12;
+  const bodyCY = -0.05;
+  // 8 box 顶点
+  const bodyStart = verts.length;
+  verts.push([-bodyW, bodyCY - bodyH,  bodyD]);  // 0 前左下
+  verts.push([ bodyW, bodyCY - bodyH,  bodyD]);  // 1 前右下
+  verts.push([ bodyW, bodyCY - bodyH, -bodyD]);  // 2 后右下
+  verts.push([-bodyW, bodyCY - bodyH, -bodyD]);  // 3 后左下
+  verts.push([-bodyW, bodyCY + bodyH,  bodyD]);  // 4 前左上
+  verts.push([ bodyW, bodyCY + bodyH,  bodyD]);  // 5 前右上
+  verts.push([ bodyW, bodyCY + bodyH, -bodyD]);  // 6 后右上
+  verts.push([-bodyW, bodyCY + bodyH, -bodyD]);  // 7 后左上
+  const bs = bodyStart;
+  idx.push([bs+0, bs+1, bs+2], [bs+0, bs+2, bs+3]);     // 底
+  idx.push([bs+0, bs+4, bs+5], [bs+0, bs+5, bs+1]);     // 前
+  idx.push([bs+1, bs+5, bs+6], [bs+1, bs+6, bs+2]);     // 右
+  idx.push([bs+2, bs+6, bs+7], [bs+2, bs+7, bs+3]);     // 后
+  idx.push([bs+3, bs+7, bs+4], [bs+3, bs+4, bs+0]);     // 左
+  idx.push([bs+4, bs+7, bs+6], [bs+4, bs+6, bs+5]);     // 顶 (城堡顶平面, 不是 pitched)
+
+  // ── 4 个角塔 (圆柱) + 锥顶 ──
+  function pushTower(cx: number, cz: number, baseR: number, towerH: number, coneH: number) {
+    const baseY = bodyCY - bodyH;       // 塔底跟主体底齐
+    const topY = baseY + towerH;        // 塔顶
+    const coneTipY = topY + coneH;      // 锥尖
+    const sides = 12;
+    const towerStart = verts.length;
+    // 底环 + 顶环
+    for (let j = 0; j < sides; j++) {
+      const ang = (j / sides) * Math.PI * 2;
+      const x = cx + baseR * Math.cos(ang);
+      const z = cz + baseR * Math.sin(ang);
+      verts.push([x, baseY, z]);
+    }
+    for (let j = 0; j < sides; j++) {
+      const ang = (j / sides) * Math.PI * 2;
+      const x = cx + baseR * Math.cos(ang);
+      const z = cz + baseR * Math.sin(ang);
+      verts.push([x, topY, z]);
+    }
+    // 圆柱侧面
+    for (let j = 0; j < sides; j++) {
+      const a = towerStart + j;
+      const b = towerStart + (j + 1) % sides;
+      const c = towerStart + sides + j;
+      const d = towerStart + sides + (j + 1) % sides;
+      idx.push([a, b, d], [a, d, c]);
+    }
+    // 锥顶
+    const coneTipIdx = verts.length;
+    verts.push([cx, coneTipY, cz]);
+    for (let j = 0; j < sides; j++) {
+      const a = towerStart + sides + j;
+      const b = towerStart + sides + (j + 1) % sides;
+      idx.push([coneTipIdx, b, a]);   // CCW from outside
+    }
+  }
+  // 4 角: 主体宽 ±bodyW, 主体深 ±bodyD, 塔半径 0.05
+  const towerR = 0.05;
+  const towerH = 0.36;       // 塔高
+  const coneH = 0.10;        // 锥顶高
+  const tx = bodyW + towerR * 0.5;  // 塔中心略外移
+  const tz = bodyD + towerR * 0.5;
+  pushTower(-tx, -tz, towerR, towerH, coneH);
+  pushTower( tx, -tz, towerR, towerH, coneH);
+  pushTower( tx,  tz, towerR, towerH, coneH);
+  pushTower(-tx,  tz, towerR, towerH, coneH);
+
   return { vertices: verts, triangleIndices: idx };
 }
 
-// Cairn (3 个不规则球叠): v107 新 type, NZ alpine 物理 cairn
+// Cairn Logo 3D (v109): 用户要 "用 cairn title 旁边的 logo 做 3D".
+// 来源: src/components/ActivityIcons/CairnLogo.tsx (3 不对称椭圆 + 阴影弧)
+// SVG viewBox 18×24, 3 个椭圆参数:
+//   底: cx=9.5, cy=21, rx=7.5, ry=2.4  (最宽, 略右)
+//   中: cx=8.5, cy=15, rx=5.5, ry=2.0  (中等, 略左)
+//   顶: cx=11,  cy=9.5, rx=3.4, ry=1.7 (最窄, 略右, 给"自然张力")
+//
+// 几何转换: SVG (18×24, y 向下) → 3D (X 居中, y 向上)
+//   归一化系数: 假设 logo 高度 0.5m → s = 0.5/24 = 0.0208
+//   SVG cx 减 9 (中心 = 18/2) → 3D x
+//   SVG (24 - cy) 减 12 (中心 = 24/2) → 3D y
+//
+// 每层椭圆做 lathe (绕 椭圆中心 Y 轴旋转), 但 rx ≠ ry 所以不能简单 lathe.
+// 做法: 用扁球 (sphere scaled to ellipsoid) 即可: scale=(rx, ry, rx).
+//   椭圆只在 XY 平面对称, Z 方向用 ry (扁) 模拟 "石头侧面也是扁的".
 function buildCairnGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-  function pushSphere(cy: number, r: number, jitter: number, latSegs: number, lonSegs: number) {
+  // Helper: 推一个扁球 (ellipsoid) — sphere 沿 X/Y/Z 不同 scale
+  function pushEllipsoid(cx: number, cy: number, rx: number, ry: number, rz: number, latSegs: number, lonSegs: number) {
     const startIdx = verts.length;
     for (let i = 0; i <= latSegs; i++) {
       const lat = (i / latSegs) * Math.PI;
@@ -419,9 +584,11 @@ function buildCairnGeom() {
       for (let j = 0; j <= lonSegs; j++) {
         const lon = (j / lonSegs) * Math.PI * 2;
         const sinLon = Math.sin(lon), cosLon = Math.cos(lon);
-        const noise = (Math.sin(i * 7.13 + j * 3.71) * 0.5 + Math.cos(i * 4.27 + j * 9.51) * 0.5) * jitter;
-        const rr = r * (1 + noise);
-        verts.push([rr * sinLat * cosLon, cy + rr * cosLat, rr * sinLat * sinLon]);
+        verts.push([
+          cx + rx * sinLat * cosLon,
+          cy + ry * cosLat,
+          rz * sinLat * sinLon,
+        ]);
       }
     }
     for (let i = 0; i < latSegs; i++) {
@@ -430,14 +597,23 @@ function buildCairnGeom() {
         const b = startIdx + i * (lonSegs + 1) + (j + 1);
         const c = startIdx + (i + 1) * (lonSegs + 1) + j;
         const d = startIdx + (i + 1) * (lonSegs + 1) + (j + 1);
-        idx.push([a, b, d]);
-        idx.push([a, d, c]);
+        idx.push([a, b, d], [a, d, c]);
       }
     }
   }
-  pushSphere(-0.18, 0.13, 0.08, 10, 12);
-  pushSphere(-0.02, 0.10, 0.10, 10, 12);
-  pushSphere( 0.13, 0.07, 0.12, 10, 12);
+  // SVG → 3D 转换
+  const s = 0.5 / 24;  // 0.0208 / SVG 单位
+  // 底石: SVG (cx=9.5, cy=21, rx=7.5, ry=2.4)
+  //   3D x = (9.5 - 9) * s = 0.0104 (略右)
+  //   3D y = (12 - 21) * s = -0.1875 (底)
+  //   3D rx = 7.5 * s = 0.156
+  //   3D ry = 2.4 * s = 0.050
+  //   3D rz = ry (Z 方向跟 Y 一样扁, 形成 "扁石头" 而非球)
+  pushEllipsoid((9.5 - 9) * s, (12 - 21) * s, 7.5 * s, 2.4 * s, 2.4 * s, 12, 16);
+  // 中石: SVG (cx=8.5, cy=15, rx=5.5, ry=2.0)
+  pushEllipsoid((8.5 - 9) * s, (12 - 15) * s, 5.5 * s, 2.0 * s, 2.0 * s, 12, 16);
+  // 顶石: SVG (cx=11, cy=9.5, rx=3.4, ry=1.7)
+  pushEllipsoid((11 - 9) * s, (12 - 9.5) * s, 3.4 * s, 1.7 * s, 1.7 * s, 12, 16);
   return { vertices: verts, triangleIndices: idx };
 }
 
