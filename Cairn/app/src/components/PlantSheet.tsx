@@ -44,7 +44,7 @@ import { Icon, type IconName } from './Icon';
 import { GlassPanel } from './GlassPanel';
 import { Colors, FontSize, Spacing } from './tokens';
 
-export type PlantType = 'danger' | 'scenic' | 'supply' | 'junction' | 'cairn';
+export type PlantType = 'danger' | 'junction' | 'water' | 'hut' | 'cairn';
 
 interface TypeMeta {
   id: PlantType;
@@ -53,18 +53,14 @@ interface TypeMeta {
   color: string;
 }
 
-// v70: colours match canonical markerTypes.ts (and what the 3D AR cairn
-// actually renders — ViroAROverlay's TYPE_COLOR_TRIPLET). Pre-v70 we had
-// scenic=blue and supply=green (ID swap with colour), so a "blue button"
-// produced a "green sphere" in AR. Now they match.
-// v96: 加 'cairn' = Sphere test type. AR 渲染为纯彩色玻璃球, 没内部 icon,
-// 用来验证球壳本身的可见性 (排除 icon 干扰).
+// v105 type 重构 (调研结果): 5 type, 删 free + scenic, 加 hut, supply→water.
+// 边界: 危险/路径/补给(water+hut)/灵魂(cairn 含拍照/留言/备忘).
 const TYPES: TypeMeta[] = [
   { id: 'danger',   icon: 'TriangleAlert', label: 'Danger',   color: '#ff5a3a' },
-  { id: 'scenic',   icon: 'Star',          label: 'Scenic',   color: '#3ad8a4' },
-  { id: 'supply',   icon: 'Droplets',      label: 'Water',    color: '#6ac8f0' },
   { id: 'junction', icon: 'Navigation2',   label: 'Junction', color: '#f0a838' },
-  { id: 'cairn',    icon: 'Mountain',      label: 'Sphere',   color: '#b5823d' },
+  { id: 'water',    icon: 'Droplets',      label: 'Water',    color: '#6ac8f0' },
+  { id: 'hut',      icon: 'House',         label: 'Hut',      color: '#b5823d' },
+  { id: 'cairn',    icon: 'Mountain',      label: 'Cairn',    color: '#b5823d' },
 ];
 
 // Eye height + plant cap — matches AR3DCairnOverlay constants.

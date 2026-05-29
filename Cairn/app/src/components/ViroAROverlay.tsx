@@ -43,45 +43,23 @@ import { crashLogger } from '../services/crashLogger';
 // 3-layer gradient: inner (bright core) → mid (signature colour) → outer (deep rim)
 const TYPE_COLOR_TRIPLET: Record<string, { inner: string; mid: string; outer: string }> = {
   danger:   { inner: '#fff0c8', mid: '#ff5a3a', outer: '#8a2218' },
-  scenic:   { inner: '#eefff4', mid: '#3ad8a4', outer: '#186a82' },
-  supply:   { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
   junction: { inner: '#fff4d8', mid: '#f0a838', outer: '#8a4a18' },
-  // v94: cairn type 作为测试球. 仅渲染纯色玻璃球壳 + 内部一个 emissive 光球,
-  // 不渲染任何复杂 icon 几何 (没三棱柱/水滴/星形). 用来验证球壳本身是否
-  // 在 AR 现实场景下可见. 颜色用 stone-grey, 跟 markerTypes.ts cairn 一致.
+  water:    { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
+  hut:      { inner: '#f5e6d0', mid: '#b5823d', outer: '#5a3d18' },
   cairn:    { inner: '#f5e6d0', mid: '#b5823d', outer: '#5a3d18' },
-  // v70: catch-all for legacy/non-typed markers (`free`, empty).
+  // v70: catch-all for unknown types.
   generic:  { inner: '#f0f0f0', mid: '#9aa0a6', outer: '#3a3d40' },
+  // v105 backwards-compat: legacy DB records may still have 'supply' / 'scenic' / 'free'.
+  // Map them to closest new type colour so old markers still render.
+  supply:   { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },  // → water
+  scenic:   { inner: '#f5e6d0', mid: '#b5823d', outer: '#5a3d18' },  // → cairn (吸收 scenic)
+  free:     { inner: '#f5e6d0', mid: '#b5823d', outer: '#5a3d18' },  // → cairn (吸收 free)
 };
-// Legacy single-color map kept for backwards compatibility — same mid colour.
-const TYPE_COLORS: Record<string, string> = {
-  danger:   TYPE_COLOR_TRIPLET.danger.mid,
-  scenic:   TYPE_COLOR_TRIPLET.scenic.mid,
-  supply:   TYPE_COLOR_TRIPLET.supply.mid,
-  junction: TYPE_COLOR_TRIPLET.junction.mid,
-};
+// v105 cleanup: 删除 TYPE_COLORS legacy single-color map (无人调用).
 
-// v84: hex '#rrggbb' → [r, g, b] 0..1 vec3 for shader uniform.
-// Used by icon material's Fresnel shaderModifier.
-function hexToVec3(hex: string): [number, number, number] {
-  const h = hex.replace('#', '');
-  const r = parseInt(h.slice(0, 2), 16) / 255;
-  const g = parseInt(h.slice(2, 4), 16) / 255;
-  const b = parseInt(h.slice(4, 6), 16) / 255;
-  return [r, g, b];
-}
+// v105 cleanup: 删除 hexToVec3 + hexToRgba helpers — 都是 shaderModifier
+// 时代的死代码 (v82 ShaderMaterial Fresnel 早回滚, v100 Blinn rgba 也删了).
 
-// v100: hex '#rrggbb' + alpha → 'rgba(R,G,B,A)' 字符串.
-// Viro 官方 transparentMaterial 配方要求 diffuseColor 是 rgba 字符串,
-// alpha 写在颜色里, 不通过 ViroSphere opacity prop. PBR + Alpha 在 Viro
-// 不工作, 必须用 Blinn lighting + rgba diffuse.
-function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace('#', '');
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
 
 // ── Constants ──────────────────────────────────────────────────
 const ORB_RADIUS = 0.4;       // 80cm diameter (~2x basketball)
@@ -101,16 +79,21 @@ const ORB_EYE_OFFSET_M = -0.2;
 const ALT_THRESHOLD_M = 5;    // GPS alt noise floor (deprecated — kept for safety, unused below)
 // v70: render 3D orb only within 30m. Beyond 30m, off-screen edge arrows
 // (in CairnEdgeArrows) up to 300m. Beyond 300m, marker is hidden entirely.
-// Reason: 5km made the AR view feel cluttered with distant cairns the user
-// couldn't actually see anyway.
-const VISIBLE_RANGE_M = 30;
-const ICON_SCALE = 0.7;        // v89: 0.55 → 0.7. v88 用户反馈 "type 太大撑爆球"
-                                // 实际是 v88 shell opacity 0.20 太透, 看不清球
-                                // 边缘. 现在 v89 shell Add+0.10 恢复 reference,
-                                // 球轮廓清晰可见, ICON_SCALE 0.7 不再撑爆.
-                                // Reference HTML scale.setScalar(1.55) for whole orb.
-const PARTICLE_COUNT = 50;     // v70: bumped 30 → 50 (denser orbit)
-const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presence
+// v105 三段式可见性 (调研结果):
+//   0-10m   → 完整 3D + 标题
+//   10-50m  → 缩放 3D (屏幕最小可识别)
+//   50-500m → edge arrow 在 ARScreen 那边处理
+//   >500m   → 不显示 AR (走 minimap)
+// 这里 VISIBLE_RANGE_M = 50m, 之前 30m 太近.
+const VISIBLE_RANGE_M = 50;
+const NEAR_THRESHOLD_M = 10;    // 0-10m 完整 3D
+const ICON_SCALE_NEAR = 0.7;    // 0-10m: 跟之前一样大
+const ICON_SCALE_FAR = 1.4;     // 10-50m: 放大 2x 让远处也能看到
+// v105 三段式: ICON_SCALE 现在是动态 (按距离插值), 不再是常量.
+// 保留旧名作为默认 (供没距离信息时 fallback).
+const ICON_SCALE = ICON_SCALE_NEAR;
+// v105 cleanup: 删除 PARTICLE_COUNT/PARTICLE_RADIUS (v70 ViroSphere 粒子数组
+// 时代的常量). 现在用 ViroParticleEmitter, 参数在那直接 hardcode.
 
 // ── 4 icon geometries ──────────────────────────────────────────
 // Each function returns { vertices, triangleIndices } in the format
@@ -118,273 +101,196 @@ const PARTICLE_RADIUS = 0.018; // v70: slightly larger particles for more presen
 // All math runs once at module load (these are constants).
 //
 // Coordinate convention: +Y = up, +Z = front (icon faces +Z).
+// v105 真 3D 各向同性几何 — 5 个 type 各自纯几何, 不再 lucide extrude.
+//
+// 设计原则: 各向同性 = 任何角度看都是同一个识别符号. 避免 v82-v97 反复
+// 的 "厚 2D 饼干" 问题 (lucide icon 是 2D 矢量, extrude 后侧面是条线).
+//
+// type → 几何 mapping:
+//   danger    → tetrahedron (4 面体, 所有面都三角警告)
+//   junction  → cone (圆锥, 天然箭头方向感)
+//   water     → octahedron (8 面体钻石, 360° 对称水晶感)
+//   hut       → cube + pyramid roof (小屋外形, 跨文化识别)
+//   cairn     → 3 球叠 (NZ alpine cairn 物理形状本身)
+
+// Tetrahedron 四面体 (尖朝下): 4 顶点 + 4 三角面
+// 原理: 警示三角的 3D 化, 任何角度都是尖锐三角警告
 function buildDangerGeom() {
-  // v97: 倒三角形 — 用户明确要 "三角形2个角在上 尖角在下"
-  // (跟标准国际警告标志反向但用户决定).
-  // 顶点 (0, -0.20) 朝下尖角, 底边 (±0.26, +0.27) 上方 2 个角.
-  // 感叹号: bar 在下 (y 偏 -), dot 在上 (y 偏 +) — 跟三角倒立对应.
-  const verts: [number, number, number][] = [];
-  const idx: [number, number, number][] = [];
-  const D = 0.012;
-  const TIP_Y = -0.20;     // 顶尖朝下 (v97 翻转)
-  const BASE_Y = 0.27;     // 底边在上
-  const HALF_W = 0.26;
-
-  // 主三角板 (倒立: 1 个尖角下, 2 个角上)
-  verts.push([0,        TIP_Y,   D]);   // 0 前下尖
-  verts.push([-HALF_W,  BASE_Y,  D]);   // 1 前左上
-  verts.push([HALF_W,   BASE_Y,  D]);   // 2 前右上
-  verts.push([0,        TIP_Y,  -D]);   // 3 后下尖
-  verts.push([-HALF_W,  BASE_Y, -D]);   // 4 后左上
-  verts.push([HALF_W,   BASE_Y, -D]);   // 5 后右上
-  // 前面 (CCW from +Z): 0 (下尖) → 1 (左上) → 2 (右上)
-  // 翻转后 CCW: 0 → 2 → 1 仍然 CCW 朝 +Z
-  idx.push([0, 2, 1]);
-  idx.push([3, 4, 5]);
-  // 三个侧壁
-  idx.push([0, 1, 4]); idx.push([0, 4, 3]);
-  idx.push([1, 2, 5]); idx.push([1, 5, 4]);
-  idx.push([2, 0, 3]); idx.push([2, 3, 5]);
-
-  // 感叹号位置随三角倒立翻转:
-  // 倒三角内: y > 0 上方宽阔 → dot 放上; y < 0 下方狭窄 → bar 放中下
-  const eps = 0.002;
-  const barW = 0.030, barH = 0.10, barCY = -0.029;  // bar 在下
-  const bbase = verts.length;
-  const barZ = D + eps;
-  verts.push([-barW, barCY - barH/2, barZ]);
-  verts.push([ barW, barCY - barH/2, barZ]);
-  verts.push([ barW, barCY + barH/2, barZ]);
-  verts.push([-barW, barCY + barH/2, barZ]);
-  idx.push([bbase+0, bbase+1, bbase+2], [bbase+0, bbase+2, bbase+3]);
-
-  const dotSize = 0.038, dotY = 0.086;  // dot 在上
-  const dotZ = D + eps;
-  const dbase = verts.length;
-  verts.push([-dotSize/2, dotY - dotSize/2, dotZ]);
-  verts.push([ dotSize/2, dotY - dotSize/2, dotZ]);
-  verts.push([ dotSize/2, dotY + dotSize/2, dotZ]);
-  verts.push([-dotSize/2, dotY + dotSize/2, dotZ]);
-  idx.push([dbase+0, dbase+1, dbase+2], [dbase+0, dbase+2, dbase+3]);
-
-  return { vertices: verts, triangleIndices: idx };
-}
-
-function buildScenicGeom() {
-  // True 3D 5-pointed star: front/back centres + 10 perimeter alternating outer/inner
-  // v88: depth 0.16 → 0.04. 用户反馈"5 角星从某些角度看变成两个三角形" —
-  // 这是 5 角星 perimeter 顶点都在 z=0 平面的几何特征 (前后中心连接但侧面
-  // 没棱柱壁). 压扁到 0.04 让 icon 像一个"奖章雕花" — 永远是平的, 不论
-  // 角度. 外面的 shell 球壳负责 3D 体积感, icon 本身像勋章里的 2D 标识.
-  const outerR = 0.24, innerR = 0.10, depth = 0.04;
-  const N = 5;
+  const R = 0.22;  // 外接球半径
+  // 4 个顶点: 1 个尖在下 (-Y), 3 个角在上形成正三角面 (+Y)
+  const sqrt8over3 = Math.sqrt(8 / 3);  // 正四面体几何
+  const sqrt2over3 = Math.sqrt(2 / 3);
   const verts: [number, number, number][] = [
-    [0, 0,  depth],
-    [0, 0, -depth],
+    [0, -R, 0],                                              // 0 下尖
+    [R * sqrt8over3 * 0.5, R * sqrt2over3, 0],               // 1 上右
+    [-R * sqrt8over3 * 0.25, R * sqrt2over3, R * Math.sqrt(2/3)], // 2 上前
+    [-R * sqrt8over3 * 0.25, R * sqrt2over3, -R * Math.sqrt(2/3)], // 3 上后
   ];
-  for (let i = 0; i < N * 2; i++) {
-    const r = i % 2 === 0 ? outerR : innerR;
-    const ang = (i / (N * 2)) * Math.PI * 2 - Math.PI / 2;
-    verts.push([Math.cos(ang) * r, Math.sin(ang) * r, 0]);
-  }
+  const idx: [number, number, number][] = [
+    [0, 2, 1], // 下尖-前-右
+    [0, 3, 2], // 下尖-后-前
+    [0, 1, 3], // 下尖-右-后
+    [1, 2, 3], // 上 (反向 CCW from +Y)
+  ];
+  return { vertices: verts, triangleIndices: idx };
+}
+
+// Cone 圆锥 (尖朝上 / 朝相机方向): 1 apex + N 底环, 1 顶面 fan + 底面 fan
+// 原理: junction 是路径决策, cone 天然箭头, 任何角度看都是 "指向某方向"
+function buildJunctionGeom() {
+  const sides = 16;
+  const apexY = 0.27;     // 尖在上
+  const baseY = -0.20;
+  const baseR = 0.18;
+  const verts: [number, number, number][] = [
+    [0, apexY, 0],   // 0 apex 顶尖
+  ];
   const idx: [number, number, number][] = [];
-  const P0 = 2;
-  for (let i = 0; i < N * 2; i++) {
-    const a = P0 + i;
-    const b = P0 + ((i + 1) % (N * 2));
-    idx.push([0, b, a]);
-    idx.push([1, a, b]);
+  // 底环 N 顶点 (index 1..N)
+  for (let i = 0; i < sides; i++) {
+    const ang = (i / sides) * Math.PI * 2;
+    verts.push([Math.cos(ang) * baseR, baseY, Math.sin(ang) * baseR]);
+  }
+  // 底圆心 (index N+1)
+  const baseCenterIdx = verts.length;
+  verts.push([0, baseY, 0]);
+  // 侧面 fan (apex → 底环顶点)
+  for (let i = 0; i < sides; i++) {
+    const a = 1 + i;
+    const b = 1 + ((i + 1) % sides);
+    idx.push([0, b, a]);  // CCW from outside
+  }
+  // 底面 fan (baseCenter → 底环顶点, 反向 CCW)
+  for (let i = 0; i < sides; i++) {
+    const a = 1 + i;
+    const b = 1 + ((i + 1) % sides);
+    idx.push([baseCenterIdx, a, b]);
   }
   return { vertices: verts, triangleIndices: idx };
 }
 
-function buildSupplyGeom() {
-  // v90: lathe 几何加密 + analytic vertex normals.
-  // 用户反馈: "里面图标水滴都不圆润". 根因 (a) ViroGeometry 没传 normals
-  // → flat shading 显 facet; (b) 细分 14×14 远低于 reference HTML segs=28
-  // sides=32 (顶点 196 → 928, 4×).
-  // 修法: 完全对齐 reference HTML LatheGeometry(28, 32) + 算 lathe analytic
-  // 法向量 (meridian-plane tangent rotate 90° 后绕 Y 轴 unfold).
-  const segs = 28, sides = 32;
-  const TOP_Y = 0.26, BOT_Y = -0.20, MAX_R = 0.16;
-  const profile: { y: number; r: number }[] = [];
-  for (let i = 0; i <= segs; i++) {
-    const t = i / segs;
-    // v91: 底部 dome 收口 — 用户反馈 "水滴某些角度底部圆润, 有些角度尖尖".
-    // 根因: 原 profile 末段 i=segs 强制 r=0 形成单点尖角, 从 silhouette
-    // 经过该尖点的角度看 = 尖, 其他角度看不到 = 圆. reference HTML 因
-    // transmission 透明 + 32 sides 高密度顶点, 视觉上不显尖, 但 Viro 没
-    // transmission, 任何 silhouette 经过尖点都暴露.
-    // 修法: 末段 30% (t > 0.7) 用 半圆 dome 函数收口, 而不是 sin 直接收到 0.
-    //   - t ≤ 0.70: 维持原 profile (顶尖到肚子)
-    //   - t >  0.70: dome 收口 — y 仍线性下降, r 用 sqrt(1 - (t')^2) 半圆
-    //     形成圆顶 (像水滴底部本身就是 round 不是 sharp point)
-    let r: number;
-    let y: number;
-    if (t <= 0.70) {
-      y = TOP_Y + (BOT_Y - TOP_Y) * t;
-      const tEff = Math.pow(t, 1.55);
-      r = MAX_R * Math.pow(Math.sin(tEff * Math.PI), 0.85);
-    } else {
-      // dome 段: 用半圆方程 r = rStart * sqrt(1 - tDome^2) 真正圆顶收口.
-      // sqrt 在 tDome=1 处切线垂直 Y 轴 = silhouette 在底部完全圆滑. cos
-      // 函数底部仍有微尖 (导数 -sin(π/2)=-1 不为 0).
-      // y 也用半圆方程让 Y 在末段拉伸更陡, 形成"鸭蛋底"圆润感.
-      const tDome = (t - 0.70) / 0.30;  // 0..1 in dome region
-      const tEffStart = Math.pow(0.70, 1.55);
-      const rStart = MAX_R * Math.pow(Math.sin(tEffStart * Math.PI), 0.85);
-      const yStart = TOP_Y + (BOT_Y - TOP_Y) * 0.70;
-      const yRange = BOT_Y - yStart;
-      // 半圆参数: 用 angle 0→π/2 同时驱动 r 和 y, 形成 quarter-circle 圆顶.
-      const ang = tDome * Math.PI / 2;
-      r = rStart * Math.cos(ang);     // cos(0)=1, cos(π/2)=0
-      // y 用 sin 让末段拉伸接近 yEnd 速度变缓: y = yStart + yRange * sin(ang)
-      // sin(0)=0 (起点), sin(π/2)=1 (末点)
-      y = yStart + yRange * Math.sin(ang);
-    }
-    profile.push({ y, r: (i === 0) ? 0 : Math.max(r, 0.005) });
-  }
-  // Analytic lathe normal in meridian (r,y) plane.
-  // Profile tangent T = (dr/dt, dy/dt) (central diff).
-  // Outward meridian normal M = (dy, -dr) normalised — 90° CW rotation.
-  const meridianN: { mx: number; my: number }[] = [];
-  for (let i = 0; i <= segs; i++) {
-    let dr: number, dy: number;
-    if (i === 0)         { dr = profile[1].r - profile[0].r;       dy = profile[1].y - profile[0].y; }
-    else if (i === segs) { dr = profile[segs].r - profile[segs - 1].r; dy = profile[segs].y - profile[segs - 1].y; }
-    else                 { dr = (profile[i + 1].r - profile[i - 1].r) / 2; dy = (profile[i + 1].y - profile[i - 1].y) / 2; }
-    let mx = dy, my = -dr;
-    const len = Math.hypot(mx, my) || 1;
-    meridianN.push({ mx: mx / len, my: my / len });
-  }
-  // Apex caps: degenerate radius → use pure axial normals.
-  meridianN[0]    = { mx: 0, my: 1 };
-  meridianN[segs] = { mx: 0, my: -1 };
-
-  const verts: [number, number, number][] = [];
-  const normals: [number, number, number][] = [];
-  for (let i = 0; i <= segs; i++) {
-    for (let j = 0; j < sides; j++) {
-      const ang = (j / sides) * Math.PI * 2;
-      const cosA = Math.cos(ang), sinA = Math.sin(ang);
-      const p = profile[i], n = meridianN[i];
-      verts.push([cosA * p.r, p.y, sinA * p.r]);
-      normals.push([cosA * n.mx, n.my, sinA * n.mx]);
-    }
-  }
-  const idx: [number, number, number][] = [];
-  for (let i = 0; i < segs; i++) {
-    for (let j = 0; j < sides; j++) {
-      const a = i * sides + j;
-      const b = i * sides + (j + 1) % sides;
-      const c = (i + 1) * sides + j;
-      const d = (i + 1) * sides + (j + 1) % sides;
-      idx.push([a, b, d]);
-      idx.push([a, d, c]);
-    }
-  }
-  // v94: 底部封口 cap. 之前 i=segs 强制 r=0 形成 fan singularity → 用户
-  // 反馈 "水滴底部有个奇怪的点". 现在末段 r 不收 0 留 0.005 残留, 然后
-  // 加一个 center vertex + fan triangles 把底部封住成圆面.
-  const capCenterIdx = verts.length;
-  verts.push([0, BOT_Y, 0]);  // 底部圆心
-  normals.push([0, -1, 0]);    // 朝 -Y
-  const lastRing = segs * sides;
-  for (let j = 0; j < sides; j++) {
-    const a = lastRing + j;
-    const b = lastRing + (j + 1) % sides;
-    // CCW from -Y (从底部往上看 = 顺时针 from +Y)
-    idx.push([capCenterIdx, b, a]);
-  }
-  return { vertices: verts, normals, triangleIndices: idx };
+// Octahedron 八面体 (钻石形): 6 顶点 + 8 三角面
+// 原理: water 钻石形 360° 对称, 像水晶/玻璃水滴感, 比 lathe 水滴几何稳定
+function buildWaterGeom() {
+  const R = 0.22;
+  // 6 顶点: 上下尖 + 4 个赤道
+  const verts: [number, number, number][] = [
+    [0, R, 0],     // 0 上尖
+    [0, -R, 0],    // 1 下尖
+    [R, 0, 0],     // 2 右
+    [-R, 0, 0],    // 3 左
+    [0, 0, R],     // 4 前
+    [0, 0, -R],    // 5 后
+  ];
+  // 8 三角面 (上 4 + 下 4, CCW from outside)
+  const idx: [number, number, number][] = [
+    // 上半部 (apex 0 + 赤道 CCW)
+    [0, 4, 2],  // 上-前-右
+    [0, 2, 5],  // 上-右-后
+    [0, 5, 3],  // 上-后-左
+    [0, 3, 4],  // 上-左-前
+    // 下半部 (apex 1 + 赤道 CW from -Y = CCW from outside)
+    [1, 2, 4],  // 下-右-前
+    [1, 5, 2],  // 下-后-右
+    [1, 3, 5],  // 下-左-后
+    [1, 4, 3],  // 下-前-左
+  ];
+  return { vertices: verts, triangleIndices: idx };
 }
 
-function buildJunctionGeom() {
-  // Combined arrow: foot (rotated box) + shaft (rotated box) + 4-sided pyramid head
+// House (cube + pyramid roof): hut 几何, 跨文化"房子"识别
+// 原理: 小屋是 universal 视觉符号, 任何角度都是房子
+function buildHutGeom() {
+  const W = 0.18;        // 半宽
+  const H = 0.10;        // 半高 (cube 部分)
+  const ROOF_PEAK = 0.18; // 屋顶尖 (从 cube top 起)
+  const cubeBottomY = -0.18;
+  const cubeTopY = cubeBottomY + 2 * H;  // 0.02
+  const roofPeakY = cubeTopY + ROOF_PEAK; // 0.20
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-  function pushBoxRot45(cy: number, hw: number, hh: number, hd: number) {
-    const start = verts.length;
-    const c = Math.cos(Math.PI / 4), s = Math.sin(Math.PI / 4);
-    const rot = (x: number, y: number, z: number): [number, number, number] => [x * c - z * s, y, x * s + z * c];
-    verts.push(rot(-hw, cy - hh, -hd));
-    verts.push(rot( hw, cy - hh, -hd));
-    verts.push(rot( hw, cy - hh,  hd));
-    verts.push(rot(-hw, cy - hh,  hd));
-    verts.push(rot(-hw, cy + hh, -hd));
-    verts.push(rot( hw, cy + hh, -hd));
-    verts.push(rot( hw, cy + hh,  hd));
-    verts.push(rot(-hw, cy + hh,  hd));
-    const o = start;
-    idx.push([o, o+1, o+2], [o, o+2, o+3]);
-    idx.push([o+4, o+6, o+5], [o+4, o+7, o+6]);
-    idx.push([o, o+5, o+1], [o, o+4, o+5]);
-    idx.push([o+1, o+6, o+2], [o+1, o+5, o+6]);
-    idx.push([o+2, o+7, o+3], [o+2, o+6, o+7]);
-    idx.push([o+3, o+4, o+0], [o+3, o+7, o+4]);
+  // Cube 8 顶点 (前后 + 左右 + 上下)
+  // 0..3 = bottom (前左/前右/后右/后左), 4..7 = top
+  verts.push([-W, cubeBottomY,  W]);  // 0 前左下
+  verts.push([ W, cubeBottomY,  W]);  // 1 前右下
+  verts.push([ W, cubeBottomY, -W]);  // 2 后右下
+  verts.push([-W, cubeBottomY, -W]);  // 3 后左下
+  verts.push([-W, cubeTopY,     W]);  // 4 前左上 (eave 屋檐)
+  verts.push([ W, cubeTopY,     W]);  // 5 前右上
+  verts.push([ W, cubeTopY,    -W]);  // 6 后右上
+  verts.push([-W, cubeTopY,    -W]);  // 7 后左上
+  // Cube 6 面 (CCW from outside)
+  idx.push([0, 1, 2], [0, 2, 3]);    // 底
+  idx.push([0, 4, 5], [0, 5, 1]);    // 前 (法向 +Z)
+  idx.push([1, 5, 6], [1, 6, 2]);    // 右
+  idx.push([2, 6, 7], [2, 7, 3]);    // 后
+  idx.push([3, 7, 4], [3, 4, 0]);    // 左
+  // Roof: 2 ridge 顶点 (前后) — pitched roof 沿 X 轴 ridge
+  verts.push([0, roofPeakY,  W]);   // 8 前 ridge (在前面屋檐上方)
+  verts.push([0, roofPeakY, -W]);   // 9 后 ridge
+  // Roof 4 面: 2 个梯形屋檐 + 2 个三角山墙
+  idx.push([4, 5, 8]);                // 前山墙 (前面三角)
+  idx.push([6, 7, 9]);                // 后山墙
+  idx.push([5, 6, 9], [5, 9, 8]);     // 右斜屋顶 (梯形)
+  idx.push([7, 4, 8], [7, 8, 9]);     // 左斜屋顶
+  return { vertices: verts, triangleIndices: idx };
+}
+
+// Cairn (堆 3 个不规则球): NZ alpine 物理形状本身, 不需要图标
+// 原理: 这就是 cairn 的真实形状, 任何角度都一眼是 "石堆"
+function buildCairnGeom() {
+  const verts: [number, number, number][] = [];
+  const idx: [number, number, number][] = [];
+  // Helper: push UV-sphere mesh 到 verts/idx, 偏移 cy 米, 半径 r, 不规则
+  function pushSphere(cy: number, r: number, jitter: number, latSegs: number, lonSegs: number) {
+    const startIdx = verts.length;
+    for (let i = 0; i <= latSegs; i++) {
+      const lat = (i / latSegs) * Math.PI;          // 0..π
+      const sinLat = Math.sin(lat), cosLat = Math.cos(lat);
+      for (let j = 0; j <= lonSegs; j++) {
+        const lon = (j / lonSegs) * Math.PI * 2;
+        const sinLon = Math.sin(lon), cosLon = Math.cos(lon);
+        // 不规则: 用噪声 perturb 半径
+        const noise = (Math.sin(i * 7.13 + j * 3.71) * 0.5 + Math.cos(i * 4.27 + j * 9.51) * 0.5) * jitter;
+        const rr = r * (1 + noise);
+        const x = rr * sinLat * cosLon;
+        const y = cy + rr * cosLat;
+        const z = rr * sinLat * sinLon;
+        verts.push([x, y, z]);
+      }
+    }
+    for (let i = 0; i < latSegs; i++) {
+      for (let j = 0; j < lonSegs; j++) {
+        const a = startIdx + i * (lonSegs + 1) + j;
+        const b = startIdx + i * (lonSegs + 1) + (j + 1);
+        const c = startIdx + (i + 1) * (lonSegs + 1) + j;
+        const d = startIdx + (i + 1) * (lonSegs + 1) + (j + 1);
+        idx.push([a, b, d]);
+        idx.push([a, d, c]);
+      }
+    }
   }
-  // Foot — small base block
-  pushBoxRot45(-0.16 + 0.02, 0.08, 0.02, 0.08);
-  // Shaft — narrower box rising
-  pushBoxRot45(-0.04 + 0.10, 0.05, 0.10, 0.05);
-  // Head — pyramid: apex up, square base at y=0.10
-  const baseR = 0.14, headBaseY = 0.10, apexY = 0.30;
-  const o = verts.length;
-  verts.push([0, apexY, 0]);
-  verts.push([baseR, headBaseY, 0]);
-  verts.push([0, headBaseY, baseR]);
-  verts.push([-baseR, headBaseY, 0]);
-  verts.push([0, headBaseY, -baseR]);
-  idx.push([o, o+1, o+2]);
-  idx.push([o, o+2, o+3]);
-  idx.push([o, o+3, o+4]);
-  idx.push([o, o+4, o+1]);
-  idx.push([o+1, o+4, o+3]);
-  idx.push([o+1, o+3, o+2]);
+  // 3 球从下到上, 渐小, 不规则
+  pushSphere(-0.18, 0.13, 0.08, 10, 12);  // 大底
+  pushSphere(-0.02, 0.10, 0.10, 10, 12);  // 中
+  pushSphere( 0.13, 0.07, 0.12, 10, 12);  // 小顶
   return { vertices: verts, triangleIndices: idx };
 }
 
 const ICON_GEOM: Record<string, { vertices: [number, number, number][]; normals?: [number, number, number][]; triangleIndices: [number, number, number][] }> = {
   danger:   buildDangerGeom(),
-  scenic:   buildScenicGeom(),
-  supply:   buildSupplyGeom(),
   junction: buildJunctionGeom(),
+  water:    buildWaterGeom(),
+  hut:      buildHutGeom(),
+  cairn:    buildCairnGeom(),
+  // v105 backwards-compat: legacy DB 'supply'/'scenic'/'free' 兼容映射
+  supply:   buildWaterGeom(),    // supply → water
+  scenic:   buildCairnGeom(),    // scenic → cairn
 };
 
-// ── 30-particle classic orbit positions (ViroSphere children of a rotating ViroNode) ──
-// Each particle has a fixed local position; the parent ViroNode runs a
-// rotateY animation so the whole ring spins. Y bob is faked with a small
-// v81: particle ring — radius range matched to reference HTML
-// (0.22-0.36, was 0.32-0.50 in v80 which was too far from the icon).
-// Each particle has a distinct Y-bob phase so the ring pulses softly
-// rather than feeling like a static marble bracelet.
-const PARTICLE_POSITIONS: Array<{ x: number; y: number; z: number; bobPhase: number }> = (() => {
-  const arr: Array<{ x: number; y: number; z: number; bobPhase: number }> = [];
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    const a = (i / PARTICLE_COUNT) * Math.PI * 2 + (i * 0.137);
-    const r = 0.22 + ((i * 31) % 100) / 100 * 0.14;
-    const y = (((i * 47) % 100) / 100 - 0.5) * 0.40;
-    const bobPhase = (i * 1.7) % (Math.PI * 2);
-    arr.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r, bobPhase });
-  }
-  return arr;
-})();
-
-// v89 严格对齐 reference HTML particleClassic line 533-561:
-//   N=30, size=0.022, color=tc.inner, opacity=0.85, AdditiveBlending
-//   pos: r 0.22-0.36, y ±0.20 baseY
-// v87/v88 把数量减半 + size 缩小 + 拉远 — 全错了. 回到 reference 原值.
-const PARTICLE_COUNT_V84 = 30;
-const PARTICLE_POSITIONS_V84: Array<{ x: number; y: number; z: number }> = (() => {
-  const arr: Array<{ x: number; y: number; z: number }> = [];
-  for (let i = 0; i < PARTICLE_COUNT_V84; i++) {
-    const a = (i / PARTICLE_COUNT_V84) * Math.PI * 2 + (i * 0.137);
-    const r = 0.22 + ((i * 31) % 100) / 100 * 0.14;  // reference 0.22-0.36
-    const y = (((i * 47) % 100) / 100 - 0.5) * 0.40; // reference ±0.20
-    arr.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r });
-  }
-  return arr;
-})();
+// v105 cleanup: 删除 PARTICLE_POSITIONS + PARTICLE_POSITIONS_V84 (反复 v81-v89
+// 的 ViroSphere 数组粒子方案). v92 改用 ViroParticleEmitter 真 GPU 粒子,
+// 这两个静态数组无人使用. 删除省 ~30 行死代码.
 
 // Defensive: NO module top-level Viro NativeModule calls (createMaterials /
 // registerAnimations) — they're done inside ARScene component's useEffect.
@@ -546,132 +452,34 @@ function CairnARScene(props: any) {
   // Register Viro materials + animations on first scene mount.
   // Deliberately NOT at module top-level (defensive RN best practice).
   //
-  // Material strategy per cairn type — 3-layer "soul wisp" stack:
-  //   1. icon{type}    — solid coloured icon body (lightingModel Constant
-  //                      + bloomThreshold so the colour itself glows in HDR)
-  //   2. core{type}    — bright inner sphere (Constant + Add blend)
-  //   3. shell{type}   — Fresnel rim shell (Lambert + fresnelExponent 2.0
-  //                      so edges glow brighter than centre)
-  //   4. wisp{type}    — outer hazy halo (Constant + Add + cullMode Front
-  //                      so we see the "back wall" of the sphere from inside)
-  //   5. particle{type}— small 30-orbit particles (Constant + Add)
+  // v105 material strategy: 极简 — 只 2 个 material per type.
+  //   1. icon{type}    — PBR + 纯色, 受光阴影自然 3D
+  //   2. particle{type} — Constant + Add, ViroParticleEmitter 用
+  // 删除全部 shell/halo/core/wisp/backplate/solidSphere — 反复 v85-v104 失败.
   useEffect(() => {
     try {
-      const types = ['danger', 'scenic', 'supply', 'junction', 'cairn', 'generic'] as const;
+      const types = ['danger', 'junction', 'water', 'hut', 'cairn', 'generic'] as const;
       const matDict: Record<string, any> = {};
-      // v81: register the halo PNG once (reused across all types — colour
-      // tint is applied per-type via diffuseColor on the per-type material).
-      const haloPng = require('../../assets/ar/halo_radial.png');
-      // v86: 用同一张 halo PNG 凑 cube map 6 面 — 给 PBR 材质提供反射环境。
-      // 没有 cubemap 时 metalness 完全没视觉效果 (没东西可反射)。这是
-      // v85 立体感"不多"的根因 — PBR 武器装备不全。
-      // 真正想要的是用户实际环境的全景图，但 OTA 只能塞已有 asset。halo PNG
-      // 中央亮、边缘暗、纯白色 — 6 面同 PNG 凑出"亮中心暗周围"的伪环境，
-      // 配 metalness 0.8 后 icon 会有真实"环境光泽"反射感。
-      const cubeMap = {
-        nx: haloPng, px: haloPng, ny: haloPng,
-        py: haloPng, nz: haloPng, pz: haloPng,
-      };
+      // v105 cleanup: 删除 haloPng + cubeMap (material 阶段). halo material 全
+      // 已删, cubeMap 不再用. 真正粒子 sprite 在 ViroParticleEmitter
+      // 那里直接 require, 不依赖这个变量.
       for (const t of types) {
         const c = TYPE_COLOR_TRIPLET[t];
-        // v86 极致打磨: PBR 武器装备齐全
-        // - reflectiveTexture: cube map 给 metalness 真东西反射 (核心!)
-        // - metalness 0.6 → 0.85: 更强金属反射, 真"釉面玻璃" 质感
-        // - roughness 0.25 → 0.15: 反射更锐利, 接近水滴/釉面陶瓷
-        // - bloomThreshold 0.30 → 0.25: emissive 更易触发光晕
+        // v105 cleanup: 简化 material — 只保留 PBR icon material.
+        // 删除全部 shell/halo/cubeMap/core/wisp/backplate/solidSphere material.
+        // 反复 v85-v104 球壳路放弃, 改追求精致 icon (5 type 真 3D 几何 + PBR).
+        // metalness 0.6 + roughness 0.20 + 纯色 = 简单釉面感, 受光阴影自然 3D.
+        // 不依赖 cubemap/transmission 等 Viro 不稳的特性.
         matDict[`icon${t}`] = {
           lightingModel: 'PBR',
           diffuseColor: c.mid,
-          metalness: 0.85,
-          roughness: 0.15,
-          reflectiveTexture: cubeMap,
-          bloomThreshold: 0.25,
+          metalness: 0.6,
+          roughness: 0.20,
+          bloomThreshold: 0.30,
           writesToDepthBuffer: true,
           readsFromDepthBuffer: true,
         };
-        // v90: supply 水滴单独材质. 用户反馈"水滴不圆润不像水".
-        // Reference HTML 用 MeshPhysicalMaterial transmission=0.92 ior=1.33
-        // roughness=0.08 — 真透明水玻璃. Viro 不支持 transmission/ior, 但
-        // 可以用 metalness=0 + 极低 roughness + 反射 cubemap 模拟"湿玻璃" 质感.
-        // 其他 type (danger/scenic/junction) 维持 metalness=0.85 金属感, 用户
-        // 没投诉. 只 supply 单独覆盖.
-        if (t === 'supply') {
-          matDict[`icon${t}`] = {
-            lightingModel: 'PBR',
-            diffuseColor: c.mid,
-            metalness: 0.0,             // 水是非金属 (跟 reference 一致)
-            roughness: 0.05,             // 锐利高光像玻璃
-            reflectiveTexture: cubeMap,
-            bloomThreshold: 0.30,
-            writesToDepthBuffer: true,
-            readsFromDepthBuffer: true,
-          };
-        }
-        // v102: cairn test sphere — 用 Lambert + opacity prop, 跟 shellAlpha
-        // 一致最稳配方. 球面有 Lambert 受光阴影, 一眼是 3D 球.
-        if (t === 'cairn') {
-          matDict[`icon${t}`] = {
-            lightingModel: 'Lambert',
-            diffuseColor: c.mid,
-            blendMode: 'Alpha',
-            cullMode: 'None',
-            writesToDepthBuffer: false,
-            readsFromDepthBuffer: true,
-          };
-        }
-        // v84: inner core — PBR + 高 emissive (用 metalness=0 + roughness=1 +
-        // bloomThreshold=0.20 让它一直处于 bloom 阈值之上 → 永远发光).
-        matDict[`core${t}`] = {
-          lightingModel: 'PBR',
-          diffuseColor: c.inner,
-          metalness: 0.0,
-          roughness: 1.0,
-          bloomThreshold: 0.20,
-          writesToDepthBuffer: true,
-          readsFromDepthBuffer: true,
-        };
-        // v90: Hybrid shell — Add 主层 (reference 灵魂) + Alpha 备份层 (AR 兜底).
-        // v89 用户反馈球壳完全消失. 根因: Add(亮背景, mid×0.10) ≈ 亮背景, 球
-        // 被吞没. Add 在 reference HTML 黑背景下是球的灵魂, 但 AR 摄像头亮
-        // 背景下失效.
-        // 修法: 双层 ViroSphere 同心 (半径差 4mm 防 z-fight),
-        //   - shellAdd: reference 兼容 Add blend opacity 0.10
-        //   - shellAlpha: AR 兜底 Alpha blend opacity 0.06 (亮背景下勾出轮廓,
-        //     暗背景下因 opacity 极低几乎不可见, 让 Add 主导)
-        // 两层都 cullMode='Front' (= Three.js BackSide), 不挡 icon.
-        matDict[`shellAdd${t}`] = {
-          lightingModel: 'Constant',
-          diffuseColor: c.mid,
-          blendMode: 'Add',
-          cullMode: 'Front',
-          writesToDepthBuffer: false,
-          readsFromDepthBuffer: true,
-          bloomThreshold: 0.50,
-        };
-        // v104: halo 是 root cause (3 层 alpha quad 把球壳遮了, 已删除).
-        // 球壳 material 回到统一最简 Constant 配方, 4 type 一致.
-        matDict[`shellAlpha${t}`] = {
-          lightingModel: 'Constant',
-          diffuseColor: c.mid,
-          blendMode: 'Alpha',
-          cullMode: 'None',
-          writesToDepthBuffer: false,
-          readsFromDepthBuffer: true,
-        };
-        // Backwards-compat alias.
-        matDict[`shell${t}`] = matDict[`shellAdd${t}`];
-        // v84: outer wisp — Lambert 软光晕（PBR 在大半径低 opacity 上太亮）
-        matDict[`wisp${t}`] = {
-          lightingModel: 'Lambert',
-          diffuseColor: c.outer,
-          blendMode: 'Alpha',
-          cullMode: 'Front',
-          writesToDepthBuffer: false,
-          readsFromDepthBuffer: true,
-        };
-        // v91: 粒子 — 更像光不像球. 用户反馈 "周围旋转的光粒太大了 很不真实".
-        // 修法: size 0.022→0.010 (减半), opacity 0.85→0.7, bloomThreshold
-        // 0.15→0.08 让粒子真正触发 bloom 扩散光晕, 视觉上像光点不像实体球.
+        // v105: 粒子 — 保留 (v92 ViroParticleEmitter 路线, 还会用)
         matDict[`particle${t}`] = {
           lightingModel: 'Constant',
           diffuseColor: c.inner,
@@ -680,120 +488,20 @@ function CairnARScene(props: any) {
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
         };
-        // v87: backplate material 删 (组件已删, 但保留材质定义以防别处引用).
-        // 实际渲染层不再用它.
-        matDict[`backplate${t}`] = {
-          lightingModel: 'Constant',
-          diffuseColor: c.outer,
-          blendMode: 'Alpha',
-          writesToDepthBuffer: false,
-          readsFromDepthBuffer: true,
-        };
-        // v83 fix (halo 在白墙背景看不见): v81/v82 用 Add blend，物理上
-        // Add(白色背景, halo色) ≈ 白色 → halo 完全融入白墙不可见。截图证据:
-        // v82 三张图都是白墙背景，halo 完全看不到。
-        // reference HTML 用纯黑 3D 背景所以 Add 显眼；AR 现实场景背景是任意
-        // 颜色，必须用 Alpha (saturate) blend 才能可靠出现。
-        // 失去"亮 + 亮叠加更亮"的 HDR 感，但收获在任何背景下可见的稳定光晕。
-        matDict[`haloInner${t}`] = {
-          lightingModel: 'Constant',
-          diffuseColor: c.inner,
-          diffuseTexture: haloPng,
-          blendMode: 'Alpha',
-          writesToDepthBuffer: false,
-          readsFromDepthBuffer: true,
-          bloomThreshold: 0.65,
-        };
-        matDict[`haloMid${t}`] = {
-          lightingModel: 'Constant',
-          diffuseColor: c.mid,
-          diffuseTexture: haloPng,
-          blendMode: 'Alpha',
-          writesToDepthBuffer: false,
-          readsFromDepthBuffer: true,
-          bloomThreshold: 0.75,
-        };
-        matDict[`haloOuter${t}`] = {
-          lightingModel: 'Constant',
-          diffuseColor: c.outer,
-          diffuseTexture: haloPng,
-          blendMode: 'Alpha',
-          writesToDepthBuffer: false,
-          readsFromDepthBuffer: true,
-          bloomThreshold: 0.85,
-        };
-        // Backwards-compat alias (the JSX still uses M('halo'); we keep
-        // it as the mid layer so any stale code path doesn't break).
-        matDict[`halo${t}`] = matDict[`haloMid${t}`];
       }
       ViroMaterials.createMaterials(matDict);
+      // v105 cleanup: 删除 7 个未使用动画 (iconPulse/iconSpin/iconBreatheUp/Down/
+      // iconBreathe/particleRing/particleBobA/B/C). Arch+QA review 验证只有
+      // riseIn 在 JSX 真用. 删除其他防止 v82-v83 串联累加 bug 重蹈.
       ViroAnimations.registerAnimations({
-        // Idle pulse for the icon body
-        iconPulse: {
-          properties: { scaleX: 1.06, scaleY: 1.06, scaleZ: 1.06 },
-          duration: 1400,
-          easing: 'EaseInEaseOut',
-        },
-        // v84: 慢自旋 (从 12s → 20s) 让用户能看清 icon 3D 厚度
-        iconSpin: {
-          properties: { rotateY: '+=360' },
-          duration: 20000,
-        },
-        // v84: 呼吸动画 — icon 缓慢 0.95 ↔ 1.05 缩放 + opacity 明灭
-        // 用数组串联做 [up, down] 双向，避免累加飘走 (从 v82/v83 学到的教训)
-        iconBreatheUp: {
-          properties: { scaleX: 1.05, scaleY: 1.05, scaleZ: 1.05, opacity: 1.0 },
-          duration: 1800,
-          easing: 'EaseInEaseOut',
-        },
-        iconBreatheDown: {
-          properties: { scaleX: 0.95, scaleY: 0.95, scaleZ: 0.95, opacity: 0.85 },
-          duration: 1800,
-          easing: 'EaseInEaseOut',
-        },
-        iconBreathe: [
-          { properties: { scaleX: 1.05, scaleY: 1.05, scaleZ: 1.05, opacity: 1.0 }, duration: 1800, easing: 'EaseInEaseOut' },
-          { properties: { scaleX: 0.95, scaleY: 0.95, scaleZ: 0.95, opacity: 0.85 }, duration: 1800, easing: 'EaseInEaseOut' },
-        ],
-        // Particle ring spin — v84 慢转 (4.5s → 6s)
-        particleRing: {
-          properties: { rotateY: '+=360' },
-          duration: 6000,
-        },
-        // v83 (粒子飞天/飞地终极修复): v81 `+=0.10 loop` 永久累加飞天花板;
-        // v82 改成数组 [up, down] 串联想抵消累加，但 ViroAnimations 数组形式
-        // 在 loop 时语义不确定 (类型定义有，runtime 行为可能 = 平行执行 or
-        // 第二段被 loop reset 跳过)。截图证据: v82 粒子飞到桌面/地板，比
-        // v81 飞天花板更糟。
-        // 解法: **彻底删除 Y bob 动画**，粒子只跟父 ViroNode 的 ring 旋转。
-        // 失去 reference HTML 的 sin*0.10 脉动呼吸感，但保证粒子永远贴在
-        // icon 周围 ±0.40m 的初始 baseY 范围内不漂走。 bob 留 stub 防止
-        // 引用 broken 但不挂到任何 node 上。
-        particleBobA: [
-          { properties: { positionY: '+=0.10' }, duration: 1100, easing: 'EaseInEaseOut' },
-          { properties: { positionY: '-=0.10' }, duration: 1100, easing: 'EaseInEaseOut' },
-        ],
-        particleBobB: [
-          { properties: { positionY: '+=0.08' }, duration: 1300, easing: 'EaseInEaseOut' },
-          { properties: { positionY: '-=0.08' }, duration: 1300, easing: 'EaseInEaseOut' },
-        ],
-        particleBobC: [
-          { properties: { positionY: '+=0.12' }, duration: 950,  easing: 'EaseInEaseOut' },
-          { properties: { positionY: '-=0.12' }, duration: 950,  easing: 'EaseInEaseOut' },
-        ],
-        // Plant rise: cairn jumps in from -1m below ground to its target Y over 1.4s.
-        // We attach this as the orb wrapper's animation when first mounted; once
-        // the rise completes, idle animations take over.
-        // v86: 1.4s → 0.6s — 用户反馈"升起后从三角变方形像 loading", 那是
-        // riseIn 慢 + iconSpin 慢转 期间从不同角度看到 3D icon 的不同剪影。
-        // 加速 reveal 让 "形变" 阶段尽快过去, 进入稳定 viewing。
+        // Plant rise: cairn jumps from -1m below to target Y over 0.6s.
         riseIn: {
           properties: { positionY: '+=1.5', opacity: 1.0 },
           duration: 600,
           easing: 'EaseOutQuint',
         },
       });
-      crashLogger.breadcrumb('viro:materials-registered v67');
+      crashLogger.breadcrumb('viro:materials-registered v105');
       setMaterialsReady(true);
     } catch (err: any) {
       crashLogger.breadcrumb(`viro:materials-error ${String(err?.message || err).slice(0, 100)}`);
@@ -918,6 +626,7 @@ function CairnARScene(props: any) {
           x={c.x}
           y={c.y}
           z={c.z}
+          dist={c.dist}
           tracking={tracking}
           beaming={beamingId === c.id}
           note={c.note}
@@ -949,21 +658,28 @@ function CairnInstance(props: {
   x: number;
   y: number;
   z: number;
+  dist: number;
   tracking: boolean;
   beaming?: boolean;
   note?: string;
   onPress?: (id: string) => void;
 }) {
-  const { id, type, x, y, z, tracking, beaming, note, onPress } = props;
-  // v94: cairn type 是 "test sphere" — 没 icon 几何, 只有外壳球 + 内部光球.
-  // 这样用户能在 AR 里测试 "纯球壳" 是否真的可见, 排除 icon 干扰.
-  const isTestSphere = type === 'cairn';
-  // v70: known type → use specific geometry. Unknown type (legacy 'cairn',
-  // 'free', or anything else) → render a neutral grey sphere with the
-  // 'generic' colour palette.
-  const knownType = !isTestSphere && (type in TYPE_COLOR_TRIPLET && type in ICON_GEOM) ? type : null;
+  const { id, type, x, y, z, dist, tracking, beaming, note, onPress } = props;
+  // v105 三段式 scale: 0-10m 用 ICON_SCALE_NEAR (0.7), 10-50m 线性插值到
+  // ICON_SCALE_FAR (1.4) 让远处 marker 也能看见. 屏幕角度: 1m 距离 0.7
+  // ≈ 屏幕 50%, 30m 距离 1.4 ≈ 屏幕 4.7% 仍可识别.
+  let scale: number;
+  if (dist <= NEAR_THRESHOLD_M) {
+    scale = ICON_SCALE_NEAR;
+  } else {
+    const t = Math.min(1, (dist - NEAR_THRESHOLD_M) / (VISIBLE_RANGE_M - NEAR_THRESHOLD_M));
+    scale = ICON_SCALE_NEAR + (ICON_SCALE_FAR - ICON_SCALE_NEAR) * t;
+  }
+  // v105: cairn 现在是真石堆 3D 几何 (sphere-stack), 不再 test sphere.
+  // 5 type 全部走同一个渲染路径.
+  const knownType = (type in TYPE_COLOR_TRIPLET && type in ICON_GEOM) ? type : null;
   const geom = knownType ? ICON_GEOM[knownType] : null;
-  const tName = isTestSphere ? 'cairn' : (knownType ?? 'generic');
+  const tName = knownType ?? 'generic';
   const M = (n: string) => `${n}${tName}`;       // material name helper
   const onPressCb = useCallback(() => {
     crashLogger.breadcrumb(`viro:cairn:press id=${id.slice(-6)}`);
@@ -1015,36 +731,26 @@ function CairnInstance(props: {
           - 球壳 ViroSphere 直接子节点, 不 billboard (球对称无需朝相机)
           - icon ViroNode 子级单独加 billboard, 让 icon 永远朝相机但球壳静止
           - 球壳静止 + icon 朝相机 = "球壳里漂浮的 lucide 标识" 真融合 */}
-      <ViroNode scale={[ICON_SCALE, ICON_SCALE, ICON_SCALE]}>
-        {/* 1) 外层球壳 — 不 billboard, 静止球
-            v103: opacity 0.30 → 0.40 (再透一点观察哪个 material 真渲染) */}
-        <ViroSphere
-          radius={0.32}
-          widthSegmentCount={36}
-          heightSegmentCount={28}
-          materials={[M('shellAlpha')]}
-          opacity={0.40}
-        />
-        {/* 2) 内部 icon — 单独 ViroNode billboard */}
-        {!isTestSphere && (
-          <ViroNode transformBehaviors={['billboard']}>
-            {geom ? (
-              <ViroGeometry
-                vertices={geom.vertices}
-                normals={geom.normals}
-                triangleIndices={geom.triangleIndices}
-                materials={[M('icon')]}
-              />
-            ) : (
-              <ViroSphere
-                radius={0.18}
-                widthSegmentCount={32}
-                heightSegmentCount={24}
-                materials={[M('icon')]}
-              />
-            )}
-          </ViroNode>
-        )}
+      {/* v105: 5 type 真 3D 几何 (tetrahedron/cone/octahedron/cube+roof/sphere-stack).
+          billboard 让 icon 永远朝相机, 但因为几何是真各向同性 3D, 任何角度都对. */}
+      <ViroNode scale={[scale, scale, scale]}>
+        <ViroNode transformBehaviors={['billboard']}>
+          {geom ? (
+            <ViroGeometry
+              vertices={geom.vertices}
+              normals={geom.normals}
+              triangleIndices={geom.triangleIndices}
+              materials={[M('icon')]}
+            />
+          ) : (
+            <ViroSphere
+              radius={0.18}
+              widthSegmentCount={32}
+              heightSegmentCount={24}
+              materials={[M('icon')]}
+            />
+          )}
+        </ViroNode>
       </ViroNode>
 
       {/* v101: 删除独立 isTestSphere ViroSphere (现在合并到上面 ViroNode);
@@ -1132,7 +838,7 @@ function CairnInstance(props: {
           width={0.12}
           height={30}
           length={0.12}
-          materials={[M('core')]}
+          materials={[M('icon')]}
           opacity={0.55}
         />
       )}

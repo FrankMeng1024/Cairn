@@ -1,13 +1,19 @@
 /**
  * markerTypes.ts — single source of truth for marker categories.
  *
- * PRD3 E-015. Replaces the four duplicate FLAG_TYPES arrays previously
- * scattered across MapScreen / HikingScreen / RoutesScreen / ARScreen,
- * and the hardcoded MARKER_META in data/mockData.ts.
+ * v105 type 重构 (调研结果):
+ * - 删除 free (Note) — 跟 cairn 重叠, 用 cairn 的隐私开关代替 (TODO)
+ * - 删除 scenic — 拍照打卡场景吸收到 cairn (cairn 加 photo 字段, TODO)
+ * - 重命名 supply → water (更直白)
+ * - 新增 hut — DOC NZ backcountry hut 系统, NZ tramping 文化高频
+ * - 5 个 type: danger / junction / water / hut / cairn
  *
- * Adds the sixth category — 'cairn' — Cairn's signature marker. Cairns
- * are intentionally low-key (sepia brown, no severity colour) because
- * they are messages from one tramper to the next, not warnings.
+ * 真实使用场景边界:
+ * - 危险信息一律 danger (颜色权重高), 不写 cairn
+ * - 拍照打卡用 cairn + photo (吸收 scenic)
+ * - 路径决策用 junction (橙色视觉权重)
+ * - 水源 + DOC hut 用 water/hut (alpine 安全级)
+ * - cairn 是留言 + 备忘 + 拍照打卡的统称 (产品灵魂)
  */
 
 import { Colors } from '../components/tokens';
@@ -15,11 +21,10 @@ import type { IconName } from '../components/Icon';
 
 export type MarkerType =
   | 'danger'
-  | 'scenic'
-  | 'supply'
   | 'junction'
-  | 'cairn'
-  | 'free';
+  | 'water'      // v105: rename from 'supply'
+  | 'hut'        // v105: new — DOC backcountry hut
+  | 'cairn';
 
 export interface MarkerTypeMeta {
   id: MarkerType;
@@ -44,22 +49,6 @@ export const MARKER_TYPES: Record<MarkerType, MarkerTypeMeta> = {
     bg: Colors.dangerBg,
     hint: 'Flooded crossing, slip, hazard ahead',
   },
-  scenic: {
-    id: 'scenic',
-    icon: 'Star',
-    label: 'Scenic',
-    color: Colors.info,
-    bg: Colors.infoBg,
-    hint: 'View worth the stop',
-  },
-  supply: {
-    id: 'supply',
-    icon: 'Droplets',
-    label: 'Water',
-    color: Colors.success,
-    bg: Colors.successBg,
-    hint: 'Drinkable stream, hut tank',
-  },
   junction: {
     id: 'junction',
     icon: 'Navigation2',
@@ -67,6 +56,23 @@ export const MARKER_TYPES: Record<MarkerType, MarkerTypeMeta> = {
     color: Colors.docOrange,
     bg: Colors.severityWarningBg,
     hint: 'Track split or turn-off',
+  },
+  water: {
+    id: 'water',
+    icon: 'Droplets',
+    label: 'Water',
+    color: Colors.success,
+    bg: Colors.successBg,
+    hint: 'Drinkable stream, hut tank',
+  },
+  hut: {
+    id: 'hut',
+    // 'House' is the lucide icon for DOC backcountry hut shelter.
+    icon: 'House',
+    label: 'Hut',
+    color: Colors.trail, // sepia brown — natural shelter colour
+    bg: 'rgba(181,130,61,0.10)',
+    hint: 'DOC hut, shelter, campsite',
   },
   cairn: {
     id: 'cairn',
@@ -76,15 +82,7 @@ export const MARKER_TYPES: Record<MarkerType, MarkerTypeMeta> = {
     label: 'Cairn',
     color: Colors.trail, // sepia brown #b5823d — neutral, not severity
     bg: 'rgba(181,130,61,0.10)',
-    hint: 'A note for whoever comes next',
-  },
-  free: {
-    id: 'free',
-    icon: 'MapPin',
-    label: 'Note',
-    color: Colors.textSecondary,
-    bg: Colors.surface,
-    hint: 'Anything else worth noting',
+    hint: 'A note, photo, or memory for whoever comes next',
   },
 };
 
@@ -92,20 +90,24 @@ export const MARKER_TYPES: Record<MarkerType, MarkerTypeMeta> = {
 export const MARKER_TYPE_ORDER: MarkerType[] = [
   'danger',
   'junction',
-  'scenic',
-  'supply',
+  'water',
+  'hut',
   'cairn',
-  'free',
 ];
 
-/** The five "primary" types shown in the small marker picker (cairn excluded — picked from a separate "leave a note" surface in v1). */
+/** All 5 types are primary in v105 (no longer separating cairn out). */
 export const PRIMARY_MARKER_TYPES: MarkerType[] = [
   'danger',
-  'scenic',
-  'supply',
   'junction',
-  'cairn',  // v94: 加 cairn 给用户测试纯球渲染 (AR 里 cairn type = 纯彩色玻璃球, 无内部 icon)
+  'water',
+  'hut',
+  'cairn',
 ];
+
+export function getMarkerMeta(type: MarkerType | undefined | null): MarkerTypeMeta | null {
+  if (!type) return null;
+  return MARKER_TYPES[type] ?? null;
+}
 
 export function getMarkerMeta(type: MarkerType | undefined | null): MarkerTypeMeta | null {
   if (!type) return null;
