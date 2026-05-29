@@ -30,7 +30,7 @@ import { batteryMonitor } from '../services/batteryMonitor';
 import { networkMonitor } from '../services/networkMonitor';
 import { sessionRecorder } from '../services/sessionRecorder';
 import { telemetryUploader } from '../services/telemetryUploader';
-import { startSession, appendPoints as remoteAppendPoints, finalizeSession } from '../services/sessionService';
+import { startSession, appendPoints as remoteAppendPoints, finalizeSession, deleteRemoteSession } from '../services/sessionService';
 import { crashLogger } from '../services/crashLogger';
 import {
   BACKGROUND_LOCATION_TASK,
@@ -523,6 +523,17 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
       // and tell addSession to skip the legacy POST. Otherwise (network
       // down at start, or server didn't respond), fall back to the
       // legacy all-in-one POST inside addSession.
+      // v115: too-short guard — < 2 points means no drawable path.
+      // Don't save to local store; also skip legacy POST and finalize PATCH.
+      // Clean up the server-side empty row if one was created.
+      if (s.trackPoints.length < 2) {
+        const remoteId = s.remoteSessionId;
+        if (remoteId) {
+          deleteRemoteSession(remoteId).catch(() => {});
+        }
+        crashLogger.breadcrumb(`session:stop:too-short pts=${s.trackPoints.length} — discarded`);
+        // Fall through to reset() below; do NOT call addSession.
+      } else {
       const remoteId = s.remoteSessionId;
       const endedAt = Date.now();
       if (remoteId) {
@@ -568,6 +579,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
         pausePins: s.pausePins.length > 0 ? s.pausePins : undefined,
         name: finalName,
       });
+      } // end too-short guard
     }
 
     set({ ...initialState });
