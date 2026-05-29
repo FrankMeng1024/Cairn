@@ -113,150 +113,252 @@ const ICON_SCALE = ICON_SCALE_NEAR;
 //   hut       → cube + pyramid roof (小屋外形, 跨文化识别)
 //   cairn     → 3 球叠 (NZ alpine cairn 物理形状本身)
 
-// Tetrahedron 四面体 (尖朝下): 4 顶点 + 4 三角面
-// 原理: 警示三角的 3D 化, 任何角度都是尖锐三角警告
+// v107 回滚: 5 个几何回到 v97 已经"近乎完美"的版本.
+// 用户反馈 v105/v106 的 tetrahedron/cone/octahedron 自创几何 "丑炸了, 不如之前".
+// 保留: danger 倒三角(v97 完美) / scenic 5 角星(v97 完美, 内部 mapping cairn->scenic)
+//       water lathe 水滴(v97 完美) / junction 箭头(v97 完美)
+// 新加: hut (cube + roof) — v107 新 type
+//       cairn (sphere stack) — v107 新 type, 不再用 scenic 几何
+// 修水滴底部黑点 — cap fan 法向量错 (v107 修).
+
+// Danger 倒三角 + 感叹号 (v97 用户认可版本)
 function buildDangerGeom() {
-  const R = 0.22;  // 外接球半径
-  // 4 个顶点: 1 个尖在下 (-Y), 3 个角在上形成正三角面 (+Y)
-  const sqrt8over3 = Math.sqrt(8 / 3);  // 正四面体几何
-  const sqrt2over3 = Math.sqrt(2 / 3);
-  const verts: [number, number, number][] = [
-    [0, -R, 0],                                              // 0 下尖
-    [R * sqrt8over3 * 0.5, R * sqrt2over3, 0],               // 1 上右
-    [-R * sqrt8over3 * 0.25, R * sqrt2over3, R * Math.sqrt(2/3)], // 2 上前
-    [-R * sqrt8over3 * 0.25, R * sqrt2over3, -R * Math.sqrt(2/3)], // 3 上后
-  ];
-  const idx: [number, number, number][] = [
-    [0, 2, 1], // 下尖-前-右
-    [0, 3, 2], // 下尖-后-前
-    [0, 1, 3], // 下尖-右-后
-    [1, 2, 3], // 上 (反向 CCW from +Y)
-  ];
-  return { vertices: verts, triangleIndices: idx };
-}
-
-// Cone 圆锥 (尖朝上 / 朝相机方向): 1 apex + N 底环, 1 顶面 fan + 底面 fan
-// 原理: junction 是路径决策, cone 天然箭头, 任何角度看都是 "指向某方向"
-function buildJunctionGeom() {
-  const sides = 16;
-  const apexY = 0.27;     // 尖在上
-  const baseY = -0.20;
-  const baseR = 0.18;
-  const verts: [number, number, number][] = [
-    [0, apexY, 0],   // 0 apex 顶尖
-  ];
-  const idx: [number, number, number][] = [];
-  // 底环 N 顶点 (index 1..N)
-  for (let i = 0; i < sides; i++) {
-    const ang = (i / sides) * Math.PI * 2;
-    verts.push([Math.cos(ang) * baseR, baseY, Math.sin(ang) * baseR]);
-  }
-  // 底圆心 (index N+1)
-  const baseCenterIdx = verts.length;
-  verts.push([0, baseY, 0]);
-  // 侧面 fan (apex → 底环顶点)
-  for (let i = 0; i < sides; i++) {
-    const a = 1 + i;
-    const b = 1 + ((i + 1) % sides);
-    idx.push([0, b, a]);  // CCW from outside
-  }
-  // 底面 fan (baseCenter → 底环顶点, 反向 CCW)
-  for (let i = 0; i < sides; i++) {
-    const a = 1 + i;
-    const b = 1 + ((i + 1) % sides);
-    idx.push([baseCenterIdx, a, b]);
-  }
-  return { vertices: verts, triangleIndices: idx };
-}
-
-// Octahedron 八面体 (钻石形): 6 顶点 + 8 三角面
-// 原理: water 钻石形 360° 对称, 像水晶/玻璃水滴感, 比 lathe 水滴几何稳定
-function buildWaterGeom() {
-  const R = 0.22;
-  // 6 顶点: 上下尖 + 4 个赤道
-  const verts: [number, number, number][] = [
-    [0, R, 0],     // 0 上尖
-    [0, -R, 0],    // 1 下尖
-    [R, 0, 0],     // 2 右
-    [-R, 0, 0],    // 3 左
-    [0, 0, R],     // 4 前
-    [0, 0, -R],    // 5 后
-  ];
-  // 8 三角面 (上 4 + 下 4, CCW from outside)
-  const idx: [number, number, number][] = [
-    // 上半部 (apex 0 + 赤道 CCW)
-    [0, 4, 2],  // 上-前-右
-    [0, 2, 5],  // 上-右-后
-    [0, 5, 3],  // 上-后-左
-    [0, 3, 4],  // 上-左-前
-    // 下半部 (apex 1 + 赤道 CW from -Y = CCW from outside)
-    [1, 2, 4],  // 下-右-前
-    [1, 5, 2],  // 下-后-右
-    [1, 3, 5],  // 下-左-后
-    [1, 4, 3],  // 下-前-左
-  ];
-  return { vertices: verts, triangleIndices: idx };
-}
-
-// House (cube + pyramid roof): hut 几何, 跨文化"房子"识别
-// 原理: 小屋是 universal 视觉符号, 任何角度都是房子
-function buildHutGeom() {
-  const W = 0.18;        // 半宽
-  const H = 0.10;        // 半高 (cube 部分)
-  const ROOF_PEAK = 0.18; // 屋顶尖 (从 cube top 起)
-  const cubeBottomY = -0.18;
-  const cubeTopY = cubeBottomY + 2 * H;  // 0.02
-  const roofPeakY = cubeTopY + ROOF_PEAK; // 0.20
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-  // Cube 8 顶点 (前后 + 左右 + 上下)
-  // 0..3 = bottom (前左/前右/后右/后左), 4..7 = top
-  verts.push([-W, cubeBottomY,  W]);  // 0 前左下
-  verts.push([ W, cubeBottomY,  W]);  // 1 前右下
-  verts.push([ W, cubeBottomY, -W]);  // 2 后右下
-  verts.push([-W, cubeBottomY, -W]);  // 3 后左下
-  verts.push([-W, cubeTopY,     W]);  // 4 前左上 (eave 屋檐)
-  verts.push([ W, cubeTopY,     W]);  // 5 前右上
-  verts.push([ W, cubeTopY,    -W]);  // 6 后右上
-  verts.push([-W, cubeTopY,    -W]);  // 7 后左上
-  // Cube 6 面 (CCW from outside)
-  idx.push([0, 1, 2], [0, 2, 3]);    // 底
-  idx.push([0, 4, 5], [0, 5, 1]);    // 前 (法向 +Z)
-  idx.push([1, 5, 6], [1, 6, 2]);    // 右
-  idx.push([2, 6, 7], [2, 7, 3]);    // 后
-  idx.push([3, 7, 4], [3, 4, 0]);    // 左
-  // Roof: 2 ridge 顶点 (前后) — pitched roof 沿 X 轴 ridge
-  verts.push([0, roofPeakY,  W]);   // 8 前 ridge (在前面屋檐上方)
-  verts.push([0, roofPeakY, -W]);   // 9 后 ridge
-  // Roof 4 面: 2 个梯形屋檐 + 2 个三角山墙
-  idx.push([4, 5, 8]);                // 前山墙 (前面三角)
-  idx.push([6, 7, 9]);                // 后山墙
-  idx.push([5, 6, 9], [5, 9, 8]);     // 右斜屋顶 (梯形)
-  idx.push([7, 4, 8], [7, 8, 9]);     // 左斜屋顶
+  const D = 0.012;
+  const TIP_Y = -0.20;
+  const BASE_Y = 0.27;
+  const HALF_W = 0.26;
+  // 主三角板 (倒立: 1 个尖角下, 2 个角上)
+  verts.push([0,        TIP_Y,   D]);
+  verts.push([-HALF_W,  BASE_Y,  D]);
+  verts.push([HALF_W,   BASE_Y,  D]);
+  verts.push([0,        TIP_Y,  -D]);
+  verts.push([-HALF_W,  BASE_Y, -D]);
+  verts.push([HALF_W,   BASE_Y, -D]);
+  idx.push([0, 2, 1]);
+  idx.push([3, 4, 5]);
+  idx.push([0, 1, 4]); idx.push([0, 4, 3]);
+  idx.push([1, 2, 5]); idx.push([1, 5, 4]);
+  idx.push([2, 0, 3]); idx.push([2, 3, 5]);
+  // 感叹号 bar (在下) + dot (在上)
+  const eps = 0.002;
+  const barW = 0.030, barH = 0.10, barCY = -0.029;
+  const bbase = verts.length;
+  const barZ = D + eps;
+  verts.push([-barW, barCY - barH/2, barZ]);
+  verts.push([ barW, barCY - barH/2, barZ]);
+  verts.push([ barW, barCY + barH/2, barZ]);
+  verts.push([-barW, barCY + barH/2, barZ]);
+  idx.push([bbase+0, bbase+1, bbase+2], [bbase+0, bbase+2, bbase+3]);
+  const dotSize = 0.038, dotY = 0.086;
+  const dotZ = D + eps;
+  const dbase = verts.length;
+  verts.push([-dotSize/2, dotY - dotSize/2, dotZ]);
+  verts.push([ dotSize/2, dotY - dotSize/2, dotZ]);
+  verts.push([ dotSize/2, dotY + dotSize/2, dotZ]);
+  verts.push([-dotSize/2, dotY + dotSize/2, dotZ]);
+  idx.push([dbase+0, dbase+1, dbase+2], [dbase+0, dbase+2, dbase+3]);
   return { vertices: verts, triangleIndices: idx };
 }
 
-// Cairn (堆 3 个不规则球): NZ alpine 物理形状本身, 不需要图标
-// 原理: 这就是 cairn 的真实形状, 任何角度都一眼是 "石堆"
+// Scenic 5 角星 (v97 完美) — v107 也给 cairn 用 (cairn 没专属几何)
+function buildScenicGeom() {
+  const outerR = 0.24, innerR = 0.10, depth = 0.04;
+  const N = 5;
+  const verts: [number, number, number][] = [
+    [0, 0,  depth],
+    [0, 0, -depth],
+  ];
+  for (let i = 0; i < N * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const ang = (i / (N * 2)) * Math.PI * 2 - Math.PI / 2;
+    verts.push([Math.cos(ang) * r, Math.sin(ang) * r, 0]);
+  }
+  const idx: [number, number, number][] = [];
+  const P0 = 2;
+  for (let i = 0; i < N * 2; i++) {
+    const a = P0 + i;
+    const b = P0 + ((i + 1) % (N * 2));
+    idx.push([0, b, a]);
+    idx.push([1, a, b]);
+  }
+  return { vertices: verts, triangleIndices: idx };
+}
+
+// Water lathe 水滴 (v97 用户说"近乎完美") — 修底部黑点 cap 法向量
+function buildWaterGeom() {
+  const segs = 28, sides = 32;
+  const TOP_Y = 0.26, BOT_Y = -0.20, MAX_R = 0.16;
+  const profile: { y: number; r: number }[] = [];
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    let r: number;
+    let y: number;
+    if (t <= 0.70) {
+      y = TOP_Y + (BOT_Y - TOP_Y) * t;
+      const tEff = Math.pow(t, 1.55);
+      r = MAX_R * Math.pow(Math.sin(tEff * Math.PI), 0.85);
+    } else {
+      const tDome = (t - 0.70) / 0.30;
+      const tEffStart = Math.pow(0.70, 1.55);
+      const rStart = MAX_R * Math.pow(Math.sin(tEffStart * Math.PI), 0.85);
+      const yStart = TOP_Y + (BOT_Y - TOP_Y) * 0.70;
+      const yRange = BOT_Y - yStart;
+      const ang = tDome * Math.PI / 2;
+      r = rStart * Math.cos(ang);
+      y = yStart + yRange * Math.sin(ang);
+    }
+    profile.push({ y, r: (i === 0) ? 0 : Math.max(r, 0.005) });
+  }
+  // Analytic lathe normal in meridian (r,y) plane.
+  const meridianN: { mx: number; my: number }[] = [];
+  for (let i = 0; i <= segs; i++) {
+    let dr: number, dy: number;
+    if (i === 0)         { dr = profile[1].r - profile[0].r;       dy = profile[1].y - profile[0].y; }
+    else if (i === segs) { dr = profile[segs].r - profile[segs - 1].r; dy = profile[segs].y - profile[segs - 1].y; }
+    else                 { dr = (profile[i + 1].r - profile[i - 1].r) / 2; dy = (profile[i + 1].y - profile[i - 1].y) / 2; }
+    let mx = dy, my = -dr;
+    const len = Math.hypot(mx, my) || 1;
+    meridianN.push({ mx: mx / len, my: my / len });
+  }
+  meridianN[0]    = { mx: 0, my: 1 };
+  meridianN[segs] = { mx: 0, my: -1 };
+  const verts: [number, number, number][] = [];
+  const normals: [number, number, number][] = [];
+  for (let i = 0; i <= segs; i++) {
+    for (let j = 0; j < sides; j++) {
+      const ang = (j / sides) * Math.PI * 2;
+      const cosA = Math.cos(ang), sinA = Math.sin(ang);
+      const p = profile[i], n = meridianN[i];
+      verts.push([cosA * p.r, p.y, sinA * p.r]);
+      normals.push([cosA * n.mx, n.my, sinA * n.mx]);
+    }
+  }
+  const idx: [number, number, number][] = [];
+  for (let i = 0; i < segs; i++) {
+    for (let j = 0; j < sides; j++) {
+      const a = i * sides + j;
+      const b = i * sides + (j + 1) % sides;
+      const c = (i + 1) * sides + j;
+      const d = (i + 1) * sides + (j + 1) % sides;
+      idx.push([a, b, d]);
+      idx.push([a, d, c]);
+    }
+  }
+  // v107 修水滴底部黑点 root cause:
+  // v94 加 cap center vertex 法向量 [0,-1,0] 朝 -Y, 这是底部封口的几何法向.
+  // 但 PBR 渲染时, 主光源从上方打 [0,-1,0] direction, cap 法向也 [0,-1,0]
+  // → cap 跟主光方向相反 = 完全在阴影里 = 黑斑.
+  // 修法: cap 法向用最后一圈 ring 的平均法向 (向下偏一点但不全朝 -Y),
+  //   这样 cap 看起来跟 ring 连续过渡, 不再是孤立黑斑.
+  const capCenterIdx = verts.length;
+  verts.push([0, BOT_Y, 0]);
+  // v107 cap 法向: 用最后一圈 ring meridian 平均, 而不是纯 [0,-1,0]
+  // 最后一圈 i=segs 时 meridianN[segs] = (0, -1), 但实际渲染应该让 cap
+  // 法向跟 ring 末端连续. 用倒数第 2 圈的 my 做 cap 法向 y 分量, 这样
+  // cap 边缘跟 ring 末段是连续法向 (光照过渡平滑).
+  const capNy = meridianN[segs - 1] ? meridianN[segs - 1].my : -1;
+  normals.push([0, capNy, 0]);  // 不再是纯 -Y
+  const lastRing = segs * sides;
+  for (let j = 0; j < sides; j++) {
+    const a = lastRing + j;
+    const b = lastRing + (j + 1) % sides;
+    idx.push([capCenterIdx, b, a]);
+  }
+  return { vertices: verts, normals, triangleIndices: idx };
+}
+
+// Junction 箭头 (v97 完美): foot 底座 + shaft 杆 + 4 棱锥头
+function buildJunctionGeom() {
+  const verts: [number, number, number][] = [];
+  const idx: [number, number, number][] = [];
+  function pushBoxRot45(cy: number, hw: number, hh: number, hd: number) {
+    const start = verts.length;
+    const c = Math.cos(Math.PI / 4), s = Math.sin(Math.PI / 4);
+    const rot = (x: number, y: number, z: number): [number, number, number] => [x * c - z * s, y, x * s + z * c];
+    verts.push(rot(-hw, cy - hh, -hd));
+    verts.push(rot( hw, cy - hh, -hd));
+    verts.push(rot( hw, cy - hh,  hd));
+    verts.push(rot(-hw, cy - hh,  hd));
+    verts.push(rot(-hw, cy + hh, -hd));
+    verts.push(rot( hw, cy + hh, -hd));
+    verts.push(rot( hw, cy + hh,  hd));
+    verts.push(rot(-hw, cy + hh,  hd));
+    const o = start;
+    idx.push([o, o+1, o+2], [o, o+2, o+3]);
+    idx.push([o+4, o+6, o+5], [o+4, o+7, o+6]);
+    idx.push([o, o+5, o+1], [o, o+4, o+5]);
+    idx.push([o+1, o+6, o+2], [o+1, o+5, o+6]);
+    idx.push([o+2, o+7, o+3], [o+2, o+6, o+7]);
+    idx.push([o+3, o+4, o+0], [o+3, o+7, o+4]);
+  }
+  pushBoxRot45(-0.16 + 0.02, 0.08, 0.02, 0.08);   // foot
+  pushBoxRot45(-0.04 + 0.10, 0.05, 0.10, 0.05);   // shaft
+  // Head pyramid
+  const baseR = 0.14, headBaseY = 0.10, apexY = 0.30;
+  const o = verts.length;
+  verts.push([0, apexY, 0]);
+  verts.push([baseR, headBaseY, 0]);
+  verts.push([0, headBaseY, baseR]);
+  verts.push([-baseR, headBaseY, 0]);
+  verts.push([0, headBaseY, -baseR]);
+  idx.push([o, o+1, o+2]);
+  idx.push([o, o+2, o+3]);
+  idx.push([o, o+3, o+4]);
+  idx.push([o, o+4, o+1]);
+  idx.push([o+1, o+4, o+3]);
+  idx.push([o+1, o+3, o+2]);
+  return { vertices: verts, triangleIndices: idx };
+}
+
+// Hut (cube + pitched roof): v107 新 type 几何, 跨文化"小屋"
+function buildHutGeom() {
+  const W = 0.18;
+  const H = 0.10;
+  const ROOF_PEAK = 0.18;
+  const cubeBottomY = -0.18;
+  const cubeTopY = cubeBottomY + 2 * H;
+  const roofPeakY = cubeTopY + ROOF_PEAK;
+  const verts: [number, number, number][] = [];
+  const idx: [number, number, number][] = [];
+  verts.push([-W, cubeBottomY,  W]);
+  verts.push([ W, cubeBottomY,  W]);
+  verts.push([ W, cubeBottomY, -W]);
+  verts.push([-W, cubeBottomY, -W]);
+  verts.push([-W, cubeTopY,     W]);
+  verts.push([ W, cubeTopY,     W]);
+  verts.push([ W, cubeTopY,    -W]);
+  verts.push([-W, cubeTopY,    -W]);
+  idx.push([0, 1, 2], [0, 2, 3]);
+  idx.push([0, 4, 5], [0, 5, 1]);
+  idx.push([1, 5, 6], [1, 6, 2]);
+  idx.push([2, 6, 7], [2, 7, 3]);
+  idx.push([3, 7, 4], [3, 4, 0]);
+  verts.push([0, roofPeakY,  W]);
+  verts.push([0, roofPeakY, -W]);
+  idx.push([4, 5, 8]);
+  idx.push([6, 7, 9]);
+  idx.push([5, 6, 9], [5, 9, 8]);
+  idx.push([7, 4, 8], [7, 8, 9]);
+  return { vertices: verts, triangleIndices: idx };
+}
+
+// Cairn (3 个不规则球叠): v107 新 type, NZ alpine 物理 cairn
 function buildCairnGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-  // Helper: push UV-sphere mesh 到 verts/idx, 偏移 cy 米, 半径 r, 不规则
   function pushSphere(cy: number, r: number, jitter: number, latSegs: number, lonSegs: number) {
     const startIdx = verts.length;
     for (let i = 0; i <= latSegs; i++) {
-      const lat = (i / latSegs) * Math.PI;          // 0..π
+      const lat = (i / latSegs) * Math.PI;
       const sinLat = Math.sin(lat), cosLat = Math.cos(lat);
       for (let j = 0; j <= lonSegs; j++) {
         const lon = (j / lonSegs) * Math.PI * 2;
         const sinLon = Math.sin(lon), cosLon = Math.cos(lon);
-        // 不规则: 用噪声 perturb 半径
         const noise = (Math.sin(i * 7.13 + j * 3.71) * 0.5 + Math.cos(i * 4.27 + j * 9.51) * 0.5) * jitter;
         const rr = r * (1 + noise);
-        const x = rr * sinLat * cosLon;
-        const y = cy + rr * cosLat;
-        const z = rr * sinLat * sinLon;
-        verts.push([x, y, z]);
+        verts.push([rr * sinLat * cosLon, cy + rr * cosLat, rr * sinLat * sinLon]);
       }
     }
     for (let i = 0; i < latSegs; i++) {
@@ -270,10 +372,9 @@ function buildCairnGeom() {
       }
     }
   }
-  // 3 球从下到上, 渐小, 不规则
-  pushSphere(-0.18, 0.13, 0.08, 10, 12);  // 大底
-  pushSphere(-0.02, 0.10, 0.10, 10, 12);  // 中
-  pushSphere( 0.13, 0.07, 0.12, 10, 12);  // 小顶
+  pushSphere(-0.18, 0.13, 0.08, 10, 12);
+  pushSphere(-0.02, 0.10, 0.10, 10, 12);
+  pushSphere( 0.13, 0.07, 0.12, 10, 12);
   return { vertices: verts, triangleIndices: idx };
 }
 
@@ -283,9 +384,9 @@ const ICON_GEOM: Record<string, { vertices: [number, number, number][]; normals?
   water:    buildWaterGeom(),
   hut:      buildHutGeom(),
   cairn:    buildCairnGeom(),
-  // v105 backwards-compat: legacy DB 'supply'/'scenic'/'free' 兼容映射
-  supply:   buildWaterGeom(),    // supply → water
-  scenic:   buildCairnGeom(),    // scenic → cairn
+  // v107 backwards-compat: 旧 DB 'supply'/'scenic'/'free' 兼容
+  supply:   buildWaterGeom(),    // supply → water lathe 水滴
+  scenic:   buildScenicGeom(),   // scenic → 5 角星 (v97 完美)
 };
 
 // v105 cleanup: 删除 PARTICLE_POSITIONS + PARTICLE_POSITIONS_V84 (反复 v81-v89
