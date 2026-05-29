@@ -186,7 +186,21 @@ function buildScenicGeom() {
   return { vertices: verts, triangleIndices: idx };
 }
 
-// Water lathe 水滴 (v97 用户说"近乎完美") — 修底部黑点 cap 法向量
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  Water lathe 水滴 — 🔒 LOCKED v107 用户认可"水滴完美"        ║
+// ║  禁止再改这个函数的几何参数 (segs/sides/profile/cap normal). ║
+// ║  历史: v85-v97 反复迭代水滴 ~10 次, v107 终于用户说完美.       ║
+// ║  关键参数 (don't touch):                                       ║
+// ║    - segs=28 sides=32 (lathe 细分)                            ║
+// ║    - TOP_Y=0.26 BOT_Y=-0.20 MAX_R=0.16                        ║
+// ║    - profile 段 1 (t<=0.70): sin^0.85, profile 段 2 (dome):    ║
+// ║      quarter-circle (cos→sin parametric)                       ║
+// ║    - 末段 r 残留 0.005 防 fan singularity                      ║
+// ║    - cap normal = meridianN[segs-1].my (不是 -1) 防底部黑斑   ║
+// ║                                                                ║
+// ║  如果未来必须改, 先在 buildWaterGeomV2 实现 + AB 测试,        ║
+// ║  确认 v2 真比 v107 好再替换.                                  ║
+// ╚══════════════════════════════════════════════════════════════╝
 function buildWaterGeom() {
   const segs = 28, sides = 32;
   const TOP_Y = 0.26, BOT_Y = -0.20, MAX_R = 0.16;
@@ -269,46 +283,95 @@ function buildWaterGeom() {
   return { vertices: verts, normals, triangleIndices: idx };
 }
 
-// Junction 箭头 (v97 完美): foot 底座 + shaft 杆 + 4 棱锥头
+// Junction 路口 fork 分叉 (v108 重做): 用户反馈 "现在的 junction 直接冲天
+// 没理解". 路口的核心语义是 "分叉, 走哪边", 不是单一方向.
+// 几何: 一个底座柱 + 上方 Y 形分叉 (左斜 + 右斜两条杆).
+// 任何角度看都一眼是 "Y 形分叉路口".
 function buildJunctionGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-  function pushBoxRot45(cy: number, hw: number, hh: number, hd: number) {
+  // Helper: 在两点之间画一根 box (杆)
+  function pushPole(x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, half: number) {
+    // 中心 + 长度
     const start = verts.length;
-    const c = Math.cos(Math.PI / 4), s = Math.sin(Math.PI / 4);
-    const rot = (x: number, y: number, z: number): [number, number, number] => [x * c - z * s, y, x * s + z * c];
-    verts.push(rot(-hw, cy - hh, -hd));
-    verts.push(rot( hw, cy - hh, -hd));
-    verts.push(rot( hw, cy - hh,  hd));
-    verts.push(rot(-hw, cy - hh,  hd));
-    verts.push(rot(-hw, cy + hh, -hd));
-    verts.push(rot( hw, cy + hh, -hd));
-    verts.push(rot( hw, cy + hh,  hd));
-    verts.push(rot(-hw, cy + hh,  hd));
+    const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 0.001) return;
+    // 沿 (x1,y1,z1)→(x2,y2,z2) 方向的 box, 半厚 = half
+    // 简化: 在杆轴方向上的 box (xz 平面厚度 half×half, y 长度 len)
+    // 用 4 个底面顶点 + 4 个顶面顶点
+    const ax = dx / len, ay = dy / len, az = dz / len;
+    // 一个垂直 axis 的方向 (用 (0,1,0) 叉乘 axis 得到一个垂直向量)
+    let upx = 0, upy = 1, upz = 0;
+    if (Math.abs(ay) > 0.99) { upx = 1; upy = 0; upz = 0; }  // 杆几乎垂直, 用 X
+    // 第一个垂直方向 = up × axis
+    const px = upy * az - upz * ay;
+    const py = upz * ax - upx * az;
+    const pz = upx * ay - upy * ax;
+    const plen = Math.hypot(px, py, pz);
+    const pnx = px / plen, pny = py / plen, pnz = pz / plen;
+    // 第二个垂直方向 = axis × p1
+    const qx = ay * pnz - az * pny;
+    const qy = az * pnx - ax * pnz;
+    const qz = ax * pny - ay * pnx;
+    // 8 顶点 = 起点 4 个 + 终点 4 个 (沿 p1, p2 方向 ±half)
+    function pt(cx: number, cy: number, cz: number, sp: number, sq: number) {
+      verts.push([cx + sp * half * pnx + sq * half * qx,
+                  cy + sp * half * pny + sq * half * qy,
+                  cz + sp * half * pnz + sq * half * qz]);
+    }
+    pt(x1, y1, z1, -1, -1);
+    pt(x1, y1, z1,  1, -1);
+    pt(x1, y1, z1,  1,  1);
+    pt(x1, y1, z1, -1,  1);
+    pt(x2, y2, z2, -1, -1);
+    pt(x2, y2, z2,  1, -1);
+    pt(x2, y2, z2,  1,  1);
+    pt(x2, y2, z2, -1,  1);
     const o = start;
-    idx.push([o, o+1, o+2], [o, o+2, o+3]);
-    idx.push([o+4, o+6, o+5], [o+4, o+7, o+6]);
-    idx.push([o, o+5, o+1], [o, o+4, o+5]);
-    idx.push([o+1, o+6, o+2], [o+1, o+5, o+6]);
-    idx.push([o+2, o+7, o+3], [o+2, o+6, o+7]);
-    idx.push([o+3, o+4, o+0], [o+3, o+7, o+4]);
+    // 6 面 box
+    idx.push([o, o+1, o+2], [o, o+2, o+3]);              // 起点面
+    idx.push([o+4, o+6, o+5], [o+4, o+7, o+6]);          // 终点面
+    idx.push([o, o+5, o+1], [o, o+4, o+5]);              // 侧面 1
+    idx.push([o+1, o+6, o+2], [o+1, o+5, o+6]);          // 侧面 2
+    idx.push([o+2, o+7, o+3], [o+2, o+6, o+7]);          // 侧面 3
+    idx.push([o+3, o+4, o+0], [o+3, o+7, o+4]);          // 侧面 4
   }
-  pushBoxRot45(-0.16 + 0.02, 0.08, 0.02, 0.08);   // foot
-  pushBoxRot45(-0.04 + 0.10, 0.05, 0.10, 0.05);   // shaft
-  // Head pyramid
-  const baseR = 0.14, headBaseY = 0.10, apexY = 0.30;
-  const o = verts.length;
-  verts.push([0, apexY, 0]);
-  verts.push([baseR, headBaseY, 0]);
-  verts.push([0, headBaseY, baseR]);
-  verts.push([-baseR, headBaseY, 0]);
-  verts.push([0, headBaseY, -baseR]);
-  idx.push([o, o+1, o+2]);
-  idx.push([o, o+2, o+3]);
-  idx.push([o, o+3, o+4]);
-  idx.push([o, o+4, o+1]);
-  idx.push([o+1, o+4, o+3]);
-  idx.push([o+1, o+3, o+2]);
+  // Y 形分叉路口:
+  //   底座柱: (0, -0.20) → (0, -0.05)  (垂直)
+  //   左分支: (0, -0.05) → (-0.18, 0.22)  (左上斜)
+  //   右分支: (0, -0.05) → (0.18, 0.22)   (右上斜)
+  pushPole(0, -0.20, 0, 0, -0.05, 0, 0.04);          // 底座垂直柱
+  pushPole(0, -0.05, 0, -0.18, 0.22, 0, 0.04);       // 左分支
+  pushPole(0, -0.05, 0,  0.18, 0.22, 0, 0.04);       // 右分支
+  // 在 3 个端点加小圆球 (类似指示牌的端帽)
+  function pushBall(cx: number, cy: number, cz: number, r: number) {
+    const start = verts.length;
+    const segs = 8;
+    for (let i = 0; i <= segs; i++) {
+      const lat = (i / segs) * Math.PI;
+      for (let j = 0; j <= segs; j++) {
+        const lon = (j / segs) * Math.PI * 2;
+        verts.push([
+          cx + r * Math.sin(lat) * Math.cos(lon),
+          cy + r * Math.cos(lat),
+          cz + r * Math.sin(lat) * Math.sin(lon),
+        ]);
+      }
+    }
+    for (let i = 0; i < segs; i++) {
+      for (let j = 0; j < segs; j++) {
+        const a = start + i * (segs + 1) + j;
+        const b = start + i * (segs + 1) + (j + 1);
+        const c = start + (i + 1) * (segs + 1) + j;
+        const d = start + (i + 1) * (segs + 1) + (j + 1);
+        idx.push([a, b, d], [a, d, c]);
+      }
+    }
+  }
+  pushBall(0, -0.20, 0, 0.05);           // 底脚球
+  pushBall(-0.18, 0.22, 0, 0.06);        // 左端球
+  pushBall(0.18, 0.22, 0, 0.06);         // 右端球
   return { vertices: verts, triangleIndices: idx };
 }
 
@@ -618,6 +681,10 @@ function CairnARScene(props: any) {
     crashLogger.breadcrumb(`viro:tracking state=${state} ok=${ok}`);
   };
 
+  // v108 drift 监控: 记录上次 cairnY, 检测每次重算的 delta. 用户反馈
+  // "对准 marker 手机不动 marker 慢慢移动" → 通过 log 看 cairnY 抖动幅度.
+  const lastCairnYRef = useRef<number | null>(null);
+
   const cairnNodes = useMemo(() => {
     if (!arkitOrigin) return [];
     // v88 恢复: EYE_M 0.5 → 1.5. v87 改成 0.5 让户外站立 hike 视角下旗子
@@ -631,6 +698,15 @@ function CairnARScene(props: any) {
     const cairnY = ground !== null
       ? ground + EYE_M
       : -FALLBACK_HOLD_HEIGHT_M + EYE_M;
+    // v108 drift log: 检测 cairnY 是否抖动 (这是用户反馈 "marker 慢慢移" 的诊断).
+    const prevY = lastCairnYRef.current;
+    if (prevY !== null && Math.abs(cairnY - prevY) > 0.001) {
+      crashLogger.breadcrumb(
+        `viro:drift:cairnY-changed prev=${prevY.toFixed(3)} new=${cairnY.toFixed(3)} ` +
+        `delta=${(cairnY - prevY).toFixed(3)}m ground=${ground === null ? 'null' : ground.toFixed(3)}`,
+      );
+    }
+    lastCairnYRef.current = cairnY;
     const nodes = markers
       .map((m) => {
         const [x, _y, z] = gpsToArWorld(arkitOrigin, m);
@@ -685,17 +761,32 @@ function CairnARScene(props: any) {
     if (anchor.alignment && anchor.alignment !== 'Horizontal' && anchor.alignment !== 'horizontal') return;
     const y = anchor.position?.[1];
     if (typeof y !== 'number' || !isFinite(y)) return;
-    // v97.1: 拒绝天花板. 用户反馈 "貌似把其他的也带到天花板去了" — 根因是
-    // 用户朝天花板举手机, ARKit 把天花板误判为 horizontal plane,
-    // groundYRef 取了 y=+1.5 的天花板, cairn=ground+1.5=+3.0 全飘到天花板.
-    // 真地面在相机下方 (ARKit origin Y=0 ≈ 站立眼睛高度, 真地面 -1.0~-1.7m).
-    // 拒绝 y > -0.3 的 plane (天花板 / 桌面 / 高架), 只接受 y < -0.3 真地面.
+    // v97.1: 拒绝天花板. 真地面在相机下方 (-1.0~-1.7m).
     if (y > -0.3) return;
     const cur = groundYRef.current;
-    if (cur === null || y < cur) {
+    // v108 修飘移: 用户反馈 "对准 marker 手机不动, 但 marker 镜头里慢慢
+    // 朝一个方向小范围移动".
+    // ROOT CAUSE: ARKit onAnchorUpdated 持续 refine plane 估计, 即使手机
+    // 不动. 每次 anchor.position[1] 变化 0.01-0.05m, groundYRef 更新
+    // → setGroundYTick → cairnNodes useMemo 重算 → 所有 marker Y 变化
+    // → 视觉上 marker 慢慢飘.
+    // 修法: 加 STABILITY THRESHOLD 0.10m. 只有 y 变化 > 10cm 才更新 ground.
+    // ARKit plane refine 通常在 ±5cm 内, 阈值 10cm 完全过滤 jitter,
+    // 但保留真实地面变化 (例如用户走到楼梯下).
+    const STABILITY_THRESHOLD_M = 0.10;
+    if (cur === null) {
+      // 首次 ground 检测, 直接接受
       groundYRef.current = y;
       setGroundYTick((n) => n + 1);
-      crashLogger.breadcrumb(`viro:plane y=${y.toFixed(2)} (new lowest)`);
+      crashLogger.breadcrumb(`viro:plane:first y=${y.toFixed(3)} (initial ground)`);
+    } else if (y < cur - STABILITY_THRESHOLD_M) {
+      // 真发现更低的地面 (例如下楼/下坡), 接受新 ground
+      crashLogger.breadcrumb(`viro:plane:lower y=${y.toFixed(3)} prev=${cur.toFixed(3)} delta=${(y - cur).toFixed(3)}`);
+      groundYRef.current = y;
+      setGroundYTick((n) => n + 1);
+    } else {
+      // 在阈值内的 jitter, 忽略防飘
+      // (不打 breadcrumb 防 spam, 这种 update 每秒可能多次)
     }
   }, []);
   const onAnchorFound = useCallback((anchor: any) => handleAnchor(anchor), [handleAnchor]);
