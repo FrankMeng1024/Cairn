@@ -832,6 +832,10 @@ function CairnARScene(props: any) {
   // holding the phone.
   const groundYRef = useRef<number | null>(null);
   const [groundYTick, setGroundYTick] = useState(0); // bump to force cairn re-render when ground appears
+  // Latest camera forward vector — updated at ~10Hz from onCameraTransformUpdate.
+  // Used by handleAnchor to reject planes detected while phone is held flat
+  // (forward[1] ≈ 1 = pointing up = phone lying on desk).
+  const camForwardRef = useRef<number[]>([0, 0, -1]);
 
   // Register Viro materials + animations on first scene mount.
   // Deliberately NOT at module top-level (defensive RN best practice).
@@ -997,6 +1001,7 @@ function CairnARScene(props: any) {
     lastFrameTsRef.current = now;
     const t = evt?.cameraTransform;
     if (!t || !t.position || !t.forward) return;
+    camForwardRef.current = t.forward; // keep latest forward for flat-phone guard in handleAnchor
     onArFrame({
       camera: { position: t.position, forward: t.forward },
       cairns: cairnNodesRef.current,
@@ -1016,7 +1021,8 @@ function CairnARScene(props: any) {
     const y = anchor.position?.[1];
     if (typeof y !== 'number' || !isFinite(y)) return;
     // v97.1: 拒绝天花板. 真地面在相机下方 (-1.0~-1.7m).
-    if (y > -0.3) return;
+    // v115: 从 -0.3 提高到 -0.5 — 桌面约 -0.66m, 旧阈值误让桌面通过.
+    if (y > -0.5) return;
     const cur = groundYRef.current;
     // v108 修飘移: 用户反馈 "对准 marker 手机不动, 但 marker 镜头里慢慢
     // 朝一个方向小范围移动".
@@ -1029,7 +1035,16 @@ function CairnARScene(props: any) {
     // 但保留真实地面变化 (例如用户走到楼梯下).
     const STABILITY_THRESHOLD_M = 0.10;
     if (cur === null) {
-      // 首次 ground 检测, 直接接受
+      // 首次 ground 检测.
+      // v115 flat-phone guard: 手机平放桌上时 forward[1] ≈ 0.9~1.0 (镜头朝上).
+      // 此时 ARKit 检测到的 "地面" 其实是桌面 — 不能作为 floor 参考.
+      // 拿起手机后 forward[1] 回到 ≈0 (水平), 届时再接受第一个 plane.
+      const fwd = camForwardRef.current;
+      if (fwd[1] > 0.7) {
+        crashLogger.breadcrumb(`viro:plane:first-skip y=${y.toFixed(3)} fwd1=${fwd[1].toFixed(2)} (phone flat, ignored)`);
+        return;
+      }
+      // 手机竖握, 正常接受
       groundYRef.current = y;
       setGroundYTick((n) => n + 1);
       crashLogger.breadcrumb(`viro:plane:first y=${y.toFixed(3)} (initial ground)`);
@@ -1392,10 +1407,12 @@ export function ViroAROverlay({
   // AR session — matching ARKit's own session-origin behavior.
   useEffect(() => {
     arkitOriginRef.current = null;
+    groundYRef.current = null;
     setOriginReady(false);
     crashLogger.breadcrumb('viro:origin-reset (AR session start)');
     return () => {
       arkitOriginRef.current = null;
+      groundYRef.current = null;
       crashLogger.breadcrumb('viro:origin-cleared (AR session end)');
     };
   }, []);

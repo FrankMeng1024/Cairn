@@ -31,6 +31,12 @@ router.post('/', authenticate, idempotency, async (req, res) => {
   if (distance_m !== undefined && (typeof distance_m !== 'number' || distance_m < 0)) {
     return res.status(400).json({ error: 'distance_m must be a non-negative number.' });
   }
+  // Reject sessions with no drawable path — "too short to record".
+  // < 2 points means we cannot draw a line; there is nothing useful to store.
+  const pts = route_points ?? [];
+  if (!Array.isArray(pts) || pts.length < 2) {
+    return res.status(422).json({ error: 'Session has no drawable path (fewer than 2 GPS points). Not saved.' });
+  }
 
   try {
     const id = await Session.create({
@@ -155,6 +161,18 @@ router.patch('/:id', authenticate, idempotency, async (req, res) => {
     fields.routePointsRaw = route_points_raw;
   }
   try {
+    // Reject finalization if the session has no drawable path.
+    // The incremental flow (start → append-points → finalize) may result in
+    // zero or one GPS points if the user started and immediately stopped.
+    const existing = await Session.findByIdAndUser(id, req.user.userId);
+    if (!existing) return res.status(404).json({ error: 'Session not found.' });
+    const pointCount = Array.isArray(existing.route_points) ? existing.route_points.length : 0;
+    if (pointCount < 2) {
+      // Delete the empty/too-short session — no reason to keep it on disk.
+      await Session.deleteByIdAndUser(id, req.user.userId);
+      return res.status(422).json({ error: 'Session has no drawable path (fewer than 2 GPS points). Not saved.' });
+    }
+
     const ok = await Session.finalize(id, req.user.userId, fields);
     if (!ok) return res.status(404).json({ error: 'Session not found or no changes.' });
     return res.status(200).json({ ok: true });

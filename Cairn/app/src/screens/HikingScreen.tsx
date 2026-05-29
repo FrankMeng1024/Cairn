@@ -826,6 +826,7 @@ function StopSummarySheet({
   summary,
   onCancel,
   onConfirm,
+  onSaveAsRoute,
 }: {
   summary: {
     distanceM: number; durationS: number; elevationGainM: number;
@@ -834,6 +835,7 @@ function StopSummarySheet({
   };
   onCancel: () => void;
   onConfirm: (name: string) => void;
+  onSaveAsRoute?: (name: string) => void;
 }) {
   const [name, setName] = useState('');
   const insets = useSafeAreaInsets();
@@ -937,6 +939,27 @@ function StopSummarySheet({
               <Text style={stopSheetStyles.saveText}>Save & End</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Save as Route — only shown when a drawable path exists.
+              If trackPoints < 2 the session has no line to save, so
+              we show a soft notice instead. */}
+          {onSaveAsRoute && (
+            summary.trackPoints.length >= 2 ? (
+              <TouchableOpacity
+                style={stopSheetStyles.saveRouteBtn}
+                onPress={() => dismiss(() => onSaveAsRoute(name))}
+                activeOpacity={0.85}
+              >
+                <Icon name="Route" size={14} color={Colors.primary} strokeWidth={2} />
+                <Text style={stopSheetStyles.saveRouteText}>Save as Route</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={stopSheetStyles.noPathNotice}>
+                <Icon name="AlertTriangle" size={13} color="#C8A030" strokeWidth={2} />
+                <Text style={stopSheetStyles.noPathText}>No path recorded — keep moving to save as route</Text>
+              </View>
+            )
+          )}
         </Animated.View>
       </KeyboardAvoidingView>
     </Animated.View>
@@ -991,6 +1014,18 @@ const stopSheetStyles = StyleSheet.create({
     paddingVertical: Spacing.md, borderRadius: Radius.button,
   },
   saveText: { fontSize: FontSize.body, fontWeight: '700', color: '#fff' },
+  saveRouteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: Spacing.md, borderRadius: Radius.button,
+    borderWidth: 1.5, borderColor: Colors.primary,
+    backgroundColor: Colors.primaryBg,
+  },
+  saveRouteText: { fontSize: FontSize.body, fontWeight: '700', color: Colors.primary },
+  noPathNotice: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: Spacing.sm,
+  },
+  noPathText: { fontSize: FontSize.small, color: '#C8A030' },
 });
 
 // ── Main HikingScreen ──────────────────────────────────────────────────────
@@ -1619,6 +1654,38 @@ export function HikingScreen() {
             // Phase reset back to selection screen on next render
             // is already handled by the existing status === idle
             // observer in HikingScreen's useEffect.
+          }}
+          onSaveAsRoute={async (name) => {
+            // Snapshot trackPoints BEFORE stopTracking clears the store.
+            const ts = useTrackingStore.getState();
+            const points = ts.trackPoints.map(p => ({ lat: p.lat, lng: p.lng, alt: (p as any).alt ?? null }));
+            const distanceM = ts.distanceM;
+            const elevationGainM = ts.elevationGainM;
+            const date = new Date();
+            const dd = String(date.getDate()).padStart(2, '0');
+            const mm = String(date.getMonth() + 1).padStart(2, '0');
+            const yyyy = date.getFullYear();
+            const finalName = name.trim() || `Hike — ${dd}/${mm}/${yyyy}`;
+
+            stopTracking(name);
+            setStopSummary(null);
+
+            try {
+              const id = await useRouteStore.getState().addRoute({
+                name: finalName,
+                points,
+                waypoints: [],
+                distanceM,
+                elevationGainM,
+              });
+              if (id) {
+                (nav as any).navigate('Routes');
+              } else {
+                Alert.alert('Save failed', 'Server returned no ID. Check connection and try again.');
+              }
+            } catch (e: any) {
+              Alert.alert('Save failed', String(e?.message ?? e).slice(0, 120));
+            }
           }}
         />
       )}
