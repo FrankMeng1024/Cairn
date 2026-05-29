@@ -648,19 +648,59 @@ function CairnARScene(props: any) {
           readsFromDepthBuffer: true,
           bloomThreshold: 0.50,
         };
-        // v102: shellAlpha 从 Blinn rgba 改 Lambert + diffuseColor (hex)
-        // + opacity prop. 用户反复 "没球" → 推测 Blinn rgba 在某些场景失效.
-        // Lambert 是 Viro 最简最稳的 lighting model, 受光阴影自然有 3D 球体感.
-        // opacity 0.30 通过 ViroSphere prop 传 (不在 material 里), 确保
-        // ViroSphere 真按这个 alpha 渲染. cullMode 'None' 双面渲染防剔除.
-        matDict[`shellAlpha${t}`] = {
-          lightingModel: 'Lambert',
-          diffuseColor: c.mid,
-          blendMode: 'Alpha',
-          cullMode: 'None',
-          writesToDepthBuffer: false,
-          readsFromDepthBuffer: true,
-        };
+        // v103 实验 — 4 个 type 4 种 shell material 配方并行测试.
+        // 用户反复 "没球", 不知道是 lightingModel/blendMode/cullMode 哪个原因.
+        // 直接 4 种配方各跑一个, 用户测看哪个真出现球壳, 一次锁定配方.
+        if (t === 'danger') {
+          // 配方 A: Constant 最简, 无 blendMode (透明完全靠 opacity prop)
+          matDict[`shellAlpha${t}`] = {
+            lightingModel: 'Constant',
+            diffuseColor: c.mid,
+            writesToDepthBuffer: false,
+            readsFromDepthBuffer: true,
+          };
+        } else if (t === 'scenic') {
+          // 配方 B: Lambert + Alpha + 默认 cullMode (Back, 不写 None)
+          matDict[`shellAlpha${t}`] = {
+            lightingModel: 'Lambert',
+            diffuseColor: c.mid,
+            blendMode: 'Alpha',
+            writesToDepthBuffer: false,
+            readsFromDepthBuffer: true,
+          };
+        } else if (t === 'supply') {
+          // 配方 C: Phong + Alpha + None + shininess
+          matDict[`shellAlpha${t}`] = {
+            lightingModel: 'Phong',
+            diffuseColor: c.mid,
+            blendMode: 'Alpha',
+            cullMode: 'None',
+            shininess: 1.0,
+            writesToDepthBuffer: false,
+            readsFromDepthBuffer: true,
+          };
+        } else if (t === 'junction') {
+          // 配方 D: Constant + diffuseTexture (halo PNG) + Alpha
+          matDict[`shellAlpha${t}`] = {
+            lightingModel: 'Constant',
+            diffuseColor: c.mid,
+            diffuseTexture: haloPng,
+            blendMode: 'Alpha',
+            cullMode: 'None',
+            writesToDepthBuffer: false,
+            readsFromDepthBuffer: true,
+          };
+        } else {
+          // cairn / generic 用默认 Lambert
+          matDict[`shellAlpha${t}`] = {
+            lightingModel: 'Lambert',
+            diffuseColor: c.mid,
+            blendMode: 'Alpha',
+            cullMode: 'None',
+            writesToDepthBuffer: false,
+            readsFromDepthBuffer: true,
+          };
+        }
         // Backwards-compat alias.
         matDict[`shell${t}`] = matDict[`shellAdd${t}`];
         // v84: outer wisp — Lambert 软光晕（PBR 在大半径低 opacity 上太亮）
@@ -1019,13 +1059,14 @@ function CairnInstance(props: {
           - icon ViroNode 子级单独加 billboard, 让 icon 永远朝相机但球壳静止
           - 球壳静止 + icon 朝相机 = "球壳里漂浮的 lucide 标识" 真融合 */}
       <ViroNode scale={[ICON_SCALE, ICON_SCALE, ICON_SCALE]}>
-        {/* 1) 外层球壳 — 不 billboard, 静止球 */}
+        {/* 1) 外层球壳 — 不 billboard, 静止球
+            v103: opacity 0.30 → 0.40 (再透一点观察哪个 material 真渲染) */}
         <ViroSphere
           radius={0.32}
           widthSegmentCount={36}
           heightSegmentCount={28}
           materials={[M('shellAlpha')]}
-          opacity={0.30}
+          opacity={0.40}
         />
         {/* 2) 内部 icon — 单独 ViroNode billboard */}
         {!isTestSphere && (
