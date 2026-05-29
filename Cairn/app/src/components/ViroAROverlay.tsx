@@ -607,23 +607,14 @@ function CairnARScene(props: any) {
             readsFromDepthBuffer: true,
           };
         }
-        // v100: 严格按 Viro 官方文档 transparentMaterial 配方:
-        //   lightingModel: 'Blinn' (不是 PBR! PBR + Alpha 在 Viro 不兼容)
-        //   diffuseColor: 'rgba(R,G,B,A)' (alpha 写在颜色字符串里)
-        //   blendMode: 'Alpha'
-        //   cullMode: 'None' (双面渲染)
-        //   shininess: 2.0 (Blinn 高光)
-        // 反复试 PBR + reflectiveTexture + opacity prop 所有组合, 都失败.
-        // 文档唯一 transparent 例子是 Blinn + rgba, 这是真实工作的配方.
+        // v102: cairn test sphere — 用 Lambert + opacity prop, 跟 shellAlpha
+        // 一致最稳配方. 球面有 Lambert 受光阴影, 一眼是 3D 球.
         if (t === 'cairn') {
-          // mid 颜色 hex → rgba(... 0.40) 透明玻璃
-          const rgba = hexToRgba(c.mid, 0.40);
           matDict[`icon${t}`] = {
-            lightingModel: 'Blinn',
-            diffuseColor: rgba,
+            lightingModel: 'Lambert',
+            diffuseColor: c.mid,
             blendMode: 'Alpha',
             cullMode: 'None',
-            shininess: 2.0,
             writesToDepthBuffer: false,
             readsFromDepthBuffer: true,
           };
@@ -657,21 +648,18 @@ function CairnARScene(props: any) {
           readsFromDepthBuffer: true,
           bloomThreshold: 0.50,
         };
-        // v100: shellAlpha 严格按 Viro 官方 transparentMaterial 配方.
-        // PBR + reflectiveTexture + Alpha 在 Viro 不兼容 (反复试 v85-v99).
-        // 唯一文档示例的 transparent: Blinn + rgba diffuse + Alpha + None + shininess.
-        // diffuseColor 用 'rgba(R,G,B,0.30)' alpha 在颜色字符串里.
-        // 不用 ViroSphere opacity prop (官方 transparent 不依赖它).
-        const shellRgba = hexToRgba(c.mid, 0.30);
+        // v102: shellAlpha 从 Blinn rgba 改 Lambert + diffuseColor (hex)
+        // + opacity prop. 用户反复 "没球" → 推测 Blinn rgba 在某些场景失效.
+        // Lambert 是 Viro 最简最稳的 lighting model, 受光阴影自然有 3D 球体感.
+        // opacity 0.30 通过 ViroSphere prop 传 (不在 material 里), 确保
+        // ViroSphere 真按这个 alpha 渲染. cullMode 'None' 双面渲染防剔除.
         matDict[`shellAlpha${t}`] = {
-          lightingModel: 'Blinn',
-          diffuseColor: shellRgba,
+          lightingModel: 'Lambert',
+          diffuseColor: c.mid,
           blendMode: 'Alpha',
           cullMode: 'None',
-          shininess: 2.0,
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
-          bloomThreshold: 1.10,
         };
         // Backwards-compat alias.
         matDict[`shell${t}`] = matDict[`shellAdd${t}`];
@@ -1021,47 +1009,43 @@ function CairnInstance(props: {
           扁平 icon (三角+感叹号 / 5 角星) 暴露侧面缺陷.
           解法: icon ViroNode 加 billboard, 不再 spin, 永远朝相机正面.
           牺牲 spin 旋转动效, 但收获: 永远是 lucide 图标的正确正面. */}
-      {/* v101 真融合: 球壳 + icon 在同一 ViroNode 树, 同一 transform.
-
-          根因 (用户反复反馈): 之前球壳 + icon 是 2 个独立兄弟 ViroNode,
-          球壳静止 + icon 加 iconBreathe (scale 0.95-1.05) → 两者抖动节奏
-          不一致, 看起来 "叠加" 而不是 "融合". 加上 icon 有 billboard 朝相机,
-          球壳没有 billboard, 从某角度看球在 icon 背后或前面 → 不像 "球套 icon".
-
-          v101 修法:
-          - 删除 iconBreathe 动画 (是叠加错觉元凶)
-          - 球壳 + icon 在同一 ViroNode 里, 共享 billboard + scale + position
-          - 球壳 radius 0.20 < icon 0.13 (icon 还是被球壳包住), 但确保两者
-            一起呼吸/旋转/移动
-          - 删除 iconSpin 留 billboard (不旋转避免侧面问题) */}
-      <ViroNode
-        transformBehaviors={['billboard']}
-        scale={[ICON_SCALE, ICON_SCALE, ICON_SCALE]}
-      >
-        {/* 1) 外层球壳 (Blinn rgba transparent) */}
+      {/* v102 真融合 v2: 分离 billboard 避免球壳被旋转扭曲.
+          v101 把 shell + icon 共同 ViroNode + billboard, 但 billboard 旋转
+          整个父节点 → 球壳被强制 "永远看同一面" + 整体跟相机视角 mismatch
+          → 用户看到 "东倒西歪 + 没球 + 位置高".
+          v102 修法:
+          - 外层 ViroNode 只做 scale (球壳 + icon 共享缩放, 同尺寸缩放)
+          - 球壳 ViroSphere 直接子节点, 不 billboard (球对称无需朝相机)
+          - icon ViroNode 子级单独加 billboard, 让 icon 永远朝相机但球壳静止
+          - 球壳静止 + icon 朝相机 = "球壳里漂浮的 lucide 标识" 真融合 */}
+      <ViroNode scale={[ICON_SCALE, ICON_SCALE, ICON_SCALE]}>
+        {/* 1) 外层球壳 — 不 billboard, 静止球 */}
         <ViroSphere
           radius={0.32}
           widthSegmentCount={36}
           heightSegmentCount={28}
           materials={[M('shellAlpha')]}
+          opacity={0.30}
         />
-        {/* 2) 内部 icon (跟球壳同 transform, 自然居中在球内) */}
+        {/* 2) 内部 icon — 单独 ViroNode billboard */}
         {!isTestSphere && (
-          geom ? (
-            <ViroGeometry
-              vertices={geom.vertices}
-              normals={geom.normals}
-              triangleIndices={geom.triangleIndices}
-              materials={[M('icon')]}
-            />
-          ) : (
-            <ViroSphere
-              radius={0.18}
-              widthSegmentCount={32}
-              heightSegmentCount={24}
-              materials={[M('icon')]}
-            />
-          )
+          <ViroNode transformBehaviors={['billboard']}>
+            {geom ? (
+              <ViroGeometry
+                vertices={geom.vertices}
+                normals={geom.normals}
+                triangleIndices={geom.triangleIndices}
+                materials={[M('icon')]}
+              />
+            ) : (
+              <ViroSphere
+                radius={0.18}
+                widthSegmentCount={32}
+                heightSegmentCount={24}
+                materials={[M('icon')]}
+              />
+            )}
+          </ViroNode>
         )}
       </ViroNode>
 
