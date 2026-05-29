@@ -39,33 +39,32 @@ import {
 import type { Marker } from '../store/useMarkerStore';
 import { crashLogger } from '../services/crashLogger';
 
-// ── Type colours (NZ palette, v111) ──────────────────────────────
+// ── Type colours (v112 严格复刻 picker mid 色) ──────────────────
 // 3-layer gradient: inner (bright core) → mid (signature colour) → outer (deep rim)
 //
-// v111 配色重构 (用户反馈 v110 颜色"太深太丑"):
-// 新西兰传统象征色:
-//   pounamu (绿玉): 深绿 — 神圣/cairn 标记 (保留 v110)
-//   kowhai (国花黄): 暖黄-橙 — 警告 (取代深红)
-//   paua (鲍鱼壳): 蓝绿渐变 — 路口分叉 (取代深橙)
-//   ocean blue: 浅蓝 — 水源 (保留)
-//   manuka (麦卢卡蜂蜜): 柔棕 — 山屋 (取代深棕)
+// 用户要求"和 icon_picker_demo.html 一摸一样" — mid 直接取 picker MeshPhysicalMaterial color.
+//   D5 Flame: base 0xaa3520 + flame 0xff5a3a (取火焰色作 mid, 视觉主色)
+//   J2 Split: 0xf0a838
+//   H2 Tent:  0xc97350
+//   water:    保留 ocean blue (picker 没 water type, 自定)
+//   cairn:    保留 logo 绿 (picker 没 cairn type)
 const TYPE_COLOR_TRIPLET: Record<string, { inner: string; mid: string; outer: string }> = {
-  // Danger: kowhai 黄-橙 (NZ 国花) — 比深红更明亮, 警告但不阴沉
-  danger:   { inner: '#fff5d6', mid: '#f5b73c', outer: '#a06a18' },
-  // Junction: paua 蓝绿 — 鲍鱼壳渐变, 方向感 + NZ 海洋感
-  junction: { inner: '#d8f0e8', mid: '#4d8a8a', outer: '#1f4848' },
-  // Water: ocean blue (保留)
+  // Danger D5: picker 火焰色 #ff5a3a
+  danger:   { inner: '#fff0c8', mid: '#ff5a3a', outer: '#aa3520' },
+  // Junction J2: picker 橙黄 #f0a838
+  junction: { inner: '#fff4d8', mid: '#f0a838', outer: '#8a4a18' },
+  // Water: ocean blue
   water:    { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
-  // Hut: manuka 柔棕 — 比 v110 深棕亮 30%
-  hut:      { inner: '#f8e4cc', mid: '#c47e52', outer: '#6e3f1f' },
-  // Cairn: pounamu 绿 (logo 同色, 保留 v110)
+  // Hut H2: picker 柔棕 #c97350
+  hut:      { inner: '#f5d9c0', mid: '#c97350', outer: '#6e3a1f' },
+  // Cairn: logo 绿 (picker 无对应, 保留 v110)
   cairn:    { inner: '#a8c690', mid: '#5d7c46', outer: '#2e3f1d' },
-  // Catch-all for unknown types
+  // Catch-all
   generic:  { inner: '#f0f0f0', mid: '#9aa0a6', outer: '#3a3d40' },
-  // v105 backwards-compat: legacy DB records 'supply'/'scenic'/'free'
-  supply:   { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },  // → water
-  scenic:   { inner: '#f8e4cc', mid: '#c47e52', outer: '#6e3f1f' },  // → hut/cairn 棕
-  free:     { inner: '#f8e4cc', mid: '#c47e52', outer: '#6e3f1f' },  // → hut/cairn 棕
+  // Backwards-compat
+  supply:   { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
+  scenic:   { inner: '#f5d9c0', mid: '#c97350', outer: '#6e3a1f' },
+  free:     { inner: '#f5d9c0', mid: '#c97350', outer: '#6e3a1f' },
 };
 // v105 cleanup: 删除 TYPE_COLORS legacy single-color map (无人调用).
 
@@ -133,71 +132,134 @@ const ICON_SCALE = ICON_SCALE_NEAR;
 //       cairn (sphere stack) — v107 新 type, 不再用 scenic 几何
 // 修水滴底部黑点 — cap fan 法向量错 (v107 修).
 
-// Danger 闪电 (v111 重做): 用户选定 picker D4 闪电.
-// 经典 ⚡ 形状 = 7 点不对称多边形 (顶部右偏 → 中部左折 → 底部右偏).
-// path-extrude 成 prism, 厚度 0.05m. 比火焰更"危险电击"识别度.
+// Danger D5 Flame (v112 严格复刻 picker buildD5):
+// picker 源 (icon_picker_demo.html line 233-253):
+//   底: lathe 17 点, y=[-0.5, 0], r=0.45*sin(t*π*0.7), 24 段
+//   火焰: bezier shape extrude depth=0.12 + bevel 0.02
+//        moveTo(0, 0.7)
+//        bezier(-0.2,0.5, -0.4,0.3, -0.25,0.1)
+//        bezier(-0.15,-0.05, -0.1,-0.1, 0,0)
+//        bezier(0.1,-0.1, 0.15,-0.05, 0.25,0.1)
+//        bezier(0.4,0.3, 0.2,0.5, 0,0.7)
 //
-// 顶点轮廓 (从顶尖顺时针):
-//   顶尖偏右上 → 右上肩内凹 → 中折点向右上 → 中折点向左下
-//   → 底尖偏左下 → 左下肩内凹 → 中折点 → 闭合
+// Viro 复刻: lathe 17×24, bezier 用 8/6/6/8 cubic-segments 拟合 (28 点环形闭合).
+// 用 ear-clipping 三角剖分 (火焰是凹多边形 fan 不行).
+// Bevel 不复刻 (Viro 不支持) — 接受边缘略硬, 但形状与 picker 完全一致.
 function buildDangerGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
 
-  // 闪电 7 点不对称轮廓 (经典 ⚡):
-  //   顶尖 → 右上肩 → 中部右折 (内) → 底尖 → 左下肩 → 中部左折 (内) → 闭合
-  const boltPts: { x: number; y: number }[] = [
-    { x:  0.06, y:  0.30 },   // 0 顶尖 (略偏右上)
-    { x:  0.14, y:  0.10 },   // 1 右上外肩
-    { x:  0.02, y:  0.05 },   // 2 中部内折 (右内)
-    { x:  0.10, y: -0.02 },   // 3 中部外凸 (右下转折)
-    { x: -0.06, y: -0.30 },   // 4 底尖 (略偏左下)
-    { x: -0.14, y: -0.10 },   // 5 左下外肩
-    { x: -0.02, y: -0.05 },   // 6 中部内折 (左内)
-    { x: -0.10, y:  0.02 },   // 7 中部外凸 (左上转折)
-  ];
-  const BOLT_DEPTH = 0.05;
-  const N = boltPts.length;
-  const start = verts.length;
-  // 前面 (z = +depth)
-  for (const p of boltPts) verts.push([p.x, p.y,  BOLT_DEPTH]);
-  // 后面 (z = -depth)
-  for (const p of boltPts) verts.push([p.x, p.y, -BOLT_DEPTH]);
-
-  // 闪电不是 convex — fan 三角剖分需要从 0 点扇形.
-  // 闪电形状勉强 star-shape from 中心: 用三角扇会有自交.
-  // 改用手动三角列表 (8 顶点 → 6 三角):
-  //   (0,1,2) (0,2,3) (0,3,4) (0,4,7) — 上半
-  //   等等, 还是不行 0→4 跨过 (5,6).
-  //
-  // 简单稳妥: 用扇形从顶点 2 (中部内折右) 扇形:
-  //   闪电从 2 出发可见所有其他点 (2 是凹处 — 但其实它能看到 0/1/3/4/5/6/7 大部分).
-  // 实测: 7 点 fan-from-2 会有几个三角穿过空隙. 还是要手动列表.
-  //
-  // 手工切分 (经过点检):
-  //   (0,1,2) (0,2,7) (2,3,7) (3,4,7) (4,5,6) (4,6,7)
-  // 每个三角形顺时针面向 +Z (CCW from outside +Z).
-  const TRIS: [number, number, number][] = [
-    [0, 1, 2],
-    [0, 2, 7],
-    [2, 3, 7],
-    [3, 4, 7],
-    [4, 5, 6],
-    [4, 6, 7],
-  ];
-  for (const [a, b, c] of TRIS) {
-    // 前面 (CCW from +Z)
-    idx.push([start + a, start + b, start + c]);
-    // 后面 (CCW from -Z = 反序)
-    idx.push([start + N + a, start + N + c, start + N + b]);
+  // ── 1. Lathe 底座 (picker line 236-241 严格复刻) ──
+  // 17 profile 点 × 24 lathe 段 = 408 点
+  const profPts: { r: number; y: number }[] = [];
+  for (let i = 0; i <= 16; i++) {
+    const t = i / 16;
+    const y = -0.5 + t * 0.5;
+    const r = Math.max(0.45 * Math.sin(t * Math.PI * 0.7), 0.001);
+    profPts.push({ r, y });
   }
-  // 侧壁 (前后连接)
+  const latheSeg = 24;
+  const latheStart = verts.length;
+  for (let i = 0; i < profPts.length; i++) {
+    const { r, y } = profPts[i];
+    for (let j = 0; j < latheSeg; j++) {
+      const ang = (j / latheSeg) * Math.PI * 2;
+      verts.push([r * Math.cos(ang), y, r * Math.sin(ang)]);
+    }
+  }
+  for (let i = 0; i < profPts.length - 1; i++) {
+    for (let j = 0; j < latheSeg; j++) {
+      const j2 = (j + 1) % latheSeg;
+      const a = latheStart + i * latheSeg + j;
+      const b = latheStart + i * latheSeg + j2;
+      const c = latheStart + (i + 1) * latheSeg + j;
+      const d = latheStart + (i + 1) * latheSeg + j2;
+      idx.push([a, b, d], [a, d, c]);
+    }
+  }
+
+  // ── 2. 火焰 bezier shape (picker line 244-249 严格复刻) ──
+  // Cubic bezier: P(t) = (1-t)³P0 + 3(1-t)²t P1 + 3(1-t)t² P2 + t³ P3
+  function bezier(p0: [number, number], p1: [number, number], p2: [number, number], p3: [number, number], steps: number): [number, number][] {
+    const out: [number, number][] = [];
+    for (let k = 1; k <= steps; k++) {
+      const t = k / steps;
+      const u = 1 - t;
+      const x = u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0];
+      const y = u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1];
+      out.push([x, y]);
+    }
+    return out;
+  }
+  // picker bezierCurveTo(cp1, cp2, end) → P0 = previous end-point.
+  const flame2D: [number, number][] = [[0, 0.7]];
+  flame2D.push(...bezier([0, 0.7], [-0.2, 0.5], [-0.4, 0.3], [-0.25, 0.1], 8));
+  flame2D.push(...bezier([-0.25, 0.1], [-0.15, -0.05], [-0.1, -0.1], [0, 0], 6));
+  flame2D.push(...bezier([0, 0], [0.1, -0.1], [0.15, -0.05], [0.25, 0.1], 6));
+  flame2D.push(...bezier([0.25, 0.1], [0.4, 0.3], [0.2, 0.5], [0, 0.7], 8));
+  // 最后一点 (0, 0.7) 跟起点重合, 删除避免 0-面积三角.
+  flame2D.pop();
+
+  const FLAME_DEPTH = 0.06;
+  const N = flame2D.length;
+  const flameStart = verts.length;
+  for (const [x, y] of flame2D) verts.push([x, y,  FLAME_DEPTH]);
+  for (const [x, y] of flame2D) verts.push([x, y, -FLAME_DEPTH]);
+
+  // Ear-clipping triangulation (火焰 shape 是凹多边形, fan 不能用)
+  function earClip(pts: [number, number][]): [number, number, number][] {
+    const tris: [number, number, number][] = [];
+    const idxs = pts.map((_, i) => i);
+    function area(a: number, b: number, c: number) {
+      const [ax, ay] = pts[a], [bx, by] = pts[b], [cx, cy] = pts[c];
+      return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    }
+    function pointInTri(p: number, a: number, b: number, c: number) {
+      const [px, py] = pts[p];
+      const [ax, ay] = pts[a], [bx, by] = pts[b], [cx, cy] = pts[c];
+      const d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by);
+      const d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy);
+      const d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay);
+      const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+      const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+      return !(hasNeg && hasPos);
+    }
+    let guard = 0;
+    while (idxs.length > 2 && guard++ < 10000) {
+      let earFound = false;
+      for (let i = 0; i < idxs.length; i++) {
+        const a = idxs[(i - 1 + idxs.length) % idxs.length];
+        const b = idxs[i];
+        const c = idxs[(i + 1) % idxs.length];
+        if (area(a, b, c) <= 0) continue;
+        let any = false;
+        for (let k = 0; k < idxs.length; k++) {
+          const p = idxs[k];
+          if (p === a || p === b || p === c) continue;
+          if (pointInTri(p, a, b, c)) { any = true; break; }
+        }
+        if (!any) {
+          tris.push([a, b, c]);
+          idxs.splice(i, 1);
+          earFound = true;
+          break;
+        }
+      }
+      if (!earFound) break;
+    }
+    return tris;
+  }
+  const tris = earClip(flame2D);
+  for (const [a, b, c] of tris) {
+    idx.push([flameStart + a, flameStart + b, flameStart + c]);
+    idx.push([flameStart + N + a, flameStart + N + c, flameStart + N + b]);
+  }
   for (let i = 0; i < N; i++) {
     const i2 = (i + 1) % N;
-    const fa = start + i;
-    const fb = start + i2;
-    const ba = start + N + i;
-    const bb = start + N + i2;
+    const fa = flameStart + i;
+    const fb = flameStart + i2;
+    const ba = flameStart + N + i;
+    const bb = flameStart + N + i2;
     idx.push([fa, ba, bb]);
     idx.push([fa, bb, fb]);
   }
@@ -380,71 +442,72 @@ function buildJunctionGeom() {
     idx.push([o+2, o+7, o+3], [o+2, o+6, o+7]);          // 侧面 3
     idx.push([o+3, o+4, o+0], [o+3, o+7, o+4]);          // 侧面 4
   }
-  // ── J2 Split asymmetric (v111): 一边连接, 一边断开 ──
-  // 用户反馈 picker J2 的精髓 = 不对称: 一支连接主杆, 一支独立浮在空中.
-  // 视觉象征: "主路 vs 分岔" — 一条延续, 一条新开.
+  // ── J2 Split (v112 严格复刻 picker buildJ2) ──
+  // picker 源 (icon_picker_demo.html line 293-311):
+  //   trunk: cylinder r=0.08 h=0.4, position.y = -0.4 → trunk y∈[-0.6, -0.2]
+  //   arrow group (× 2):
+  //     shaft cylinder r=0.07 h=0.5    (group 局部坐标 y∈[-0.25, 0.25])
+  //     cone r=0.15 h=0.25, position.y=0.35  (group 局部 cone 中心 y=0.35,
+  //                                            底 y=0.225, 尖 y=0.475)
+  //     group rotation.z = side * -π/4
+  //     group position = (side * 0.25, 0.1, 0)
   //
-  // 几何:
-  //   主杆: (0, -0.25) → (0, 0.05)   (上端略高, 跟右支自然连接)
-  //   右分支 (连接): 从 (0, 0.05) 出发 → (0.20, 0.20)  + 锥头
-  //   左分支 (断开): (-0.05, 0.0) → (-0.20, 0.20) + 锥头
-  //                  起点 -0.05, 0.0 与主杆顶 (0, 0.05) 之间空 0.07m gap
-  //   底脚装饰球
-  pushPole(0, -0.25, 0, 0, 0.05, 0, 0.045);    // 主杆 (右支连续延伸自此)
-  // 右分支 — 跟主杆顶连接 (起点 = 主杆顶 0, 0.05)
-  pushPole(0, 0.05, 0, 0.20, 0.20, 0, 0.038);
-  // 左分支 — 浮起, 起点离主杆 0.07m gap
-  pushPole(-0.05, 0.00, 0, -0.20, 0.20, 0, 0.038);
+  // 计算 (side=+1, θ=-π/4): 点 (x,y) → rotZ → translate
+  //   shaft 顶 (0, 0.25)  → (+0.177, +0.177) + (0.25, 0.10) = (+0.427, +0.277)
+  //   shaft 底 (0,-0.25)  → (-0.177, -0.177) + (0.25, 0.10) = (+0.073, -0.077)
+  //   cone 尖 (0, 0.475) → (+0.336, +0.336) + (0.25, 0.10) = (+0.586, +0.436)
+  //   cone 底 (0, 0.225) → (+0.159, +0.159) + (0.25, 0.10) = (+0.409, +0.259)
+  //
+  // trunk 顶 (0, -0.2) 与 shaft 底 (±0.073, -0.077) 之间 = 自然 Y-fork gap.
+  // 用户之前要的 "一边连接一边断开" 我误解了 — picker J2 是对称 Y-fork.
+  // 用户说"和网页一摸一样" — 故照 picker 严格对称.
 
-  // ── 左箭头头 (cone) ──
-  // 箭头位置: 左分支末端 (-0.18, 0.18), 朝外左上方 (-0.28, 0.30)
+  // Trunk
+  pushPole(0, -0.6, 0, 0, -0.2, 0, 0.08);
+
+  // 左 shaft (side=-1): shaft 顶 (-0.427, 0.277), shaft 底 (-0.073, -0.077)
+  pushPole(-0.073, -0.077, 0, -0.427, 0.277, 0, 0.07);
+  // 右 shaft (side=+1)
+  pushPole( 0.073, -0.077, 0,  0.427, 0.277, 0, 0.07);
+
   function pushArrowHead(tipX: number, tipY: number, baseX: number, baseY: number, baseR: number) {
-    // tip = 箭头尖, base = 箭头底圆心 (圆锥底)
     const dx = tipX - baseX, dy = tipY - baseY;
     const len = Math.hypot(dx, dy);
     if (len < 0.001) return;
-    // 箭头方向单位向量
     const ax = dx / len, ay = dy / len;
-    // 垂直方向 (XY 平面内, 在 XZ 平面)
-    const px = -ay, py = ax;  // 90° rotate in XY
+    const px = -ay, py = ax;
     const start = verts.length;
-    // 顶尖
     verts.push([tipX, tipY, 0]);
-    // 底圆 (8 段)
-    const sides = 12;
+    const sides = 16;
     for (let j = 0; j < sides; j++) {
       const ang = (j / sides) * Math.PI * 2;
-      // 底圆在垂直平面 (px,py) + Z 轴
       const cx = baseX + baseR * Math.cos(ang) * px;
       const cy = baseY + baseR * Math.cos(ang) * py;
       const cz = baseR * Math.sin(ang);
       verts.push([cx, cy, cz]);
     }
-    // 底圆心
     const baseCenter = verts.length;
     verts.push([baseX, baseY, 0]);
-    // 侧面 fan: tip → 底圆环
     for (let j = 0; j < sides; j++) {
       const a = start + 1 + j;
       const b = start + 1 + ((j + 1) % sides);
-      idx.push([start, b, a]);   // CCW from outside
+      idx.push([start, b, a]);
     }
-    // 底面 fan: baseCenter → 底圆环
     for (let j = 0; j < sides; j++) {
       const a = start + 1 + j;
       const b = start + 1 + ((j + 1) % sides);
       idx.push([baseCenter, a, b]);
     }
   }
-  // 左箭头: 杆终点 (-0.20, 0.20) 是箭头底, 尖在更外 (-0.30, 0.32)
-  pushArrowHead(-0.30, 0.32, -0.20, 0.20, 0.07);
-  // 右箭头
-  pushArrowHead(0.30, 0.32, 0.20, 0.20, 0.07);
+  // 左箭头 (side=-1): tip = (-0.586, 0.436), base = (-0.409, 0.259)
+  pushArrowHead(-0.586, 0.436, -0.409, 0.259, 0.15);
+  // 右箭头 (side=+1): tip = ( 0.586, 0.436), base = ( 0.409, 0.259)
+  pushArrowHead( 0.586, 0.436,  0.409, 0.259, 0.15);
 
   // 底脚小球 (装饰)
   function pushBall(cx: number, cy: number, cz: number, r: number) {
     const start = verts.length;
-    const segs = 8;
+    const segs = 12;
     for (let i = 0; i <= segs; i++) {
       const lat = (i / segs) * Math.PI;
       for (let j = 0; j <= segs; j++) {
@@ -466,54 +529,50 @@ function buildJunctionGeom() {
       }
     }
   }
-  pushBall(0, -0.25, 0, 0.06);           // 底脚装饰球 (跟主杆底 -0.25 对齐)
+  pushBall(0, -0.6, 0, 0.06);
   return { vertices: verts, triangleIndices: idx };
 }
 
-// Hut Tent 帐篷 (v111 重做): 用户选定 picker H2.
-// 城堡 v110 被否, 帐篷更符合 NZ tramping (DOC hut → backcountry tent).
+// Hut H2 Tent (v112 严格复刻 picker buildH2):
+// picker 源 (icon_picker_demo.html line 353-365):
+//   tentShape: moveTo(0, 0.6) → lineTo(-0.6, -0.5) → lineTo(0.6, -0.5) → close
+//   ExtrudeGeometry depth=0.8, no bevel
+//   tent.position.z = -0.4 → 拉伸 z∈[-0.4, +0.4]
+//   door: PlaneGeometry 0.04 × 0.8, position (0, 0.05, 0.41) — 黑色面片
 //
-// 几何 = 三角棱柱 (sliced prism) + 正面门 box.
-//   主体: 三角形侧面 (正三角, 顶尖 +0.3, 底 ±0.30 半宽), 沿 Z 拉伸 ±0.30.
-//   门: 正面中央薄长方体, 略凸出于前三角面 (z = +0.30 + ε).
-//
-// 不再 keep + battlements + tower 的复杂城堡 — 用户审美明确.
+// Viro 复刻:
+//   三角棱柱: 顶尖 (0, 0.6), 底左 (-0.6, -0.5), 底右 (0.6, -0.5), z∈[-0.4, +0.4]
+//   门: 薄盒 (0.04 半宽 × 0.4 半高 × 0.005 半厚), 中心 (0, 0.05, 0.41).
+//        Plane→Box 是为了可见性 (Viro Plane 双面 alpha 不稳).
 function buildHutGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
 
-  // ── 三角棱柱主体 (帐篷) ──
-  // 前三角 (z = +halfD), 后三角 (z = -halfD).
-  // 三角顶点: 顶尖 (0, tipY), 底左 (-halfW, baseY), 底右 (+halfW, baseY).
-  const tipY    =  0.30;
-  const baseY   = -0.25;
-  const halfW   =  0.28;
-  const halfD   =  0.28;
+  // ── 三角棱柱主体 (picker dims) ──
+  const tipY    =  0.60;
+  const baseY   = -0.50;
+  const halfW   =  0.60;
+  const zFront  =  0.40;
+  const zBack   = -0.40;
 
   const front = verts.length;
-  verts.push([     0, tipY,   halfD]);   // 0 前顶尖
-  verts.push([-halfW, baseY,  halfD]);   // 1 前底左
-  verts.push([ halfW, baseY,  halfD]);   // 2 前底右
-  verts.push([     0, tipY,  -halfD]);   // 3 后顶尖
-  verts.push([-halfW, baseY, -halfD]);   // 4 后底左
-  verts.push([ halfW, baseY, -halfD]);   // 5 后底右
+  verts.push([     0, tipY,  zFront]);   // 0 前顶尖
+  verts.push([-halfW, baseY, zFront]);   // 1 前底左
+  verts.push([ halfW, baseY, zFront]);   // 2 前底右
+  verts.push([     0, tipY,  zBack]);    // 3 后顶尖
+  verts.push([-halfW, baseY, zBack]);    // 4 后底左
+  verts.push([ halfW, baseY, zBack]);    // 5 后底右
 
-  // 前三角 (CCW from +Z = 0,1,2 顺时针看 = (0,1,2) 逆时针)
-  idx.push([front + 0, front + 1, front + 2]);
-  // 后三角 (CCW from -Z = 反序)
-  idx.push([front + 3, front + 5, front + 4]);
-  // 左侧斜面 (顶尖 → 底左, 前后两顶点) — 0,1, 4,3
-  idx.push([front + 0, front + 4, front + 1]);
-  idx.push([front + 0, front + 3, front + 4]);
-  // 右侧斜面 — 0,2, 5,3
-  idx.push([front + 0, front + 2, front + 5]);
-  idx.push([front + 0, front + 5, front + 3]);
-  // 底面 — 1,2, 5,4 (CCW from below = -Y)
-  idx.push([front + 1, front + 4, front + 5]);
-  idx.push([front + 1, front + 5, front + 2]);
+  idx.push([front + 0, front + 1, front + 2]);          // 前三角
+  idx.push([front + 3, front + 5, front + 4]);          // 后三角
+  idx.push([front + 0, front + 4, front + 1]);          // 左斜面 (1)
+  idx.push([front + 0, front + 3, front + 4]);          // 左斜面 (2)
+  idx.push([front + 0, front + 2, front + 5]);          // 右斜面 (1)
+  idx.push([front + 0, front + 5, front + 3]);          // 右斜面 (2)
+  idx.push([front + 1, front + 4, front + 5]);          // 底面 (1)
+  idx.push([front + 1, front + 5, front + 2]);          // 底面 (2)
 
-  // ── 正面门 (薄长方体, 略凸出于前三角面) ──
-  // 门高度从底到三角中部 (~y = 0.0), 宽度 ±0.06, 厚度 0.012, z 略大于 halfD.
+  // ── 正面门 (picker: PlaneGeometry 0.04 × 0.8 at (0, 0.05, 0.41)) ──
   function pushBox(cx: number, cy: number, cz: number, hw: number, hh: number, hd: number) {
     const s = verts.length;
     verts.push([cx - hw, cy - hh, cz + hd]);
@@ -531,11 +590,9 @@ function buildHutGeom() {
     idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);
     idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
   }
-  // 门: 沿前三角面对称中央, 宽 0.06, 高 0.18, 厚 0.012, z = halfD + 0.006
-  // 把门向上抬 0.18/2 让底部贴 baseY.
-  const doorHW = 0.06, doorHH = 0.18, doorHD = 0.012;
-  const doorCY = baseY + doorHH;
-  pushBox(0, doorCY, halfD + doorHD + 0.001, doorHW, doorHH, doorHD);
+  // 门: half-width 0.02 (picker 0.04 全宽), half-height 0.40 (picker 0.8 全高),
+  //     half-depth 0.005, 中心 y=0.05, z=0.41 (略凸前面)
+  pushBox(0, 0.05, 0.41, 0.02, 0.40, 0.005);
 
   return { vertices: verts, triangleIndices: idx };
 }
@@ -592,11 +649,11 @@ function buildCairnGeom() {
   //   3D rx = 7.5 * s = 0.156
   //   3D ry = 2.4 * s = 0.050
   //   3D rz = ry (Z 方向跟 Y 一样扁, 形成 "扁石头" 而非球)
-  pushEllipsoid((9.5 - 9) * s, (12 - 21) * s, 7.5 * s, 2.4 * s, 2.4 * s, 12, 16);
+  pushEllipsoid((9.5 - 9) * s, (12 - 21) * s, 7.5 * s, 2.4 * s, 2.4 * s, 24, 32);
   // 中石: SVG (cx=8.5, cy=15, rx=5.5, ry=2.0)
-  pushEllipsoid((8.5 - 9) * s, (12 - 15) * s, 5.5 * s, 2.0 * s, 2.0 * s, 12, 16);
+  pushEllipsoid((8.5 - 9) * s, (12 - 15) * s, 5.5 * s, 2.0 * s, 2.0 * s, 24, 32);
   // 顶石: SVG (cx=11, cy=9.5, rx=3.4, ry=1.7)
-  pushEllipsoid((11 - 9) * s, (12 - 9.5) * s, 3.4 * s, 1.7 * s, 1.7 * s, 12, 16);
+  pushEllipsoid((11 - 9) * s, (12 - 9.5) * s, 3.4 * s, 1.7 * s, 1.7 * s, 24, 32);
   return { vertices: verts, triangleIndices: idx };
 }
 
@@ -793,15 +850,31 @@ function CairnARScene(props: any) {
         // 反复 v85-v104 球壳路放弃, 改追求精致 icon (5 type 真 3D 几何 + PBR).
         // metalness 0.6 + roughness 0.20 + 纯色 = 简单釉面感, 受光阴影自然 3D.
         // 不依赖 cubemap/transmission 等 Viro 不稳的特性.
-        matDict[`icon${t}`] = {
-          lightingModel: 'PBR',
-          diffuseColor: c.mid,
-          metalness: 0.6,
-          roughness: 0.20,
-          bloomThreshold: 0.30,
-          writesToDepthBuffer: true,
-          readsFromDepthBuffer: true,
-        };
+        //
+        // v112: cairn 单独 polished pounamu 玻璃质感 (low metalness, low rough).
+        // 用户要求 cairn "更 3D 立体". 加密几何 (24×32) + 低粗糙度 = 高光锐利,
+        // 像打磨后的绿玉 (pounamu). 其他 type 保持 metalness 0.6 釉面.
+        if (t === 'cairn') {
+          matDict[`icon${t}`] = {
+            lightingModel: 'PBR',
+            diffuseColor: c.mid,
+            metalness: 0.0,        // 玉石不是金属
+            roughness: 0.10,       // 高光锐利
+            bloomThreshold: 0.40,  // 高光弱 bloom
+            writesToDepthBuffer: true,
+            readsFromDepthBuffer: true,
+          };
+        } else {
+          matDict[`icon${t}`] = {
+            lightingModel: 'PBR',
+            diffuseColor: c.mid,
+            metalness: 0.6,
+            roughness: 0.20,
+            bloomThreshold: 0.30,
+            writesToDepthBuffer: true,
+            readsFromDepthBuffer: true,
+          };
+        }
         // v105: 粒子 — 保留 (v92 ViroParticleEmitter 路线, 还会用)
         matDict[`particle${t}`] = {
           lightingModel: 'Constant',
