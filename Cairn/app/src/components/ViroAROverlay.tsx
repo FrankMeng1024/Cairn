@@ -132,136 +132,124 @@ const ICON_SCALE = ICON_SCALE_NEAR;
 //       cairn (sphere stack) — v107 新 type, 不再用 scenic 几何
 // 修水滴底部黑点 — cap fan 法向量错 (v107 修).
 
-// Danger D5 Flame (v112 严格复刻 picker buildD5):
-// picker 源 (icon_picker_demo.html line 233-253):
-//   底: lathe 17 点, y=[-0.5, 0], r=0.45*sin(t*π*0.7), 24 段
-//   火焰: bezier shape extrude depth=0.12 + bevel 0.02
-//        moveTo(0, 0.7)
-//        bezier(-0.2,0.5, -0.4,0.3, -0.25,0.1)
-//        bezier(-0.15,-0.05, -0.1,-0.1, 0,0)
-//        bezier(0.1,-0.1, 0.15,-0.05, 0.25,0.1)
-//        bezier(0.4,0.3, 0.2,0.5, 0,0.7)
+// (D5/D1 注释合并到下方 buildDangerGeom 函数内, 此处空)
+// Danger D1 TriangleAlert (v113 改回 D1, 取代 v112 D5 火焰):
+// 用户反馈: D5 lathe+bezier 火焰看不清"危险", 改回经典国际警告标 D1.
+// picker 源 (icon_picker_demo.html line 197-210):
+//   triShape: moveTo(0,-0.7), lineTo(-0.7,0.5), lineTo(0.7,0.5), close
+//   ExtrudeGeometry depth=0.15 + bevel 0.02
+//   color #ff5a3a metalness=0.3 roughness=0.4
+//   bar: cylinder r=0.05 h=0.3 at (0, 0.05, 0.18) — color #fff0c8 emissive #ff8800
+//   dot: sphere r=0.07 at (0, -0.2, 0.18) — color #fff0c8 emissive #ff8800
 //
-// Viro 复刻: lathe 17×24, bezier 用 8/6/6/8 cubic-segments 拟合 (28 点环形闭合).
-// 用 ear-clipping 三角剖分 (火焰是凹多边形 fan 不行).
-// Bevel 不复刻 (Viro 不支持) — 接受边缘略硬, 但形状与 picker 完全一致.
+// Viro 复刻: 三角 prism + 单独 cylinder bar + 单独 sphere dot.
+// bar+dot 用 buildDangerMarkGeom (单独 ViroGeometry, 单独 material 高对比色).
+//
+// 注意: picker triangle 顶尖 (0, -0.7) 在下 (倒三角), 顶角朝下不是 lucide 标准.
+// 这里照 picker 严格. 用户已确认 picker 看起来就是 D1.
 function buildDangerGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
 
-  // ── 1. Lathe 底座 (picker line 236-241 严格复刻) ──
-  // 17 profile 点 × 24 lathe 段 = 408 点
-  const profPts: { r: number; y: number }[] = [];
-  for (let i = 0; i <= 16; i++) {
-    const t = i / 16;
-    const y = -0.5 + t * 0.5;
-    const r = Math.max(0.45 * Math.sin(t * Math.PI * 0.7), 0.001);
-    profPts.push({ r, y });
-  }
-  const latheSeg = 24;
-  const latheStart = verts.length;
-  for (let i = 0; i < profPts.length; i++) {
-    const { r, y } = profPts[i];
-    for (let j = 0; j < latheSeg; j++) {
-      const ang = (j / latheSeg) * Math.PI * 2;
-      verts.push([r * Math.cos(ang), y, r * Math.sin(ang)]);
-    }
-  }
-  for (let i = 0; i < profPts.length - 1; i++) {
-    for (let j = 0; j < latheSeg; j++) {
-      const j2 = (j + 1) % latheSeg;
-      const a = latheStart + i * latheSeg + j;
-      const b = latheStart + i * latheSeg + j2;
-      const c = latheStart + (i + 1) * latheSeg + j;
-      const d = latheStart + (i + 1) * latheSeg + j2;
-      idx.push([a, b, d], [a, d, c]);
-    }
-  }
-
-  // ── 2. 火焰 bezier shape (picker line 244-249 严格复刻) ──
-  // Cubic bezier: P(t) = (1-t)³P0 + 3(1-t)²t P1 + 3(1-t)t² P2 + t³ P3
-  function bezier(p0: [number, number], p1: [number, number], p2: [number, number], p3: [number, number], steps: number): [number, number][] {
-    const out: [number, number][] = [];
-    for (let k = 1; k <= steps; k++) {
-      const t = k / steps;
-      const u = 1 - t;
-      const x = u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0];
-      const y = u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1];
-      out.push([x, y]);
-    }
-    return out;
-  }
-  // picker bezierCurveTo(cp1, cp2, end) → P0 = previous end-point.
-  const flame2D: [number, number][] = [[0, 0.7]];
-  flame2D.push(...bezier([0, 0.7], [-0.2, 0.5], [-0.4, 0.3], [-0.25, 0.1], 8));
-  flame2D.push(...bezier([-0.25, 0.1], [-0.15, -0.05], [-0.1, -0.1], [0, 0], 6));
-  flame2D.push(...bezier([0, 0], [0.1, -0.1], [0.15, -0.05], [0.25, 0.1], 6));
-  flame2D.push(...bezier([0.25, 0.1], [0.4, 0.3], [0.2, 0.5], [0, 0.7], 8));
-  // 最后一点 (0, 0.7) 跟起点重合, 删除避免 0-面积三角.
-  flame2D.pop();
-
-  const FLAME_DEPTH = 0.06;
-  const N = flame2D.length;
-  const flameStart = verts.length;
-  for (const [x, y] of flame2D) verts.push([x, y,  FLAME_DEPTH]);
-  for (const [x, y] of flame2D) verts.push([x, y, -FLAME_DEPTH]);
-
-  // Ear-clipping triangulation (火焰 shape 是凹多边形, fan 不能用)
-  function earClip(pts: [number, number][]): [number, number, number][] {
-    const tris: [number, number, number][] = [];
-    const idxs = pts.map((_, i) => i);
-    function area(a: number, b: number, c: number) {
-      const [ax, ay] = pts[a], [bx, by] = pts[b], [cx, cy] = pts[c];
-      return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-    }
-    function pointInTri(p: number, a: number, b: number, c: number) {
-      const [px, py] = pts[p];
-      const [ax, ay] = pts[a], [bx, by] = pts[b], [cx, cy] = pts[c];
-      const d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by);
-      const d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy);
-      const d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay);
-      const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
-      const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
-      return !(hasNeg && hasPos);
-    }
-    let guard = 0;
-    while (idxs.length > 2 && guard++ < 10000) {
-      let earFound = false;
-      for (let i = 0; i < idxs.length; i++) {
-        const a = idxs[(i - 1 + idxs.length) % idxs.length];
-        const b = idxs[i];
-        const c = idxs[(i + 1) % idxs.length];
-        if (area(a, b, c) <= 0) continue;
-        let any = false;
-        for (let k = 0; k < idxs.length; k++) {
-          const p = idxs[k];
-          if (p === a || p === b || p === c) continue;
-          if (pointInTri(p, a, b, c)) { any = true; break; }
-        }
-        if (!any) {
-          tris.push([a, b, c]);
-          idxs.splice(i, 1);
-          earFound = true;
-          break;
-        }
-      }
-      if (!earFound) break;
-    }
-    return tris;
-  }
-  const tris = earClip(flame2D);
-  for (const [a, b, c] of tris) {
-    idx.push([flameStart + a, flameStart + b, flameStart + c]);
-    idx.push([flameStart + N + a, flameStart + N + c, flameStart + N + b]);
-  }
-  for (let i = 0; i < N; i++) {
-    const i2 = (i + 1) % N;
-    const fa = flameStart + i;
-    const fb = flameStart + i2;
-    const ba = flameStart + N + i;
-    const bb = flameStart + N + i2;
+  // 倒三角 prism: 顶点 (0, -0.7), 底两点 (-0.7, 0.5) (0.7, 0.5)
+  // depth = 0.15 → z ∈ [-0.075, +0.075] (extrude 默认沿 +Z 但中心化等价)
+  const TRI_DEPTH = 0.075;
+  const triPts: [number, number][] = [
+    [   0, -0.7],
+    [-0.7,  0.5],
+    [ 0.7,  0.5],
+  ];
+  const start = verts.length;
+  for (const [x, y] of triPts) verts.push([x, y,  TRI_DEPTH]);
+  for (const [x, y] of triPts) verts.push([x, y, -TRI_DEPTH]);
+  // 前面 (CCW from +Z): (0,1,2)
+  idx.push([start + 0, start + 1, start + 2]);
+  // 后面 (CCW from -Z): (0,2,1)
+  idx.push([start + 3, start + 5, start + 4]);
+  // 3 侧壁
+  for (let i = 0; i < 3; i++) {
+    const i2 = (i + 1) % 3;
+    const fa = start + i;
+    const fb = start + i2;
+    const ba = start + 3 + i;
+    const bb = start + 3 + i2;
     idx.push([fa, ba, bb]);
     idx.push([fa, bb, fb]);
+  }
+
+  return { vertices: verts, triangleIndices: idx };
+}
+
+// Danger 感叹号 (bar + dot): 单独 mesh, 用高对比 material.
+// picker:
+//   bar: cylinder r=0.05 h=0.3 at (0, 0.05, 0.18)  → 竖向 cylinder
+//   dot: sphere r=0.07 at (0, -0.2, 0.18)
+// z=0.18 在三角厚度 (z=±0.075) 之外, 凸出在前面.
+function buildDangerMarkGeom() {
+  const verts: [number, number, number][] = [];
+  const idx: [number, number, number][] = [];
+
+  // bar — vertical cylinder at (0, 0.05, 0.18), r=0.05, h=0.3
+  const barCY = 0.05, barCZ = 0.18, barR = 0.05, barHH = 0.15;
+  const barSides = 16;
+  const barStart = verts.length;
+  // 底环 + 顶环
+  for (let j = 0; j < barSides; j++) {
+    const ang = (j / barSides) * Math.PI * 2;
+    verts.push([barR * Math.cos(ang), barCY - barHH, barCZ + barR * Math.sin(ang)]);
+  }
+  for (let j = 0; j < barSides; j++) {
+    const ang = (j / barSides) * Math.PI * 2;
+    verts.push([barR * Math.cos(ang), barCY + barHH, barCZ + barR * Math.sin(ang)]);
+  }
+  // 侧面
+  for (let j = 0; j < barSides; j++) {
+    const j2 = (j + 1) % barSides;
+    const a = barStart + j;
+    const b = barStart + j2;
+    const c = barStart + barSides + j;
+    const d = barStart + barSides + j2;
+    idx.push([a, b, d], [a, d, c]);
+  }
+  // 端盖 (前后 fan)
+  const barBotCenter = verts.length;
+  verts.push([0, barCY - barHH, barCZ]);
+  for (let j = 0; j < barSides; j++) {
+    const a = barStart + j;
+    const b = barStart + ((j + 1) % barSides);
+    idx.push([barBotCenter, b, a]);
+  }
+  const barTopCenter = verts.length;
+  verts.push([0, barCY + barHH, barCZ]);
+  for (let j = 0; j < barSides; j++) {
+    const a = barStart + barSides + j;
+    const b = barStart + barSides + ((j + 1) % barSides);
+    idx.push([barTopCenter, a, b]);
+  }
+
+  // dot — sphere at (0, -0.2, 0.18), r=0.07
+  const dotCY = -0.2, dotCZ = 0.18, dotR = 0.07;
+  const dotSegs = 12;
+  const dotStart = verts.length;
+  for (let i = 0; i <= dotSegs; i++) {
+    const lat = (i / dotSegs) * Math.PI;
+    for (let j = 0; j <= dotSegs; j++) {
+      const lon = (j / dotSegs) * Math.PI * 2;
+      verts.push([
+        dotR * Math.sin(lat) * Math.cos(lon),
+        dotCY + dotR * Math.cos(lat),
+        dotCZ + dotR * Math.sin(lat) * Math.sin(lon),
+      ]);
+    }
+  }
+  for (let i = 0; i < dotSegs; i++) {
+    for (let j = 0; j < dotSegs; j++) {
+      const a = dotStart + i * (dotSegs + 1) + j;
+      const b = dotStart + i * (dotSegs + 1) + (j + 1);
+      const c = dotStart + (i + 1) * (dotSegs + 1) + j;
+      const d = dotStart + (i + 1) * (dotSegs + 1) + (j + 1);
+      idx.push([a, b, d], [a, d, c]);
+    }
   }
 
   return { vertices: verts, triangleIndices: idx };
@@ -442,33 +430,30 @@ function buildJunctionGeom() {
     idx.push([o+2, o+7, o+3], [o+2, o+6, o+7]);          // 侧面 3
     idx.push([o+3, o+4, o+0], [o+3, o+7, o+4]);          // 侧面 4
   }
-  // ── J2 Split (v112 严格复刻 picker buildJ2) ──
-  // picker 源 (icon_picker_demo.html line 293-311):
-  //   trunk: cylinder r=0.08 h=0.4, position.y = -0.4 → trunk y∈[-0.6, -0.2]
-  //   arrow group (× 2):
-  //     shaft cylinder r=0.07 h=0.5    (group 局部坐标 y∈[-0.25, 0.25])
-  //     cone r=0.15 h=0.25, position.y=0.35  (group 局部 cone 中心 y=0.35,
-  //                                            底 y=0.225, 尖 y=0.475)
-  //     group rotation.z = side * -π/4
-  //     group position = (side * 0.25, 0.1, 0)
+  // ── J2 Split asymmetric (v113): 左连接 / 右断开 ──
+  // 用户反馈 v112 对称误解; 真正想要的是不对称: 左支根连主杆, 右支浮起.
   //
-  // 计算 (side=+1, θ=-π/4): 点 (x,y) → rotZ → translate
-  //   shaft 顶 (0, 0.25)  → (+0.177, +0.177) + (0.25, 0.10) = (+0.427, +0.277)
-  //   shaft 底 (0,-0.25)  → (-0.177, -0.177) + (0.25, 0.10) = (+0.073, -0.077)
-  //   cone 尖 (0, 0.475) → (+0.336, +0.336) + (0.25, 0.10) = (+0.586, +0.436)
-  //   cone 底 (0, 0.225) → (+0.159, +0.159) + (0.25, 0.10) = (+0.409, +0.259)
+  // picker 原版 J2 是 ±45° 对称两箭头, shaft 都浮在主杆顶上方 (gap 都有).
+  // 用户审美选择: 把左侧整个箭头组下移 0.123 让 shaft bot 贴主杆顶, 右保持 picker 原样.
   //
-  // trunk 顶 (0, -0.2) 与 shaft 底 (±0.073, -0.077) 之间 = 自然 Y-fork gap.
-  // 用户之前要的 "一边连接一边断开" 我误解了 — picker J2 是对称 Y-fork.
-  // 用户说"和网页一摸一样" — 故照 picker 严格对称.
+  // Trunk (picker 原样): r=0.08, y∈[-0.6, -0.2], 顶 (0, -0.2).
+  //
+  // Left 箭头组 (CONNECTED, 整体下移 (+0.073, -0.123)):
+  //   shaft top: (-0.354, +0.154)   shaft bot: ( 0,    -0.200) ← 贴 trunk top
+  //   cone tip:  (-0.513, +0.313)   cone base: (-0.336, +0.136)
+  //
+  // Right 箭头组 (DISCONNECTED, picker 原坐标):
+  //   shaft top: (+0.427, +0.277)   shaft bot: (+0.073, -0.077)
+  //   cone tip:  (+0.586, +0.436)   cone base: (+0.409, +0.259)
+  //   shaft bot 在 trunk top 上方 0.123m = 浮起 gap.
 
   // Trunk
   pushPole(0, -0.6, 0, 0, -0.2, 0, 0.08);
 
-  // 左 shaft (side=-1): shaft 顶 (-0.427, 0.277), shaft 底 (-0.073, -0.077)
-  pushPole(-0.073, -0.077, 0, -0.427, 0.277, 0, 0.07);
-  // 右 shaft (side=+1)
-  pushPole( 0.073, -0.077, 0,  0.427, 0.277, 0, 0.07);
+  // 左 shaft (CONNECTED)
+  pushPole(0, -0.2, 0, -0.354, 0.154, 0, 0.07);
+  // 右 shaft (DISCONNECTED, picker 原坐标)
+  pushPole(0.073, -0.077, 0, 0.427, 0.277, 0, 0.07);
 
   function pushArrowHead(tipX: number, tipY: number, baseX: number, baseY: number, baseR: number) {
     const dx = tipX - baseX, dy = tipY - baseY;
@@ -499,9 +484,9 @@ function buildJunctionGeom() {
       idx.push([baseCenter, a, b]);
     }
   }
-  // 左箭头 (side=-1): tip = (-0.586, 0.436), base = (-0.409, 0.259)
-  pushArrowHead(-0.586, 0.436, -0.409, 0.259, 0.15);
-  // 右箭头 (side=+1): tip = ( 0.586, 0.436), base = ( 0.409, 0.259)
+  // 左箭头 (CONNECTED, 整体下移): tip (-0.513, 0.313), base (-0.336, 0.136)
+  pushArrowHead(-0.513, 0.313, -0.336, 0.136, 0.15);
+  // 右箭头 (DISCONNECTED, picker 原坐标): tip (0.586, 0.436), base (0.409, 0.259)
   pushArrowHead( 0.586, 0.436,  0.409, 0.259, 0.15);
 
   // 底脚小球 (装饰)
@@ -572,7 +557,16 @@ function buildHutGeom() {
   idx.push([front + 1, front + 4, front + 5]);          // 底面 (1)
   idx.push([front + 1, front + 5, front + 2]);          // 底面 (2)
 
-  // ── 正面门 (picker: PlaneGeometry 0.04 × 0.8 at (0, 0.05, 0.41)) ──
+  return { vertices: verts, triangleIndices: idx };
+}
+
+// Hut H2 门 (v113): 单独 geom 用 dark material 高对比.
+// 用户反馈 "看不清就是个三角" — picker 的门是 PlaneGeometry color=0x000000.
+// Viro 单 material 不能 mix, 所以门拆成单独 ViroGeometry.
+// 加宽到 0.12 (picker 0.04 太细 在 AR 远看一条线), 高度 0.50, 凸出 z=0.41.
+function buildHutDoorGeom() {
+  const verts: [number, number, number][] = [];
+  const idx: [number, number, number][] = [];
   function pushBox(cx: number, cy: number, cz: number, hw: number, hh: number, hd: number) {
     const s = verts.length;
     verts.push([cx - hw, cy - hh, cz + hd]);
@@ -590,10 +584,9 @@ function buildHutGeom() {
     idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);
     idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
   }
-  // 门: half-width 0.02 (picker 0.04 全宽), half-height 0.40 (picker 0.8 全高),
-  //     half-depth 0.005, 中心 y=0.05, z=0.41 (略凸前面)
-  pushBox(0, 0.05, 0.41, 0.02, 0.40, 0.005);
-
+  // 门: half-width 0.06 (放宽 让 AR 远看可识别), half-height 0.25,
+  //     half-depth 0.005, 中心 y=-0.20 (底部贴地), z=0.41 (凸出前面)
+  pushBox(0, -0.20, 0.41, 0.06, 0.25, 0.005);
   return { vertices: verts, triangleIndices: idx };
 }
 
@@ -666,6 +659,17 @@ const ICON_GEOM: Record<string, { vertices: [number, number, number][]; normals?
   // v107 backwards-compat: 旧 DB 'supply'/'scenic'/'free' 兼容
   supply:   buildWaterGeom(),    // supply → water lathe 水滴
   scenic:   buildScenicGeom(),   // scenic → 5 角星 (v97 完美)
+};
+
+// v113: secondary geom 单独材质 — danger 感叹号 + hut 门.
+// 渲染时跟主 geom 同 ViroNode 但用不同 material.
+const ICON_GEOM_OVERLAY: Record<string, { vertices: [number, number, number][]; triangleIndices: [number, number, number][] }> = {
+  danger: buildDangerMarkGeom(),  // bar + dot 感叹号
+  hut:    buildHutDoorGeom(),     // 帐篷门
+};
+const ICON_OVERLAY_MAT: Record<string, string> = {
+  danger: 'iconDangerMark',
+  hut:    'iconHutDoor',
 };
 
 // v105 cleanup: 删除 PARTICLE_POSITIONS + PARTICLE_POSITIONS_V84 (反复 v81-v89
@@ -885,6 +889,24 @@ function CairnARScene(props: any) {
           readsFromDepthBuffer: true,
         };
       }
+      // v113: secondary materials for D1 感叹号 + H2 门 (高对比, 单独 ViroGeometry).
+      // picker D1 bar+dot 用 emissive #ff8800 + diffuse #fff0c8 = 自发光暖白.
+      // Viro 用 Constant + bloomThreshold 低 = bloom 后视觉等价于 emissive.
+      matDict['iconDangerMark'] = {
+        lightingModel: 'Constant',
+        diffuseColor: '#fff0c8',     // picker bar/dot 颜色
+        bloomThreshold: 0.10,         // 强 bloom = 模拟 emissive 自发光感
+        writesToDepthBuffer: true,
+        readsFromDepthBuffer: true,
+      };
+      // H2 门: 深色 (picker color=0x000000) — 用 Lambert 暗色, 跟帐篷棕色高对比.
+      matDict['iconHutDoor'] = {
+        lightingModel: 'Lambert',
+        diffuseColor: '#1a0e08',     // 接近黑的深棕 (跟 picker 黑门 + 帐篷棕协调)
+        bloomThreshold: 1.10,         // 关 bloom (深色不该发光)
+        writesToDepthBuffer: true,
+        readsFromDepthBuffer: true,
+      };
       ViroMaterials.createMaterials(matDict);
       // v105 cleanup: 删除 7 个未使用动画 (iconPulse/iconSpin/iconBreatheUp/Down/
       // iconBreathe/particleRing/particleBobA/B/C). Arch+QA review 验证只有
@@ -1128,6 +1150,9 @@ function CairnInstance(props: {
   // 5 type 全部走同一个渲染路径.
   const knownType = (normalizedType in TYPE_COLOR_TRIPLET && normalizedType in ICON_GEOM) ? normalizedType : null;
   const geom = knownType ? ICON_GEOM[knownType] : null;
+  // v113: secondary overlay geom (danger 感叹号 / hut 门) — 跟主 geom 同 node 渲染.
+  const overlayGeom = knownType ? ICON_GEOM_OVERLAY[knownType] : null;
+  const overlayMat = knownType ? ICON_OVERLAY_MAT[knownType] : null;
   const tName = knownType ?? 'generic';
   const M = (n: string) => `${n}${tName}`;       // material name helper
 
@@ -1211,6 +1236,15 @@ function CairnInstance(props: {
               materials={[M('icon')]}
             />
           )}
+          {/* v113: overlay geom — danger 感叹号 (bar+dot) / hut 门 (深色 box).
+              单独 ViroGeometry 用 contrast material, 视觉上"嵌入"主 geom. */}
+          {overlayGeom && overlayMat ? (
+            <ViroGeometry
+              vertices={overlayGeom.vertices}
+              triangleIndices={overlayGeom.triangleIndices}
+              materials={[overlayMat]}
+            />
+          ) : null}
         </ViroNode>
       </ViroNode>
 
