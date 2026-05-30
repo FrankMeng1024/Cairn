@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTrackingStore } from '../store/useTrackingStore';
@@ -236,26 +236,18 @@ export function RunningScreen() {
   // is no longer needed — followUserLocation handles positioning via
   // its built-in flyTo each entry.
 
-  // v124 fix #2: mirror HikingScreen's gestureEnabled gate. Without
-  // this the user could (or some accidental touch from screen-on
-  // could) cancel the Mapbox flyTo mid-flight, which is what made the
-  // "first second of globe" land at a different zoom level than
-  // Hiking. Disabled for the 600ms flyTo duration + 100ms safety.
+  // v127: simplified back to the Hiking pattern. gesturesEnabled is
+  // disabled for the first 700ms after mount only. Mapbox handles the
+  // fly-in via followUserLocation + animationMode='flyTo'. This is the
+  // exact same lifecycle Hiking uses; the v126 useFocusEffect + mapEpoch
+  // remount tricks made 2nd-entry behaviour different from Hiking
+  // instead of identical. Subsequent entries reuse the MapView and
+  // skip the fly-in — same as Hiking, which is what the user wanted.
   const [gesturesEnabled, setGesturesEnabled] = useState(false);
-  // v126 fix #2: bump on every focus so the MapView/Camera get a new
-  // `key` and fully remount → Mapbox replays the fly-in from zoom=0.
-  // Without this, navigating away and back leaves the same MapView
-  // alive — Mapbox keeps the previous camera state and skips the
-  // globe intro on second/third entries.
-  const [mapEpoch, setMapEpoch] = useState(0);
-  useFocusEffect(
-    React.useCallback(() => {
-      setGesturesEnabled(false);
-      setMapEpoch(e => e + 1);
-      const t = setTimeout(() => setGesturesEnabled(true), 700);
-      return () => clearTimeout(t);
-    }, []),
-  );
+  useEffect(() => {
+    const t = setTimeout(() => setGesturesEnabled(true), 700);
+    return () => clearTimeout(t);
+  }, []);
 
   // Show/hide unlocked controls with animation
   useEffect(() => {
@@ -424,7 +416,6 @@ export function RunningScreen() {
         {/* Real Mapbox basemap (or fallback if Mapbox unavailable) */}
         {MapView ? (
           <MapView
-            key={`map-${mapEpoch}`}
             style={StyleSheet.absoluteFillObject}
             styleURL={getPrimaryMapStyle()}
             logoEnabled={false}
@@ -456,17 +447,16 @@ export function RunningScreen() {
                 followPitch={0}
                 animationDuration={instantCamera ? 0 : 600}
                 animationMode={instantCamera ? 'none' : 'flyTo'}
-                // v126: force a "globe" starting view every entry so the
-                // fly-in always begins from zoom=2 regardless of what
-                // Mapbox's internal location provider already cached.
-                // Without an explicit defaultSettings the second entry
-                // sometimes started mid-zoom (Mapbox kept its prior
-                // camera state) producing the "half globe" the user saw.
-                // Coordinate is roughly the centre of the visible globe
-                // facing NZ — exact value doesn't matter at zoom=2.
+                // v127 fix #2: drop the Auckland-zoom2 default. Hiking
+                // doesn't set defaultSettings either when not in instant
+                // mode — it lets Mapbox start from its own default
+                // (zoom 0, [0,0]) and fly to the user. Forcing
+                // Auckland-zoom-2 made Running fly horizontally across
+                // the globe to the user's actual GPS, instead of zooming
+                // in straight from the full-globe view.
                 defaultSettings={instantCamera && lastCoordinate
                   ? { centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat], zoomLevel: 15 }
-                  : { centerCoordinate: [174.7633, -36.8485], zoomLevel: 2 }}
+                  : undefined}
               />
             )}
             {UserLocationComponent && foregroundGranted && (
