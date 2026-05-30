@@ -203,23 +203,11 @@ export function RunningScreen() {
   // Animated values
   const startBtnScale = useRef(new Animated.Value(1)).current;
   const controlsFade = useRef(new Animated.Value(0)).current;
-  // v120: imperative camera ref so we can flyTo the user's GPS as soon
-  // as lastCoordinate arrives, even if the Camera was already rendered
-  // with the Auckland fallback (defaultSettings only takes effect on
-  // first mount). Mirrors HikingScreen's pattern.
+  // v120: cameraRef kept for any future imperative camera ops; the
+  // initial GPS positioning is now handled by gating the <Camera> on
+  // lastCoordinate (Camera only mounts after a fix exists, so its
+  // defaultSettings is correct on first mount).
   const cameraRef = useRef<any>(null);
-
-  // v120: when lastCoordinate becomes known after first render, snap the
-  // camera to it without animation (matches HikingScreen instantCamera).
-  useEffect(() => {
-    if (!lastCoordinate || !cameraRef.current) return;
-    cameraRef.current.setCamera({
-      centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat],
-      zoomLevel: 15,
-      animationDuration: 0,
-      animationMode: 'none',
-    });
-  }, [lastCoordinate?.lat, lastCoordinate?.lng]);
 
   // Show/hide unlocked controls with animation
   useEffect(() => {
@@ -395,20 +383,27 @@ export function RunningScreen() {
             scaleBarEnabled={false}
             compassEnabled={false}
           >
-            {CameraComponent && (
+            {/* v120 fix #2: only mount the Camera once we have a GPS
+                fix. Mounting it earlier with an Auckland fallback led
+                to a visible "weird pan" the first time the user opened
+                Running (Camera initialised at Auckland, then imperative
+                setCamera flew it to the user's actual location). The
+                second open had lastCoordinate in store from session 1,
+                so it appeared to teleport — that inconsistency is the
+                user's complaint. Now: skip the Camera until GPS is
+                known; user briefly sees the unmoved map under the
+                logo-less style, then the Camera snaps to GPS without
+                animation when it mounts (defaultSettings is honoured
+                on first mount only, so this is correct). */}
+            {CameraComponent && lastCoordinate && (
               <CameraComponent
                 ref={cameraRef}
-                followUserLocation={foregroundGranted && !!lastCoordinate}
+                followUserLocation={foregroundGranted}
                 followZoomLevel={15}
-                // v118/v120: avoid the "chaotic earth" intro. defaultSettings
-                // takes effect at first mount only, so the useEffect above
-                // also imperatively setCamera when lastCoordinate arrives
-                // late. Without that, Camera mounts with Auckland fallback
-                // (or default zoom=0) and stays there until a real GPS fix
-                // triggers followUserLocation's flyTo (the "globe zoom").
-                defaultSettings={lastCoordinate
-                  ? { centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat], zoomLevel: 15 }
-                  : { centerCoordinate: [174.7633, -36.8485], zoomLevel: 6 }}
+                defaultSettings={{
+                  centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat],
+                  zoomLevel: 15,
+                }}
                 animationMode="none"
                 animationDuration={0}
               />

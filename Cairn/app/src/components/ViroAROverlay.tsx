@@ -57,7 +57,7 @@ const TYPE_COLOR_TRIPLET: Record<string, { inner: string; mid: string; outer: st
   // Water: ocean blue
   water:    { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
   // Hut H2: picker 柔棕 #c97350
-  hut:      { inner: '#e9d8b8', mid: '#a08056', outer: '#5a4630' }, // v120 muted sun-bleached wood
+  hut:      { inner: '#d8c5a4', mid: '#b89a6f', outer: '#6f5840' }, // v120 sandy oak — pleasanter than v119 chocolate, plays well with Lambert
   // Cairn: logo 绿 (picker 无对应, 保留 v110)
   cairn:    { inner: '#a8c690', mid: '#5d7c46', outer: '#2e3f1d' },
   // Catch-all
@@ -451,34 +451,44 @@ function buildJunctionGeom() {
   // Trunk
   pushPole(0, -0.6, 0, 0, -0.2, 0, 0.08);
 
-  // v120 左 shaft — replaced the straight line + arrow with a smooth
-  // quadratic-bezier curve that bends from the trunk top out to the
-  // arrow tip. The user's complaint "应该是个完美圆弧 一条45度角转弯的线"
-  // boiled down to: cylinder + cone seams always read as a crack in AR,
-  // no matter how aligned. So we drop the cone entirely and approximate
-  // the curve with N short cylinders. P0 = trunk top (0,-0.2),
-  // P2 = arrow tip (-0.513, 0.313), control point P1 = (0, 0.30) so the
-  // start tangent is straight up and the end tangent is roughly 45°.
-  // 12 segments are enough to look smooth at AR distances.
+  // v120 左 shaft v2 — earlier bezier-of-cylinders rendered nearly
+  // invisible (pushPole degenerates on short slanted segments). Switch
+  // to a 3-piece poly-line: a short vertical riser, a smooth 45° elbow
+  // joint (single thicker pole), then the angled shaft up to a separate
+  // arrow head. The two joins are hidden inside the elbow's bigger
+  // radius so seams don't show in AR.
+  //
+  // Geometry:
+  //   trunk top   (0,    -0.20)
+  //   riser end   (0,    -0.05)   — vertical 0.15m
+  //   elbow ball  ~ same point, radius 0.10 (overlaps both ends)
+  //   arrow base  (-0.354, 0.154) — diagonal from riser end
+  //   arrow tip   (-0.513, 0.313)
+  pushPole(0, -0.20, 0, 0, -0.05, 0, 0.07);   // riser
+  pushPole(0, -0.05, 0, -0.354, 0.154, 0, 0.07); // diagonal shaft
+  // Elbow ball — sphere placed at the riser-shaft junction. Hides the
+  // 45° normal break that pushPole-on-pushPole leaves visible.
   {
-    const P0x = 0,      P0y = -0.20;
-    const P1x = 0,      P1y =  0.30; // control — pulls the curve up before bending left
-    const P2x = -0.513, P2y =  0.313;
-    const N = 12;
-    const baseR = 0.07;
-    let prevX = P0x, prevY = P0y;
-    for (let i = 1; i <= N; i++) {
-      const t = i / N;
-      const it = 1 - t;
-      const x = it*it*P0x + 2*it*t*P1x + t*t*P2x;
-      const y = it*it*P0y + 2*it*t*P1y + t*t*P2y;
-      // Taper slightly toward the tip — last 2 segments shrink to 0.04
-      // so the curve fades to a point instead of ending blunt.
-      const r = i >= N - 1
-        ? baseR * (1 - (i - (N - 2)) * 0.45)
-        : baseR;
-      pushPole(prevX, prevY, 0, x, y, 0, r);
-      prevX = x; prevY = y;
+    const cx = 0, cy = -0.05, cz = 0, r = 0.10;
+    const start = verts.length;
+    const segs = 10;
+    for (let i = 0; i <= segs; i++) {
+      const phi = (i / segs) * Math.PI; // 0..π
+      const yy = cy + r * Math.cos(phi);
+      const ringR = r * Math.sin(phi);
+      for (let j = 0; j < segs; j++) {
+        const th = (j / segs) * Math.PI * 2;
+        verts.push([cx + ringR * Math.cos(th), yy, cz + ringR * Math.sin(th)]);
+      }
+    }
+    for (let i = 0; i < segs; i++) {
+      for (let j = 0; j < segs; j++) {
+        const a = start + i * segs + j;
+        const b = start + i * segs + ((j + 1) % segs);
+        const c = start + (i + 1) * segs + j;
+        const d = start + (i + 1) * segs + ((j + 1) % segs);
+        idx.push([a, b, d], [a, d, c]);
+      }
     }
   }
   // 右 shaft (DISCONNECTED, picker 原坐标)
@@ -513,9 +523,12 @@ function buildJunctionGeom() {
       idx.push([baseCenter, a, b]);
     }
   }
-  // v120: left arrowhead removed — the bezier curve above tapers to a
-  // point at its end, giving a smooth fade-out without the cone seam.
-  // Right side keeps the explicit arrow + visible disconnect (intentional).
+  // Left arrow — base sits at the diagonal shaft's end (-0.354, 0.154);
+  // the elbow ball above masks the riser-shaft seam, so the only visible
+  // joint is shaft→arrow which is masked by the arrow base radius (0.15
+  // > shaft 0.07).
+  pushArrowHead(-0.513, 0.313, -0.354, 0.154, 0.15);
+  // 右箭头 (DISCONNECTED, picker 原坐标)
   pushArrowHead( 0.586, 0.436,  0.409, 0.259, 0.15);
 
   // 底脚小球 (装饰)
@@ -935,6 +948,20 @@ function CairnARScene(props: any) {
             metalness: 0.0,        // 玉石不是金属
             roughness: 0.10,       // 高光锐利
             bloomThreshold: 0.40,  // 高光弱 bloom
+            writesToDepthBuffer: true,
+            readsFromDepthBuffer: true,
+          };
+        } else if (t === 'hut') {
+          // v120 hut: matte wood, no metalness, low bloom, Lambert
+          // shading so the box body and the angled roof slopes catch
+          // distinctly different light intensities — that contrast is
+          // what makes the model read as 3D in AR. The previous PBR +
+          // metalness=0.6 + bloomThreshold=0.30 was washing the whole
+          // hut into a flat silhouette.
+          matDict[`icon${t}`] = {
+            lightingModel: 'Lambert',
+            diffuseColor: c.mid,
+            bloomThreshold: 1.10,  // effectively off
             writesToDepthBuffer: true,
             readsFromDepthBuffer: true,
           };

@@ -915,16 +915,16 @@ function StopSummarySheet({
 
           <View style={stopSheetStyles.header}>
             <Text style={[stopSheetStyles.title, { color: accent }]}>{label} complete</Text>
-            <Text style={stopSheetStyles.subtitle}>Name it, or just save.</Text>
           </View>
 
           {/* v120: stats row + GPS sample count removed — user already saw
               all of those in the live tracking bar above. The sheet should
               only do what the bar can't: name + confirm. */}
 
-          {/* Name input */}
+          {/* Name input — placeholder shows the default name so users
+              don't need a separate caption explaining "leave blank to
+              use the default". */}
           <View style={stopSheetStyles.inputWrap}>
-            <Text style={stopSheetStyles.inputLabel}>Name (optional)</Text>
             <TextInput
               style={stopSheetStyles.input}
               placeholder={defaultName}
@@ -934,7 +934,6 @@ function StopSummarySheet({
               autoFocus={false}
               returnKeyType="done"
             />
-            <Text style={stopSheetStyles.inputHint}>Leave blank to use the default name above.</Text>
           </View>
 
           {/* Actions: Resume left, Save right */}
@@ -1171,6 +1170,10 @@ export function HikingScreen() {
   const routes = useRouteStore(s => s.routes);
   const loadRoutes = useRouteStore(s => s.loadRoutes);
   const isTracking = status === 'tracking';
+  // v120: paused state behaves like tracking for layout purposes (the
+  // user pauses via Stop, the summary sheet appears, but the live stats
+  // bar stays visible so the user can still see distance/time/elev).
+  const isTrackingOrPaused = status === 'tracking' || status === 'paused';
 
   useEffect(() => { loadRoutes(); }, []);
 
@@ -1514,7 +1517,7 @@ export function HikingScreen() {
         )}
 
         {/* Tracking stats bar */}
-        {isTracking && (
+        {isTrackingOrPaused && (
           <View style={styles.trackingBar}>
             <View style={styles.trackingStat}>
               <Text style={styles.trackingValueLg}>{distDisplay}</Text>
