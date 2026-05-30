@@ -236,6 +236,18 @@ export function RunningScreen() {
   // is no longer needed — followUserLocation handles positioning via
   // its built-in flyTo each entry.
 
+  // v124 fix #2: mirror HikingScreen's gestureEnabled gate. Without
+  // this the user could (or some accidental touch from screen-on
+  // could) cancel the Mapbox flyTo mid-flight, which is what made the
+  // "first second of globe" land at a different zoom level than
+  // Hiking. Disabled for the 600ms flyTo duration + 100ms safety.
+  const [gesturesEnabled, setGesturesEnabled] = useState(false);
+  useEffect(() => {
+    setGesturesEnabled(false);
+    const t = setTimeout(() => setGesturesEnabled(true), 700);
+    return () => clearTimeout(t);
+  }, []);
+
   // Show/hide unlocked controls with animation
   useEffect(() => {
     Animated.timing(controlsFade, {
@@ -409,6 +421,14 @@ export function RunningScreen() {
             attributionEnabled={false}
             scaleBarEnabled={false}
             compassEnabled={false}
+            // v124 fix #2: disable gestures during the fly-in so an
+            // accidental touch doesn't cancel the camera mid-animation
+            // (which is what made the Running fly-in land mid-zoom
+            // instead of starting at the full globe like Hiking does).
+            scrollEnabled={gesturesEnabled}
+            zoomEnabled={gesturesEnabled}
+            rotateEnabled={gesturesEnabled}
+            pitchEnabled={gesturesEnabled}
           >
             {/* v122 fix #2: full mirror of HikingScreen — Camera always
                 mounts. instantCamera mode (lastCoordinate known) uses
@@ -423,6 +443,7 @@ export function RunningScreen() {
                 ref={cameraRef}
                 followUserLocation={!instantCamera && foregroundGranted}
                 followZoomLevel={15}
+                followPitch={0}
                 animationDuration={instantCamera ? 0 : 600}
                 animationMode={instantCamera ? 'none' : 'flyTo'}
                 defaultSettings={instantCamera && lastCoordinate

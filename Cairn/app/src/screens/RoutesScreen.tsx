@@ -455,17 +455,10 @@ function RoutesTab({ onGoToActivities }: { onGoToActivities?: () => void }) {
   // Filter + sort state — local-only, resets if user leaves the tab.
   const [filter, setFilter] = useState<'all' | 'hiking' | 'running'>('all');
   const [sort, setSort] = useState<'recent' | 'distance-desc' | 'distance-asc'>('recent');
-  // v118: search by name. Routes can pile up on long-running users; a quick
-  // typed filter is faster than scrolling. Case-insensitive substring match.
-  const [search, setSearch] = useState('');
 
   const visible = useMemo(() => {
     let list = routes;
     if (filter !== 'all') list = list.filter(r => r.activityMode === filter);
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter(r => (r.name ?? '').toLowerCase().includes(q));
-    }
     if (sort === 'recent') {
       list = [...list].sort((a, b) => b.updatedAt - a.updatedAt);
     } else if (sort === 'distance-desc') {
@@ -474,7 +467,7 @@ function RoutesTab({ onGoToActivities }: { onGoToActivities?: () => void }) {
       list = [...list].sort((a, b) => a.distanceM - b.distanceM);
     }
     return list;
-  }, [routes, filter, sort, search]);
+  }, [routes, filter, sort]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -498,29 +491,10 @@ function RoutesTab({ onGoToActivities }: { onGoToActivities?: () => void }) {
         data={visible}
         keyExtractor={r => r.id}
         contentContainerStyle={styles.listContent}
-        ListHeaderComponent={
-          /* v118: New Route button removed per route-rules.md §2.3 — manual
-             route drawing is forbidden; routes can only be created from a
-             real walked Activity. The header is now a search field instead. */
-          <View style={styles.searchWrap}>
-            <Icon name="Map" size={16} color={Colors.textMuted} strokeWidth={2} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search routes by name…"
-              placeholderTextColor={Colors.textMuted}
-              value={search}
-              onChangeText={setSearch}
-              returnKeyType="search"
-              clearButtonMode="while-editing"
-              autoCorrect={false}
-            />
-            {search.length > 0 && Platform.OS === 'android' && (
-              <TouchableOpacity onPress={() => setSearch('')}>
-                <Icon name="X" size={16} color={Colors.textMuted} strokeWidth={2} />
-              </TouchableOpacity>
-            )}
-          </View>
-        }
+        /* v124 fix #8: search field removed — typical route counts are
+           low enough that filter chips + sort are sufficient. New Route
+           button is also gone (per route-rules.md §2.3 manual drawing
+           is forbidden). The list now starts straight at the cards. */
         ListEmptyComponent={
           /* v118: friendly empty state. If no routes exist at all, guide
              the user to Activities (the only valid creation source). If
@@ -549,7 +523,7 @@ function RoutesTab({ onGoToActivities }: { onGoToActivities?: () => void }) {
           ) : (
             <View style={{ alignItems: 'center', paddingTop: 40 }}>
               <Text style={styles.emptyHint}>
-                {search.trim() ? 'No routes match your search.' : 'No routes match this filter.'}
+                {'No routes match this filter.'}
               </Text>
             </View>
           )

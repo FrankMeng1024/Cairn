@@ -540,48 +540,44 @@ export function RouteEditorScreen() {
 
       {/* Top bar — explicit safe-area inset so the back/save chips
           never overlap the Dynamic Island.
-          v123 fix #8: in VIEW mode show Edit + Delete; in EDIT mode
-          show Save + Delete. Back arrow always present. */}
+          v124 fix #8: in VIEW mode the top bar is JUST the back button.
+          Edit + Delete moved to the bottom panel for parity with the
+          Activity detail layout. EDIT mode keeps Save + (Delete) on top. */}
       <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
         <View style={styles.topRow}>
           <BackButton variant="pill" />
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {routeId && existingRoute && (
-              <TouchableOpacity
-                style={styles.deleteTopBtn}
-                onPress={() => {
-                  Alert.alert(
-                    'Delete route?',
-                    `"${existingRoute.name}" will be removed. Source activity stays.`,
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => {
-                          deleteRoute(routeId);
-                          nav.goBack();
+          {editMode && (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {routeId && existingRoute && (
+                <TouchableOpacity
+                  style={styles.deleteTopBtn}
+                  onPress={() => {
+                    Alert.alert(
+                      'Delete route?',
+                      `"${existingRoute.name}" will be removed. Source activity stays.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: () => {
+                            deleteRoute(routeId);
+                            nav.goBack();
+                          },
                         },
-                      },
-                    ],
-                  );
-                }}
-              >
-                <Icon name="Trash2" size={16} color={Colors.danger} strokeWidth={2.5} />
-              </TouchableOpacity>
-            )}
-            {editMode ? (
+                      ],
+                    );
+                  }}
+                >
+                  <Icon name="Trash2" size={16} color={Colors.danger} strokeWidth={2.5} />
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.saveTopBtn} onPress={handleSave}>
                 <Icon name="Check" size={16} color="#fff" strokeWidth={2.5} />
                 <Text style={styles.saveTopBtnText}>Save</Text>
               </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={styles.saveTopBtn} onPress={() => setEditMode(true)}>
-                <Icon name="Pencil" size={16} color="#fff" strokeWidth={2.5} />
-                <Text style={styles.saveTopBtnText}>Edit</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          )}
         </View>
       </View>
 
@@ -623,13 +619,49 @@ export function RouteEditorScreen() {
               <Text style={styles.viewSummaryName} numberOfLines={1}>
                 {existingRoute?.name ?? name ?? 'Route'}
               </Text>
-              <Text style={styles.viewSummaryHint}>
-                Tap Edit to modify · Delete to remove this route
-              </Text>
+              <View style={styles.viewStatsInline}>
+                <Text style={styles.viewStatText}>{waypoints.length} waypoints</Text>
+                <Text style={styles.viewStatDot}>·</Text>
+                <Text style={styles.viewStatText}>{formatDistance(totalDistanceM, 'km', 1)} km</Text>
+              </View>
             </View>
-            <View style={styles.statsRow}>
-              <Text style={styles.statText}>{waypoints.length} waypoints</Text>
-              <Text style={styles.statText}>{formatDistance(totalDistanceM, 'km', 1)} km</Text>
+            {/* v124 fix #8: Edit + Delete moved into the bottom panel.
+                Matches Activity detail's [Save as Route, Delete] row
+                (Edit-on-left, Delete-on-right consistency rule). */}
+            <View style={styles.viewActions}>
+              <TouchableOpacity
+                style={[styles.viewBtn, styles.viewEditBtn]}
+                onPress={() => setEditMode(true)}
+                activeOpacity={0.85}
+              >
+                <Icon name="Pencil" size={16} color="#fff" strokeWidth={2.5} />
+                <Text style={styles.viewEditBtnText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.viewBtn, styles.viewDeleteBtn]}
+                onPress={() => {
+                  if (!routeId) return;
+                  Alert.alert(
+                    'Delete route?',
+                    `"${existingRoute?.name ?? 'This route'}" will be removed. Source activity stays.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                          deleteRoute(routeId);
+                          nav.goBack();
+                        },
+                      },
+                    ],
+                  );
+                }}
+                activeOpacity={0.85}
+              >
+                <Icon name="Trash2" size={16} color={Colors.danger} strokeWidth={2.5} />
+                <Text style={styles.viewDeleteBtnText}>Delete</Text>
+              </TouchableOpacity>
             </View>
           </>
         ) : (
@@ -773,6 +805,55 @@ const styles = StyleSheet.create({
   viewSummaryHint: {
     fontSize: FontSize.small,
     color: Colors.textSecondary,
+  },
+  // v124 fix #8: stats row inline with the route name (single block).
+  viewStatsInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  viewStatText: {
+    fontSize: FontSize.small,
+    color: Colors.textSecondary,
+  },
+  viewStatDot: {
+    fontSize: FontSize.small,
+    color: Colors.textMuted,
+  },
+  // v124 fix #8: Edit + Delete buttons in the VIEW-mode bottom panel.
+  // Equal-width siblings, matches Activity detail's two-button row.
+  viewActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  viewBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: Radius.button,
+  },
+  viewEditBtn: {
+    backgroundColor: Colors.primary,
+  },
+  viewEditBtnText: {
+    color: '#fff',
+    fontSize: FontSize.body,
+    fontWeight: '700',
+  },
+  viewDeleteBtn: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.danger,
+  },
+  viewDeleteBtnText: {
+    color: Colors.danger,
+    fontSize: FontSize.body,
+    fontWeight: '700',
   },
 
   // KeyboardAvoidingView wrapper sits at the bottom of the screen and
