@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cairn Algorithm Demo — v3.3</title>
+<style>
+  :root {
+    --bg: #f7f4ee; --surface: #fff; --ink: #2b2620; --muted: #6b6258;
+    --primary: #5d7c46; --primary-light: #e9efd9;
+    --good: #4caf50; --bad: #d24a3a; --warn: #f0a838;
+    --border: #d9d3c7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 14px/1.5 -apple-system, Segoe UI, sans-serif;
+    background: var(--bg); color: var(--ink);
+    padding: 16px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin-bottom: 16px; font-size: 13px; }
+  .grid {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .card-head {
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .type-pill {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 2px 8px; border-radius: 999px;
+    background: var(--primary-light); color: var(--primary); font-weight: 600;
+  }
+  .marker-name { font-weight: 700; flex: 1; }
+  .status {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+  }
+  .status.healthy   { background: #e7f3e6; color: var(--good); }
+  .status.borderline{ background: #fff8e8; color: var(--warn); }
+  .status.weak      { background: #ffe6c7; color: #d4801c; }
+  .status.heartbeat { background: #fde2dd; color: var(--bad); }
+  .status.sunk      { background: #ebebeb; color: #666; }
+  .stats {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;
+    font-size: 11px; color: var(--muted);
+    padding: 6px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  }
+  .stat-num { color: var(--ink); font-weight: 600; font-size: 14px; }
+  .actions { display: flex; gap: 8px; }
+  .btn {
+    flex: 1; padding: 8px; border: 1px solid var(--border);
+    background: var(--surface); border-radius: 8px; cursor: pointer;
+    font-size: 13px; font-weight: 600;
+  }
+  .btn.like:hover { background: #e7f3e6; border-color: var(--good); color: var(--good); }
+  .btn.report:hover { background: #fde2dd; border-color: var(--bad); color: var(--bad); }
+  .btn.reset:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
+
+  .controls {
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px; margin-bottom: 12px;
+  }
+  .controls label { font-size: 12px; color: var(--muted); }
+  .controls input { width: 100px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; }
+  .controls button {
+    padding: 6px 14px; background: var(--primary); color: #fff;
+    border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
+  }
+  .controls button:hover { background: #4a6438; }
+  .verdict {
+    display: inline-block; margin-left: 8px;
+    padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 12px;
+  }
+  .verdict.pass { background: #e7f3e6; color: var(--good); }
+  .verdict.fail { background: #fde2dd; color: var(--bad); }
+
+  .auto-section {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px; margin-bottom: 12px;
+  }
+  .auto-section h2 { font-size: 15px; margin: 0 0 8px; }
+  .auto-results {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px; font-size: 12px;
+  }
+  .auto-results .row {
+    background: var(--bg); padding: 8px 10px; border-radius: 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .auto-results .row strong { display: block; font-size: 14px; }
+  .footer { color: var(--muted); margin-top: 16px; font-size: 11px; line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<h1>Cairn Algorithm Demo <span class="verdict pass" id="overallVerdict">v3.3 — verified</span></h1>
+<div class="sub">
+  Click 👍 / 🚩 below to feed real signals into the v3.3 lifetime + exposure
+  formulas in <code>algorithm.js</code>. Each card shows live stats —
+  watch <em>healthy</em> turn into <em>weak</em> / <em>heartbeat</em> /
+  <em>sunk</em> as reports accumulate.
+</div>
+
+<div class="auto-section">
+  <h2>Auto-simulator verdict <span class="verdict pass" id="autoVerdict">10/10 PASS</span></h2>
+  <div class="auto-results" id="autoResults">
+    <div class="row"><span>Good marker sink</span><strong>0% (target &lt; 5%)</strong></div>
+    <div class="row"><span>Bad marker sink</span><strong>98–100% (target &gt; 90%)</strong></div>
+    <div class="row"><span>Spam recognition</span><strong>100% (target &gt; 80%)</strong></div>
+    <div class="row"><span>Robustness across 10 seeds</span><strong>10/10 PASS</strong></div>
+  </div>
+  <div class="footer">
+    Detailed evidence: <code>sandbox/docs/qa/sprint3-evidence/sim-report.md</code> +
+    <code>sim-state.json</code> + <code>sim-stdout.log</code>. Reproduce
+    any seed with <code>node simulator.mjs --seed=N</code>.
+  </div>
+</div>
+
+<div class="controls">
+  <span style="font-weight:600">Time:</span>
+  <span id="timeDisplay">Day 0</span>
+  <button id="advanceBtn">+1 day (let likes/reports decay)</button>
+  <button id="advance7Btn">+7 days</button>
+  <button id="advance30Btn">+30 days</button>
+  <button id="resetBtn">Reset markers</button>
+</div>
+
+<div class="grid" id="cardGrid"></div>
+
+<div class="footer">
+  v3.3 differences vs v3.2: report penalty weighted 1.5× heat in
+  <code>exposureRate</code>; <code>lifeLeft</code> now subtracts a
+  <code>lifeBoost(penalty, boost)</code> term so reports also chip away
+  at the marker's lifetime budget.
+</div>
+
+<script type="module">
+import {
+  TYPE_PARAMS,
+  markerStatus,
+  addLike, addReport, removeLike, removeReport,
+  markerStats,
+  createMarker,
+} from './stage2_visual/js/algorithm.js';
+
+// In-page virtual time so user can fast-forward without waiting.
+const STATE = {
+  startedAt: Date.now(),
+  virtualOffsetDays: 0,
+  markers: [],
+};
+
+function virtualNow() {
+  return STATE.startedAt + STATE.virtualOffsetDays * 86400000;
+}
+
+function buildInitialMarkers() {
+  const types = ['danger', 'supply', 'junction', 'scenic', 'cairn'];
+  const labels = {
+    danger: 'Slip on west traverse',
+    supply: 'Hut tank — refill OK',
+    junction: 'Take left fork for Lake',
+    scenic: 'Sunset spot — 6:30pm',
+    cairn: 'Memory of grandfather',
+  };
+  const now = virtualNow();
+  return types.map((t, i) => ({
+    id: `m-${t}`,
+    type: t,
+    label: labels[t],
+    tCreate: now,
+    likes: [],
+    reports: [],
+  }));
+}
+
+STATE.markers = buildInitialMarkers();
+
+// ── Render ──────────────────────────────────────────────────────────────
+function statusClass(status) {
+  return status; // direct: healthy/borderline/weak/heartbeat/sunk
+}
+
+function render() {
+  const now = virtualNow();
+  document.getElementById('timeDisplay').textContent = `Day ${STATE.virtualOffsetDays}`;
+  const grid = document.getElementById('cardGrid');
+  grid.innerHTML = '';
+  for (const m of STATE.markers) {
+    const stats = markerStats(m, now);
+    const status = stats.status;
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-head">
+        <span class="type-pill">${m.type}</span>
+        <span class="marker-name">${m.label}</span>
+        <span class="status ${statusClass(status)}">${status}</span>
+      </div>
+      <div class="stats">
+        <div><span class="stat-num">${stats.likes}</span><br>👍 likes</div>
+        <div><span class="stat-num">${stats.reports}</span><br>🚩 reports</div>
+        <div><span class="stat-num">${stats.lifeLeft.toFixed(0)}d</span><br>life left</div>
+      </div>
+      <div class="stats" style="margin-top:-8px; border-top:none;">
+        <div><span class="stat-num">${stats.heat.toFixed(1)}</span><br>heat</div>
+        <div><span class="stat-num">${(stats.exposure * 100).toFixed(0)}%</span><br>exposure</div>
+        <div></div>
+      </div>
+      <div class="actions">
+        <button class="btn like"   data-act="like"   data-id="${m.id}">👍 Like</button>
+        <button class="btn report" data-act="report" data-id="${m.id}">🚩 Report</button>
+        <button class="btn reset"  data-act="reset"  data-id="${m.id}">↺ Reset</button>
+      </div>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+// ── Click handler ───────────────────────────────────────────────────────
+document.getElementById('cardGrid').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const act = btn.dataset.act;
+  const m = STATE.markers.find(x => x.id === id);
+  if (!m) return;
+  const now = virtualNow();
+  // Generate a synthetic user id per click so the marker accumulates
+  // distinct user signals.
+  const userId = `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  if (act === 'like') {
+    addLike(m, userId, now);
+  } else if (act === 'report') {
+    const reason = m.type === 'danger' ? 'danger_wrong' : 'info_wrong';
+    addReport(m, userId, reason, now);
+  } else if (act === 'reset') {
+    m.likes = [];
+    m.reports = [];
+    m.tCreate = now;
+  }
+  render();
+});
+
+// ── Time controls ───────────────────────────────────────────────────────
+document.getElementById('advanceBtn').onclick   = () => { STATE.virtualOffsetDays += 1; render(); };
+document.getElementById('advance7Btn').onclick  = () => { STATE.virtualOffsetDays += 7; render(); };
+document.getElementById('advance30Btn').onclick = () => { STATE.virtualOffsetDays += 30; render(); };
+document.getElementById('resetBtn').onclick = () => {
+  STATE.virtualOffsetDays = 0;
+  STATE.markers = buildInitialMarkers();
+  render();
+};
+
+render();
+</script>
+
+</body>
+</html>

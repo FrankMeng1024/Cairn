@@ -1,0 +1,57 @@
+{
+  "timestamp": "2026-05-30T17:20:23.630Z",
+  "days": 90,
+  "walkerCount": 1000,
+  "personaCount": {
+    "social_group": 428,
+    "malicious_reporter": 7,
+    "explorer_solo": 282,
+    "lurker_silent": 180,
+    "critic_skeptical": 45,
+    "enthusiast_creator": 50,
+    "spammer": 8
+  },
+  "buckets": {
+    "good": {
+      "sunk": 0,
+      "healthy": 50,
+      "borderline": 0,
+      "weak": 0,
+      "heartbeat": 0,
+      "total": 50
+    },
+    "bad": {
+      "sunk": 50,
+      "healthy": 0,
+      "borderline": 0,
+      "weak": 0,
+      "heartbeat": 0,
+      "total": 50
+    },
+    "neutral": {
+      "sunk": 0,
+      "healthy": 30,
+      "borderline": 0,
+      "weak": 0,
+      "heartbeat": 0,
+      "total": 30
+    },
+    "spam": {
+      "sunk": 20,
+      "healthy": 0,
+      "borderline": 0,
+      "weak": 0,
+      "heartbeat": 0,
+      "total": 20
+    }
+  },
+  "verdicts": {
+    "goodSunkRate": 0,
+    "badSunkRate": 1,
+    "spamSunkRate": 1,
+    "goodSunkPass": true,
+    "badSunkPass": true,
+    "spamRecognised": true
+  },
+  "overallPass": true
+}
