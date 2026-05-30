@@ -456,9 +456,17 @@ export function RunningScreen() {
                 followPitch={0}
                 animationDuration={instantCamera ? 0 : 600}
                 animationMode={instantCamera ? 'none' : 'flyTo'}
+                // v126: force a "globe" starting view every entry so the
+                // fly-in always begins from zoom=2 regardless of what
+                // Mapbox's internal location provider already cached.
+                // Without an explicit defaultSettings the second entry
+                // sometimes started mid-zoom (Mapbox kept its prior
+                // camera state) producing the "half globe" the user saw.
+                // Coordinate is roughly the centre of the visible globe
+                // facing NZ — exact value doesn't matter at zoom=2.
                 defaultSettings={instantCamera && lastCoordinate
                   ? { centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat], zoomLevel: 15 }
-                  : undefined}
+                  : { centerCoordinate: [174.7633, -36.8485], zoomLevel: 2 }}
               />
             )}
             {UserLocationComponent && foregroundGranted && (
