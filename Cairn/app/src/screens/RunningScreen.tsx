@@ -383,29 +383,21 @@ export function RunningScreen() {
             scaleBarEnabled={false}
             compassEnabled={false}
           >
-            {/* v120 fix #2: only mount the Camera once we have a GPS
-                fix. Mounting it earlier with an Auckland fallback led
-                to a visible "weird pan" the first time the user opened
-                Running (Camera initialised at Auckland, then imperative
-                setCamera flew it to the user's actual location). The
-                second open had lastCoordinate in store from session 1,
-                so it appeared to teleport — that inconsistency is the
-                user's complaint. Now: skip the Camera until GPS is
-                known; user briefly sees the unmoved map under the
-                logo-less style, then the Camera snaps to GPS without
-                animation when it mounts (defaultSettings is honoured
-                on first mount only, so this is correct). */}
-            {CameraComponent && lastCoordinate && (
+            {/* v121 fix #2: mirror HikingScreen's instantCamera logic
+                exactly. When lastCoordinate is known, mount Camera with
+                instant placement (defaultSettings + no animation). When
+                not known, fall back to followUserLocation with a flyTo
+                animation — same as Hiking. */}
+            {CameraComponent && (
               <CameraComponent
                 ref={cameraRef}
-                followUserLocation={foregroundGranted}
+                followUserLocation={foregroundGranted && !lastCoordinate}
                 followZoomLevel={15}
-                defaultSettings={{
-                  centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat],
-                  zoomLevel: 15,
-                }}
-                animationMode="none"
-                animationDuration={0}
+                animationDuration={lastCoordinate ? 0 : 600}
+                animationMode={lastCoordinate ? 'none' : 'flyTo'}
+                defaultSettings={lastCoordinate
+                  ? { centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat], zoomLevel: 15 }
+                  : undefined}
               />
             )}
             {UserLocationComponent && foregroundGranted && (

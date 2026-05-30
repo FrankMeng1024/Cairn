@@ -481,7 +481,17 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
       const pre = get();
       if (pre.status !== 'idle' && pre.trackPoints.length < 2) {
         crashLogger.breadcrumb(`session:stop:too-short pts=${pre.trackPoints.length} — preserving session`);
-        set({ lastStopReason: 'too-short' });
+        // v121 fix: ALWAYS delete the empty server row so it doesn't
+        // appear in Activities as a 0km/0s ghost record. Whether the
+        // user picks "Got it" (continue) or "End anyway" (discard),
+        // the server-side row created by startSession() is meaningless.
+        // Clear the remoteSessionId locally so a subsequent stopTracking
+        // (after the user actually walks) falls through to the legacy
+        // POST /api/sessions path which will create a fresh row.
+        if (pre.remoteSessionId) {
+          deleteRemoteSession(pre.remoteSessionId).catch(() => {});
+        }
+        set({ lastStopReason: 'too-short', remoteSessionId: null });
         return;
       }
     }

@@ -3,6 +3,20 @@
  */
 const pool = require('../config/db');
 
+/**
+ * Normalise a JSON column value. mysql2 auto-parses JSON columns on
+ * modern driver+server combos (returns the JS value directly). Older
+ * combos return a string. Accept both — anything that's already a
+ * non-string value is returned as-is; strings are JSON.parsed.
+ */
+function parseJsonCol(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') {
+    try { return JSON.parse(v); } catch { return null; }
+  }
+  return v; // already an object/array (mysql2 auto-parse)
+}
+
 const Route = {
   async create({ userId, name, description, points, waypoints, distanceM, elevationGainM }) {
     // v120 fix: explicitly validate + stringify so mysql2 doesn't fall
@@ -49,8 +63,8 @@ const Route = {
     const r = rows[0];
     return {
       ...r,
-      points:    r.points    ? JSON.parse(r.points)    : [],
-      waypoints: r.waypoints ? JSON.parse(r.waypoints) : [],
+      points:    parseJsonCol(r.points)    ?? [],
+      waypoints: parseJsonCol(r.waypoints) ?? [],
     };
   },
 

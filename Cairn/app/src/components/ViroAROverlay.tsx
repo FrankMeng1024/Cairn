@@ -57,7 +57,7 @@ const TYPE_COLOR_TRIPLET: Record<string, { inner: string; mid: string; outer: st
   // Water: ocean blue
   water:    { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
   // Hut H2: picker 柔棕 #c97350
-  hut:      { inner: '#d8c5a4', mid: '#b89a6f', outer: '#6f5840' }, // v120 sandy oak — pleasanter than v119 chocolate, plays well with Lambert
+  hut:      { inner: '#e8d4b3', mid: '#c5a982', outer: '#5a4630' }, // v122 paper-bag warm beige (body color)
   // Cairn: logo 绿 (picker 无对应, 保留 v110)
   cairn:    { inner: '#a8c690', mid: '#5d7c46', outer: '#2e3f1d' },
   // Catch-all
@@ -451,48 +451,22 @@ function buildJunctionGeom() {
   // Trunk
   pushPole(0, -0.6, 0, 0, -0.2, 0, 0.08);
 
-  // v120 左 shaft v2 — earlier bezier-of-cylinders rendered nearly
-  // invisible (pushPole degenerates on short slanted segments). Switch
-  // to a 3-piece poly-line: a short vertical riser, a smooth 45° elbow
-  // joint (single thicker pole), then the angled shaft up to a separate
-  // arrow head. The two joins are hidden inside the elbow's bigger
-  // radius so seams don't show in AR.
+  // v122 junction: back to the picker_demo J2 split — two arms branching
+  // straight from the trunk top, each is a single straight pole + arrow
+  // head. Left arm is connected (its pole base sits on trunk top y=-0.20).
+  // Right arm is disconnected (its pole base floats 0.12m above trunk top
+  // at y=-0.08), giving the visible gap. Earlier attempts at curves /
+  // elbow balls all rendered with seams or invisible segments.
   //
-  // Geometry:
-  //   trunk top   (0,    -0.20)
-  //   riser end   (0,    -0.05)   — vertical 0.15m
-  //   elbow ball  ~ same point, radius 0.10 (overlaps both ends)
-  //   arrow base  (-0.354, 0.154) — diagonal from riser end
-  //   arrow tip   (-0.513, 0.313)
-  pushPole(0, -0.20, 0, 0, -0.05, 0, 0.07);   // riser
-  pushPole(0, -0.05, 0, -0.354, 0.154, 0, 0.07); // diagonal shaft
-  // Elbow ball — sphere placed at the riser-shaft junction. Hides the
-  // 45° normal break that pushPole-on-pushPole leaves visible.
-  {
-    const cx = 0, cy = -0.05, cz = 0, r = 0.10;
-    const start = verts.length;
-    const segs = 10;
-    for (let i = 0; i <= segs; i++) {
-      const phi = (i / segs) * Math.PI; // 0..π
-      const yy = cy + r * Math.cos(phi);
-      const ringR = r * Math.sin(phi);
-      for (let j = 0; j < segs; j++) {
-        const th = (j / segs) * Math.PI * 2;
-        verts.push([cx + ringR * Math.cos(th), yy, cz + ringR * Math.sin(th)]);
-      }
-    }
-    for (let i = 0; i < segs; i++) {
-      for (let j = 0; j < segs; j++) {
-        const a = start + i * segs + j;
-        const b = start + i * segs + ((j + 1) % segs);
-        const c = start + (i + 1) * segs + j;
-        const d = start + (i + 1) * segs + ((j + 1) % segs);
-        idx.push([a, b, d], [a, d, c]);
-      }
-    }
-  }
-  // 右 shaft (DISCONNECTED, picker 原坐标)
-  pushPole(0.073, -0.077, 0, 0.427, 0.277, 0, 0.07);
+  // Pole length is the radius of the diagonal angle — sin(45°) ≈ 0.707
+  // so a 0.50m diagonal gives a pole reaching (-0.354, +0.154) from the
+  // trunk top (0, -0.20). Arrow head is 0.18m beyond that.
+  // Left arm — connected
+  pushPole(0, -0.20, 0, -0.354, 0.154, 0, 0.07);
+  pushArrowHead(-0.513, 0.313, -0.354, 0.154, 0.13);
+  // Right arm — disconnected, base 0.12m above trunk top
+  pushPole(0.085, -0.085, 0, 0.439, 0.269, 0, 0.07);
+  pushArrowHead(0.598, 0.428, 0.439, 0.269, 0.13);
 
   function pushArrowHead(tipX: number, tipY: number, baseX: number, baseY: number, baseR: number) {
     const dx = tipX - baseX, dy = tipY - baseY;
@@ -523,13 +497,9 @@ function buildJunctionGeom() {
       idx.push([baseCenter, a, b]);
     }
   }
-  // Left arrow — base sits at the diagonal shaft's end (-0.354, 0.154);
-  // the elbow ball above masks the riser-shaft seam, so the only visible
-  // joint is shaft→arrow which is masked by the arrow base radius (0.15
-  // > shaft 0.07).
-  pushArrowHead(-0.513, 0.313, -0.354, 0.154, 0.15);
-  // 右箭头 (DISCONNECTED, picker 原坐标)
-  pushArrowHead( 0.586, 0.436,  0.409, 0.259, 0.15);
+  // v122: arrows are now drawn inside the trunk-top branching block above,
+  // not here. Removed the duplicate pushArrowHead calls that were leftover
+  // from the v119/v120 elbow attempts.
 
   // 底脚小球 (装饰)
   function pushBall(cx: number, cy: number, cz: number, r: number) {
@@ -571,14 +541,23 @@ function buildJunctionGeom() {
 //   三角棱柱: 顶尖 (0, 0.6), 底左 (-0.6, -0.5), 底右 (0.6, -0.5), z∈[-0.4, +0.4]
 //   门: 薄盒 (0.04 半宽 × 0.4 半高 × 0.005 半厚), 中心 (0, 0.05, 0.41).
 //        Plane→Box 是为了可见性 (Viro Plane 双面 alpha 不稳).
-// v120 hut v3 — back to simple. v118-119 piled on porch step, ridge beam,
-// twin windows, taller roof — user said "越来越复杂 颜色丑". This version
-// is just a body box + a clean two-slope gable roof with a modest eave
-// overhang. Door + chimney live in the overlay geom.
+// v122 hut radical redo — abandons all the v118-v121 attempts at single-
+// material 3D. The complaint "丑炸了 放弃现有思路" was rooted in: a single
+// material on a box+roof prism reads as a flat silhouette in AR no matter
+// how you light it. This version uses three materials in three distinct
+// colours, which is what gives the model its 3D feel — colour contrast
+// substitutes for the missing per-face shading.
+//
+// Layout:
+//   - main geom : body box only — light paper-bag colour
+//   - overlay 1 : the gable roof prism — darker brown, distinct from body
+//   - overlay 2 : the front door rectangle — warm amber (lit window)
+//
+// No chimney, no porch step, no ridge beam, no twin windows. Just three
+// readable shapes with contrasting colours.
 function buildHutGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
-
   function pushBox(cx: number, cy: number, cz: number, hw: number, hh: number, hd: number) {
     const s = verts.length;
     verts.push([cx - hw, cy - hh, cz + hd]);
@@ -596,23 +575,28 @@ function buildHutGeom() {
     idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);
     idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
   }
-
-  // Body — 1.0m × 0.6m × 0.8m centered at y=-0.20 (base at -0.50, top at +0.10).
+  // Body — 1.0m × 0.6m × 0.8m centered at y=-0.20.
   pushBox(0, -0.20, 0, 0.50, 0.30, 0.40);
+  return { vertices: verts, triangleIndices: idx };
+}
 
-  // Roof — pitched gable, modest 0.10m eave overhang each side / 0.10m
-  // front-back. Triangular prism on top of the body.
+// v122 hut roof — separate geom so it can use a darker contrasting
+// colour, which is what visually lifts it off the body. Eaves overhang
+// the body by 0.10m on each side.
+function buildHutRoofGeom() {
+  const verts: [number, number, number][] = [];
+  const idx: [number, number, number][] = [];
   const rHW = 0.60;     // 0.10m overhang past body's 0.50
   const rHD = 0.50;     // 0.10m overhang past body's 0.40
   const rBaseY = 0.10;  // top of body
-  const rPeakY = 0.45;  // 0.35m roof rise — restrained, not steeple
+  const rPeakY = 0.45;
   const r0 = verts.length;
-  verts.push([-rHW, rBaseY,  rHD]); // 0 front-left
-  verts.push([ rHW, rBaseY,  rHD]); // 1 front-right
-  verts.push([   0, rPeakY,  rHD]); // 2 front-peak
-  verts.push([-rHW, rBaseY, -rHD]); // 3 back-left
-  verts.push([ rHW, rBaseY, -rHD]); // 4 back-right
-  verts.push([   0, rPeakY, -rHD]); // 5 back-peak
+  verts.push([-rHW, rBaseY,  rHD]);
+  verts.push([ rHW, rBaseY,  rHD]);
+  verts.push([   0, rPeakY,  rHD]);
+  verts.push([-rHW, rBaseY, -rHD]);
+  verts.push([ rHW, rBaseY, -rHD]);
+  verts.push([   0, rPeakY, -rHD]);
   // Front gable
   idx.push([r0+0, r0+1, r0+2]);
   // Back gable
@@ -623,12 +607,12 @@ function buildHutGeom() {
   idx.push([r0+1, r0+4, r0+5], [r0+1, r0+5, r0+2]);
   // Eaves underside
   idx.push([r0+0, r0+3, r0+4], [r0+0, r0+4, r0+1]);
-
   return { vertices: verts, triangleIndices: idx };
 }
 
-// v120 hut accents — door (centered on front face) + a small chimney on
-// the back-right of the roof. Two boxes, single material. No windows.
+// v122 hut door — small rectangle on the front face, in warm amber to
+// suggest light spilling out (DOC huts at dusk). Replaces the old
+// near-black door which was reading as a hole / gap.
 function buildHutDoorGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
@@ -649,10 +633,8 @@ function buildHutDoorGeom() {
     idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);
     idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
   }
-  // Door — front face, slightly protruding (z=0.41 vs body face z=0.40).
+  // Door — front face, slightly protruding (z=0.41 vs body z=0.40).
   pushBox(0, -0.34, 0.41, 0.09, 0.16, 0.005);
-  // Chimney — small square column at back-right corner of roof.
-  pushBox(0.24, 0.55, -0.20, 0.06, 0.16, 0.06);
   return { vertices: verts, triangleIndices: idx };
 }
 
@@ -727,15 +709,21 @@ const ICON_GEOM: Record<string, { vertices: [number, number, number][]; normals?
   scenic:   buildScenicGeom(),   // scenic → 5 角星 (v97 完美)
 };
 
-// v113: secondary geom 单独材质 — danger 感叹号 + hut 门.
-// 渲染时跟主 geom 同 ViroNode 但用不同 material.
-const ICON_GEOM_OVERLAY: Record<string, { vertices: [number, number, number][]; triangleIndices: [number, number, number][] }> = {
-  danger: buildDangerMarkGeom(),  // bar + dot 感叹号
-  hut:    buildHutDoorGeom(),     // 帐篷门
+// v113 / v122: secondary geom layers, each with its own material.
+// Originally a single overlay (danger excl. mark / hut door); v122
+// hut needs THREE distinct materials (body, roof, accent) so the
+// schema is now an array. Order matters — later overlays render
+// after earlier ones (Mapbox-style depth ordering).
+type IconOverlayLayer = {
+  geom: { vertices: [number, number, number][]; triangleIndices: [number, number, number][] };
+  mat: string;
 };
-const ICON_OVERLAY_MAT: Record<string, string> = {
-  danger: 'iconDangerMark',
-  hut:    'iconHutDoor',
+const ICON_GEOM_OVERLAYS: Record<string, IconOverlayLayer[]> = {
+  danger: [{ geom: buildDangerMarkGeom(), mat: 'iconDangerMark' }],
+  hut: [
+    { geom: buildHutRoofGeom(), mat: 'iconHutRoof' },
+    { geom: buildHutDoorGeom(), mat: 'iconHutDoor' },
+  ],
 };
 
 // v105 cleanup: 删除 PARTICLE_POSITIONS + PARTICLE_POSITIONS_V84 (反复 v81-v89
@@ -996,11 +984,24 @@ function CairnARScene(props: any) {
         writesToDepthBuffer: true,
         readsFromDepthBuffer: true,
       };
-      // H2 门: 深色 (picker color=0x000000) — 用 Lambert 暗色, 跟帐篷棕色高对比.
+      // v122 hut roof — distinct dark-brown layer that visually lifts
+      // the roof off the body (which is paper-bag beige). The colour
+      // contrast is what gives the hut its 3D feel without relying on
+      // PBR lighting tricks that we already tried + abandoned.
+      matDict['iconHutRoof'] = {
+        lightingModel: 'Lambert',
+        diffuseColor: '#7a5c3e',
+        bloomThreshold: 1.10,
+        writesToDepthBuffer: true,
+        readsFromDepthBuffer: true,
+      };
+      // v122 hut door — warm amber, suggests light spilling out of the
+      // hut at dusk (DOC backcountry hut motif). Replaces the old near-
+      // black door which was reading as a hole.
       matDict['iconHutDoor'] = {
         lightingModel: 'Lambert',
-        diffuseColor: '#1a0e08',     // 接近黑的深棕 (跟 picker 黑门 + 帐篷棕协调)
-        bloomThreshold: 1.10,         // 关 bloom (深色不该发光)
+        diffuseColor: '#f4c87a',
+        bloomThreshold: 1.10,
         writesToDepthBuffer: true,
         readsFromDepthBuffer: true,
       };
@@ -1317,9 +1318,7 @@ function CairnInstance(props: {
   // 5 type 全部走同一个渲染路径.
   const knownType = (normalizedType in TYPE_COLOR_TRIPLET && normalizedType in ICON_GEOM) ? normalizedType : null;
   const geom = knownType ? ICON_GEOM[knownType] : null;
-  // v113: secondary overlay geom (danger 感叹号 / hut 门) — 跟主 geom 同 node 渲染.
-  const overlayGeom = knownType ? ICON_GEOM_OVERLAY[knownType] : null;
-  const overlayMat = knownType ? ICON_OVERLAY_MAT[knownType] : null;
+  const overlays = knownType ? (ICON_GEOM_OVERLAYS[knownType] ?? []) : [];
   const tName = knownType ?? 'generic';
   const M = (n: string) => `${n}${tName}`;       // material name helper
 
@@ -1403,15 +1402,16 @@ function CairnInstance(props: {
               materials={[M('icon')]}
             />
           )}
-          {/* v113: overlay geom — danger 感叹号 (bar+dot) / hut 门 (深色 box).
-              单独 ViroGeometry 用 contrast material, 视觉上"嵌入"主 geom. */}
-          {overlayGeom && overlayMat ? (
+          {/* v113 / v122: overlay layers — each its own ViroGeometry +
+              material. Hut uses 2 (roof + door); danger uses 1 (mark). */}
+          {overlays.map((layer, i) => (
             <ViroGeometry
-              vertices={overlayGeom.vertices}
-              triangleIndices={overlayGeom.triangleIndices}
-              materials={[overlayMat]}
+              key={`overlay-${i}`}
+              vertices={layer.geom.vertices}
+              triangleIndices={layer.geom.triangleIndices}
+              materials={[layer.mat]}
             />
-          ) : null}
+          ))}
         </ViroNode>
       </ViroNode>
 
