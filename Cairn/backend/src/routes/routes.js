@@ -19,6 +19,15 @@ router.use(authenticate);
 router.post('/', async (req, res) => {
   const { name, description, points, waypoints, distance_m, elevation_gain_m } = req.body;
 
+  // v120 debug: dump body shape so we can see exactly why JSON.stringify
+  // produces "[object Object],[object Object]" in storage.
+  console.log('[routes/create] body keys:', Object.keys(req.body));
+  console.log('[routes/create] points isArray:', Array.isArray(points), 'len:', points?.length);
+  if (Array.isArray(points) && points[0]) {
+    console.log('[routes/create] points[0]:', JSON.stringify(points[0]));
+    console.log('[routes/create] points[0] type:', typeof points[0]);
+  }
+
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
     return res.status(400).json({ error: 'name is required.' });
   }
@@ -39,7 +48,7 @@ router.post('/', async (req, res) => {
     const route = await Route.findByIdAndUser(id, req.user.userId);
     return res.status(201).json({ route });
   } catch (err) {
-    console.error('[routes/create]', err.message);
+    console.error('[routes/create]', err);
     return res.status(500).json({ error: 'Server error.' });
   }
 });

@@ -5,15 +5,22 @@ const pool = require('../config/db');
 
 const Route = {
   async create({ userId, name, description, points, waypoints, distanceM, elevationGainM }) {
+    // v120 fix: explicitly validate + stringify so mysql2 doesn't fall
+    // through to Array.toString() for the JSON column. The "[object
+    // Object],[object Object]" corruption seen in route id=1 happened
+    // because mysql2 received a non-string value for a JSON column —
+    // its default conversion is .toString() on arrays.
+    const pointsJson = typeof points === 'string' ? points : JSON.stringify(points);
+    const waypointsJson = typeof waypoints === 'string' ? waypoints : JSON.stringify(waypoints ?? []);
     const [result] = await pool.execute(
       `INSERT INTO routes (user_id, name, description, points, waypoints, distance_m, elevation_gain_m)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?)`,
       [
         userId,
         name,
         description ?? null,
-        JSON.stringify(points),
-        JSON.stringify(waypoints ?? []),
+        pointsJson,
+        waypointsJson,
         distanceM ?? 0,
         elevationGainM ?? 0,
       ]
