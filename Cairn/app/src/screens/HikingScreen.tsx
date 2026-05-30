@@ -1055,6 +1055,11 @@ export function HikingScreen() {
   const startTracking = useTrackingStore(s => s.startTracking);
   const stopTracking = useTrackingStore(s => s.stopTracking);
   const linkMarker = useTrackingStore(s => s.linkMarker);
+  // v116: surface a friendly explanation when stopTracking discards a session
+  // because it had no drawable path (< 2 GPS points). Without this the user
+  // sees the stop confirmation succeed but nothing in Activities — confusing.
+  const lastStopReason = useTrackingStore(s => s.lastStopReason);
+  const clearLastStopReason = useTrackingStore(s => s.clearLastStopReason);
 
   // Real marker store
   const addMarker = useMarkerStore(s => s.addMarker);
@@ -1193,6 +1198,20 @@ export function HikingScreen() {
       setPhase('select');
     }
   }, [status, phase]);
+
+  // v116: when stopTracking discards a too-short session, show an explanation
+  // so the user understands why nothing appears in Activities. Cleared as soon
+  // as the user dismisses, so a future stop on a real hike won't re-trigger.
+  useEffect(() => {
+    if (lastStopReason === 'too-short') {
+      Alert.alert(
+        'Hike too short to save',
+        "We didn't capture enough GPS points to draw a path, so this hike wasn't saved to Activities. To save a hike you need to walk for at least a few seconds with location available.",
+        [{ text: 'Got it', onPress: () => clearLastStopReason() }],
+        { cancelable: true, onDismiss: () => clearLastStopReason() },
+      );
+    }
+  }, [lastStopReason, clearLastStopReason]);
 
   // Spring press scales
   const trackBtnScale = useRef(new Animated.Value(1)).current;

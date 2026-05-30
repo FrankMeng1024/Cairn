@@ -12,7 +12,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Easing, ScrollView,
-  Platform,
+  Platform, Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -118,6 +118,10 @@ export function RunningScreen() {
   const setActivityMode = useTrackingStore(s => s.setActivityMode);
   const startTracking = useTrackingStore(s => s.startTracking);
   const stopTracking = useTrackingStore(s => s.stopTracking);
+  // v116: surface a friendly explanation when stopTracking discards a session
+  // because it had no drawable path (< 2 GPS points).
+  const lastStopReason = useTrackingStore(s => s.lastStopReason);
+  const clearLastStopReason = useTrackingStore(s => s.clearLastStopReason);
   const addMarker = useMarkerStore(s => s.addMarker);
   // Toast for the "cairn planted" feedback shown after the user uses
   // the unlock-protected plant button. Only relevant in the unlocked
@@ -181,6 +185,18 @@ export function RunningScreen() {
       useNativeDriver: true,
     }).start();
   }, [isLocked]);
+
+  // v116: friendly notice when a too-short run gets discarded.
+  useEffect(() => {
+    if (lastStopReason === 'too-short') {
+      Alert.alert(
+        'Run too short to save',
+        "We didn't capture enough GPS points to draw a path, so this run wasn't saved to Activities. To save a run you need to keep moving for at least a few seconds with location available.",
+        [{ text: 'Got it', onPress: () => clearLastStopReason() }],
+        { cancelable: true, onDismiss: () => clearLastStopReason() },
+      );
+    }
+  }, [lastStopReason, clearLastStopReason]);
 
   const onStartPressIn = () =>
     Animated.spring(startBtnScale, { toValue: 0.96, useNativeDriver: true, tension: 300, friction: 10 }).start();

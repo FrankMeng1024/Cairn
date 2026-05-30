@@ -140,6 +140,13 @@ interface TrackingState {
   lastFixTimestamp: number | null;    // GPS-fix timestamp (for dedupe)
   altitudeHistory: (number | null)[];
 
+  /** v116: why the most recent stopTracking() ended.
+   *  - 'saved'     : session had ≥ 2 trackPoints, persisted to local + server
+   *  - 'too-short' : < 2 trackPoints, session was discarded (no path to draw)
+   *  - null        : initial state, or after the consuming screen has shown the notice and cleared it
+   *  Screens watch this to surface a friendly explanation when a stop produces no Activities-list entry. */
+  lastStopReason: 'saved' | 'too-short' | null;
+
   // Actions
   setActivityMode: (mode: ActivityMode) => void;
   startTracking: () => Promise<void>;
@@ -152,6 +159,8 @@ interface TrackingState {
   addTrackPoint: (coord: Coordinate, timestamp?: number) => void;
   linkMarker: (markerId: string) => void;
   reset: () => void;
+  /** Clear lastStopReason after the screen has surfaced its notice. */
+  clearLastStopReason: () => void;
 }
 
 const initialState = {
@@ -173,6 +182,7 @@ const initialState = {
   lastCoordinateTime: null,
   lastFixTimestamp: null,
   altitudeHistory: [] as (number | null)[],
+  lastStopReason: null as 'saved' | 'too-short' | null,
 };
 
 export const useTrackingStore = create<TrackingState>((set, get) => ({
@@ -500,6 +510,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
       });
 
     const s = get();
+    let stopReason: 'saved' | 'too-short' | null = null;
     if (s.sessionId && s.startedAt) {
       const region = getCurrentRegion();
       // Default name: "Hike — DD/MM/YYYY" / "Run — DD/MM/YYYY". Used
@@ -532,6 +543,7 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
           deleteRemoteSession(remoteId).catch(() => {});
         }
         crashLogger.breadcrumb(`session:stop:too-short pts=${s.trackPoints.length} — discarded`);
+        stopReason = 'too-short';
         // Fall through to reset() below; do NOT call addSession.
       } else {
       const remoteId = s.remoteSessionId;
@@ -579,10 +591,11 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
         pausePins: s.pausePins.length > 0 ? s.pausePins : undefined,
         name: finalName,
       });
+      stopReason = 'saved';
       } // end too-short guard
     }
 
-    set({ ...initialState });
+    set({ ...initialState, lastStopReason: stopReason });
   },
 
   pauseTracking: () => {
@@ -784,6 +797,8 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     backgroundGrantedCached = false;
     set({ ...initialState });
   },
+
+  clearLastStopReason: () => set({ lastStopReason: null }),
 }));
 
 // ── Source activation helpers (single-source guarantee) ────────────────────

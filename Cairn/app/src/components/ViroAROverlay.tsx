@@ -1405,14 +1405,17 @@ export function ViroAROverlay({
   // Reset origin every time component mounts. ViroAROverlay mounts/unmounts
   // with the AR screen lifecycle, so this gives one fresh origin per
   // AR session — matching ARKit's own session-origin behavior.
+  //
+  // NOTE: groundYRef is owned by CairnARScene (not this component) — it
+  // resets automatically when CairnARScene remounts. Do NOT touch it from
+  // here; it's out of scope and would throw ReferenceError (v115 black-
+  // screen incident).
   useEffect(() => {
     arkitOriginRef.current = null;
-    groundYRef.current = null;
     setOriginReady(false);
     crashLogger.breadcrumb('viro:origin-reset (AR session start)');
     return () => {
       arkitOriginRef.current = null;
-      groundYRef.current = null;
       crashLogger.breadcrumb('viro:origin-cleared (AR session end)');
     };
   }, []);
