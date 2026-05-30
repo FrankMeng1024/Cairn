@@ -915,37 +915,12 @@ function StopSummarySheet({
 
           <View style={stopSheetStyles.header}>
             <Text style={[stopSheetStyles.title, { color: accent }]}>{label} complete</Text>
-            <Text style={stopSheetStyles.subtitle}>Save with a name to find it later, or skip for the default.</Text>
+            <Text style={stopSheetStyles.subtitle}>Name it, or just save.</Text>
           </View>
 
-          {/* Stats row */}
-          <View style={stopSheetStyles.statsRow}>
-            <View style={stopSheetStyles.stat}>
-              <Icon name="Milestone" size={14} color={accent} strokeWidth={2} />
-              <Text style={[stopSheetStyles.statValue, { color: accent }]}>
-                {(summary.distanceM / 1000).toFixed(2)} km
-              </Text>
-            </View>
-            <View style={stopSheetStyles.statDivider} />
-            <View style={stopSheetStyles.stat}>
-              <Icon name="Timer" size={14} color={accent} strokeWidth={2} />
-              <Text style={[stopSheetStyles.statValue, { color: accent }]}>
-                {formatDuration(summary.durationS)}
-              </Text>
-            </View>
-            <View style={stopSheetStyles.statDivider} />
-            <View style={stopSheetStyles.stat}>
-              <Icon name="TrendingUp" size={14} color={accent} strokeWidth={2} />
-              <Text style={[stopSheetStyles.statValue, { color: accent }]}>
-                {Math.round(summary.elevationGainM)} m
-              </Text>
-            </View>
-          </View>
-
-          {/* Track point count — quick sanity for the user */}
-          <Text style={stopSheetStyles.points}>
-            {summary.trackPoints.length} GPS samples recorded
-          </Text>
+          {/* v120: stats row + GPS sample count removed — user already saw
+              all of those in the live tracking bar above. The sheet should
+              only do what the bar can't: name + confirm. */}
 
           {/* Name input */}
           <View style={stopSheetStyles.inputWrap}>
@@ -962,7 +937,7 @@ function StopSummarySheet({
             <Text style={stopSheetStyles.inputHint}>Leave blank to use the default name above.</Text>
           </View>
 
-          {/* Actions: Discard left, Save right */}
+          {/* Actions: Resume left, Save right */}
           <View style={stopSheetStyles.actions}>
             <TouchableOpacity
               style={stopSheetStyles.cancelBtn}
@@ -982,24 +957,18 @@ function StopSummarySheet({
           </View>
 
           {/* Save as Route — only shown when a drawable path exists.
-              If trackPoints < 2 the session has no line to save, so
-              we show a soft notice instead. */}
-          {onSaveAsRoute && (
-            summary.trackPoints.length >= 2 ? (
-              <TouchableOpacity
-                style={stopSheetStyles.saveRouteBtn}
-                onPress={() => dismiss(() => onSaveAsRoute(name))}
-                activeOpacity={0.85}
-              >
-                <Icon name="Route" size={14} color={Colors.primary} strokeWidth={2} />
-                <Text style={stopSheetStyles.saveRouteText}>Save as Route</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={stopSheetStyles.noPathNotice}>
-                <Icon name="TriangleAlert" size={13} color="#C8A030" strokeWidth={2} />
-                <Text style={stopSheetStyles.noPathText}>No path recorded — keep moving to save as route</Text>
-              </View>
-            )
+              v120: when no path (trackPoints < 2) the button is hidden;
+              the redundant "no path recorded" amber banner was removed
+              per user feedback. */}
+          {onSaveAsRoute && summary.trackPoints.length >= 2 && (
+            <TouchableOpacity
+              style={stopSheetStyles.saveRouteBtn}
+              onPress={() => dismiss(() => onSaveAsRoute(name))}
+              activeOpacity={0.85}
+            >
+              <Icon name="Route" size={14} color={Colors.primary} strokeWidth={2} />
+              <Text style={stopSheetStyles.saveRouteText}>Save as Route</Text>
+            </TouchableOpacity>
           )}
         </Animated.View>
       </KeyboardAvoidingView>
@@ -1096,6 +1065,12 @@ export function HikingScreen() {
   const startTracking = useTrackingStore(s => s.startTracking);
   const stopTracking = useTrackingStore(s => s.stopTracking);
   const linkMarker = useTrackingStore(s => s.linkMarker);
+  // v120: pause + resume hooks for the Stop button. Tapping Stop pauses
+  // tracking immediately (timer + GPS halt), then opens the summary
+  // sheet. Resume button on the sheet re-arms tracking; the gap is
+  // simply treated as signal loss in the recorded track.
+  const pauseTracking = useTrackingStore(s => s.pauseTracking);
+  const resumeTracking = useTrackingStore(s => s.resumeTracking);
   // v116/v118: surface a friendly explanation when stopTracking discards a
   // session because it had no drawable path (< 2 GPS points). v118 changed
   // this from a system Alert to TooShortSheet — and the session is now
@@ -1580,19 +1555,18 @@ export function HikingScreen() {
               style={styles.stopBtn}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                // Capture a snapshot of the live session for the
-                // summary sheet. We do NOT call stopTracking here —
-                // tracking continues in the background until the user
-                // names+confirms (or cancels). This lets the user see
-                // the run "frozen" while deciding what to call it,
-                // and keeps the data live in case they cancel and
-                // resume.
+                // v120: tapping Stop = pause everything immediately.
+                // Timer freezes, GPS stops accumulating distance. The
+                // summary sheet opens; user picks Resume (un-pause) or
+                // Save & End (real stop). Time/GPS during the sheet is
+                // intentionally lost — treated as signal-loss gap.
                 const ts = useTrackingStore.getState();
                 if (!ts.startedAt) {
                   // Fallback: malformed state, just stop.
                   stopTracking();
                   return;
                 }
+                pauseTracking();
                 setStopSummary({
                   distanceM: ts.distanceM,
                   durationS: ts.durationS,
@@ -1735,7 +1709,15 @@ export function HikingScreen() {
       {stopSummary && (
         <StopSummarySheet
           summary={stopSummary}
-          onCancel={() => setStopSummary(null)}
+          onCancel={() => {
+            // v120: Resume — un-pause and dismiss the sheet. Tracking
+            // resumes from where it left off. The gap between Stop
+            // tap and Resume tap is recorded as a signal-loss interval
+            // (no distance/elev accumulation; Kalman jumps once on the
+            // next fresh GPS point).
+            resumeTracking();
+            setStopSummary(null);
+          }}
           onConfirm={(name) => {
             // We pass the name through stopTracking; useTrackingStore
             // forwards it to the saved session. Falsy / empty name

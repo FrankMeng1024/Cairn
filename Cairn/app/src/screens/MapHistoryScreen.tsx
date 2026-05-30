@@ -949,17 +949,20 @@ export function MapHistoryScreen() {
           </View>
           <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
             {/* v119: Save as Route on the LEFT, Delete on the RIGHT.
-                Equal sizes (flex: 1 each). Removed the "No path data"
-                helper text and the wrapping View — the disabled state
-                is communicated by opacity alone. Users with track data
-                see a fully-tappable button. */}
+                Equal sizes (flex: 1 each).
+                v120: disable check uses loadedTrackPoints (the array
+                hydrated from the server in the effect at line ~650),
+                NOT selectedSession.trackPoints which is always [] for
+                sessions hydrated from the backend (the local
+                sessionStore summary doesn't carry track points). This
+                was the "Save as Route always grey" bug. */}
             <TouchableOpacity
               style={[
                 cardStyles.deleteBtn,
                 { flex: 1, borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
-                selectedSession.trackPoints.length < 2 && { opacity: 0.4 },
+                loadedTrackPoints.length < 2 && { opacity: 0.4 },
               ]}
-              disabled={selectedSession.trackPoints.length < 2}
+              disabled={loadedTrackPoints.length < 2}
               onPress={async () => {
                 // Save as Route: directly persist the raw GPS trace as
                 // a free route (no editor dialog). Honours route-rules.md
@@ -971,9 +974,12 @@ export function MapHistoryScreen() {
                 // later). Adding it here previously triggered the v16
                 // "Save failed" 500 error users reported.
                 const ts = selectedSession;
-                crashLogger.breadcrumb(`saveroute:start session=${ts.id} pts=${ts.trackPoints.length}`);
+                crashLogger.breadcrumb(`saveroute:start session=${ts.id} pts=${loadedTrackPoints.length}`);
                 try {
-                  const points = ts.trackPoints.map(p => ({ lat: p.lat, lng: p.lng, alt: p.alt ?? null }));
+                  // v120: use loadedTrackPoints (server-hydrated) instead
+                  // of selectedSession.trackPoints (always empty for
+                  // backend sessions).
+                  const points = loadedTrackPoints.map(p => ({ lat: p.lat, lng: p.lng, alt: p.alt ?? null }));
                   const id = await useRouteStore.getState().addRoute({
                     name: ts.name || `${ts.activityMode === 'running' ? 'Run' : 'Hike'} — ${new Date(ts.startedAt).toLocaleDateString()}`,
                     points,

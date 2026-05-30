@@ -57,7 +57,7 @@ const TYPE_COLOR_TRIPLET: Record<string, { inner: string; mid: string; outer: st
   // Water: ocean blue
   water:    { inner: '#f0faff', mid: '#6ac8f0', outer: '#2a5878' },
   // Hut H2: picker 柔棕 #c97350
-  hut:      { inner: '#f5d9c0', mid: '#c97350', outer: '#6e3a1f' },
+  hut:      { inner: '#e9d8b8', mid: '#a08056', outer: '#5a4630' }, // v120 muted sun-bleached wood
   // Cairn: logo 绿 (picker 无对应, 保留 v110)
   cairn:    { inner: '#a8c690', mid: '#5d7c46', outer: '#2e3f1d' },
   // Catch-all
@@ -451,13 +451,36 @@ function buildJunctionGeom() {
   // Trunk
   pushPole(0, -0.6, 0, 0, -0.2, 0, 0.08);
 
-  // 左 shaft (CONNECTED) — v119: extend the shaft past the arrow base by
-  // 0.06m so the cone visibly overlaps the cylinder. Without overlap,
-  // the cap-disc + cone-base normal discontinuity reads as a visible
-  // crack in AR even when their centres line up. Direction unit vector
-  // here is (-0.707, 0.707), so 0.06 along that = (-0.042, 0.042).
-  // End coords: (-0.354 - 0.042, 0.154 + 0.042) = (-0.396, 0.196).
-  pushPole(0, -0.2, 0, -0.396, 0.196, 0, 0.07);
+  // v120 左 shaft — replaced the straight line + arrow with a smooth
+  // quadratic-bezier curve that bends from the trunk top out to the
+  // arrow tip. The user's complaint "应该是个完美圆弧 一条45度角转弯的线"
+  // boiled down to: cylinder + cone seams always read as a crack in AR,
+  // no matter how aligned. So we drop the cone entirely and approximate
+  // the curve with N short cylinders. P0 = trunk top (0,-0.2),
+  // P2 = arrow tip (-0.513, 0.313), control point P1 = (0, 0.30) so the
+  // start tangent is straight up and the end tangent is roughly 45°.
+  // 12 segments are enough to look smooth at AR distances.
+  {
+    const P0x = 0,      P0y = -0.20;
+    const P1x = 0,      P1y =  0.30; // control — pulls the curve up before bending left
+    const P2x = -0.513, P2y =  0.313;
+    const N = 12;
+    const baseR = 0.07;
+    let prevX = P0x, prevY = P0y;
+    for (let i = 1; i <= N; i++) {
+      const t = i / N;
+      const it = 1 - t;
+      const x = it*it*P0x + 2*it*t*P1x + t*t*P2x;
+      const y = it*it*P0y + 2*it*t*P1y + t*t*P2y;
+      // Taper slightly toward the tip — last 2 segments shrink to 0.04
+      // so the curve fades to a point instead of ending blunt.
+      const r = i >= N - 1
+        ? baseR * (1 - (i - (N - 2)) * 0.45)
+        : baseR;
+      pushPole(prevX, prevY, 0, x, y, 0, r);
+      prevX = x; prevY = y;
+    }
+  }
   // 右 shaft (DISCONNECTED, picker 原坐标)
   pushPole(0.073, -0.077, 0, 0.427, 0.277, 0, 0.07);
 
@@ -490,9 +513,9 @@ function buildJunctionGeom() {
       idx.push([baseCenter, a, b]);
     }
   }
-  // 左箭头 (CONNECTED): base 严格对齐 shaft 终点 (-0.354, 0.154) 实现"一体"无缝
-  pushArrowHead(-0.513, 0.313, -0.354, 0.154, 0.15);
-  // 右箭头 (DISCONNECTED, picker 原坐标): tip (0.586, 0.436), base (0.409, 0.259)
+  // v120: left arrowhead removed — the bezier curve above tapers to a
+  // point at its end, giving a smooth fade-out without the cone seam.
+  // Right side keeps the explicit arrow + visible disconnect (intentional).
   pushArrowHead( 0.586, 0.436,  0.409, 0.259, 0.15);
 
   // 底脚小球 (装饰)
@@ -535,24 +558,24 @@ function buildJunctionGeom() {
 //   三角棱柱: 顶尖 (0, 0.6), 底左 (-0.6, -0.5), 底右 (0.6, -0.5), z∈[-0.4, +0.4]
 //   门: 薄盒 (0.04 半宽 × 0.4 半高 × 0.005 半厚), 中心 (0, 0.05, 0.41).
 //        Plane→Box 是为了可见性 (Viro Plane 双面 alpha 不稳).
-// v119 hut v2: noticeably more 3D — wider eaves, taller chimney, large
-// front porch step, double the door size so it reads as architecture
-// from 5m+ in AR. Two paired ridge beams (stripped from the roof) give
-// the model a visible spine instead of looking like a flat tent prism.
+// v120 hut v3 — back to simple. v118-119 piled on porch step, ridge beam,
+// twin windows, taller roof — user said "越来越复杂 颜色丑". This version
+// is just a body box + a clean two-slope gable roof with a modest eave
+// overhang. Door + chimney live in the overlay geom.
 function buildHutGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
 
   function pushBox(cx: number, cy: number, cz: number, hw: number, hh: number, hd: number) {
     const s = verts.length;
-    verts.push([cx - hw, cy - hh, cz + hd]); // 0
-    verts.push([cx + hw, cy - hh, cz + hd]); // 1
-    verts.push([cx + hw, cy - hh, cz - hd]); // 2
-    verts.push([cx - hw, cy - hh, cz - hd]); // 3
-    verts.push([cx - hw, cy + hh, cz + hd]); // 4
-    verts.push([cx + hw, cy + hh, cz + hd]); // 5
-    verts.push([cx + hw, cy + hh, cz - hd]); // 6
-    verts.push([cx - hw, cy + hh, cz - hd]); // 7
+    verts.push([cx - hw, cy - hh, cz + hd]);
+    verts.push([cx + hw, cy - hh, cz + hd]);
+    verts.push([cx + hw, cy - hh, cz - hd]);
+    verts.push([cx - hw, cy - hh, cz - hd]);
+    verts.push([cx - hw, cy + hh, cz + hd]);
+    verts.push([cx + hw, cy + hh, cz + hd]);
+    verts.push([cx + hw, cy + hh, cz - hd]);
+    verts.push([cx - hw, cy + hh, cz - hd]);
     idx.push([s+0, s+2, s+1], [s+0, s+3, s+2]);
     idx.push([s+0, s+1, s+5], [s+0, s+5, s+4]);
     idx.push([s+1, s+2, s+6], [s+1, s+6, s+5]);
@@ -561,51 +584,38 @@ function buildHutGeom() {
     idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
   }
 
-  // ── Body ── 1.0m × 0.6m × 0.8m, base at y=-0.5, top at y=+0.10
-  const bodyHW = 0.50, bodyHH = 0.30, bodyHD = 0.40;
-  const bodyCY = -0.20;
-  pushBox(0, bodyCY, 0, bodyHW, bodyHH, bodyHD);
+  // Body — 1.0m × 0.6m × 0.8m centered at y=-0.20 (base at -0.50, top at +0.10).
+  pushBox(0, -0.20, 0, 0.50, 0.30, 0.40);
 
-  // ── Front porch step ── small box flush with the front wall, makes
-  // the hut feel grounded and gives a place for the door.
-  pushBox(0, -0.55, 0.46, 0.30, 0.05, 0.08);
-
-  // ── Roof — pitched gable with WIDE eaves (0.20m overhang each side)
-  // and front/back overhang too. Reads as a real roof in AR.
-  const roofHW = 0.70;   // wider than body's 0.50 → 0.20m left eave + 0.20m right eave
-  const roofHD = 0.55;   // deeper than body's 0.40 → 0.15 front overhang + 0.15 back
-  const roofBaseY = bodyCY + bodyHH; // 0.10 (top of body)
-  const roofPeakY = roofBaseY + 0.50; // tall peak — peak at 0.60
+  // Roof — pitched gable, modest 0.10m eave overhang each side / 0.10m
+  // front-back. Triangular prism on top of the body.
+  const rHW = 0.60;     // 0.10m overhang past body's 0.50
+  const rHD = 0.50;     // 0.10m overhang past body's 0.40
+  const rBaseY = 0.10;  // top of body
+  const rPeakY = 0.45;  // 0.35m roof rise — restrained, not steeple
   const r0 = verts.length;
-  verts.push([-roofHW, roofBaseY,  roofHD]); // 0 front-left
-  verts.push([ roofHW, roofBaseY,  roofHD]); // 1 front-right
-  verts.push([      0, roofPeakY,  roofHD]); // 2 front-peak
-  verts.push([-roofHW, roofBaseY, -roofHD]); // 3 back-left
-  verts.push([ roofHW, roofBaseY, -roofHD]); // 4 back-right
-  verts.push([      0, roofPeakY, -roofHD]); // 5 back-peak
+  verts.push([-rHW, rBaseY,  rHD]); // 0 front-left
+  verts.push([ rHW, rBaseY,  rHD]); // 1 front-right
+  verts.push([   0, rPeakY,  rHD]); // 2 front-peak
+  verts.push([-rHW, rBaseY, -rHD]); // 3 back-left
+  verts.push([ rHW, rBaseY, -rHD]); // 4 back-right
+  verts.push([   0, rPeakY, -rHD]); // 5 back-peak
   // Front gable
   idx.push([r0+0, r0+1, r0+2]);
   // Back gable
   idx.push([r0+3, r0+5, r0+4]);
-  // Left slope (two triangles)
+  // Left slope
   idx.push([r0+0, r0+2, r0+5], [r0+0, r0+5, r0+3]);
   // Right slope
   idx.push([r0+1, r0+4, r0+5], [r0+1, r0+5, r0+2]);
-  // Eaves underside (closes the prism, gives the eaves visible thickness)
+  // Eaves underside
   idx.push([r0+0, r0+3, r0+4], [r0+0, r0+4, r0+1]);
-
-  // ── Ridge beam ── small box running along the peak, adds a visible
-  // spine line that catches highlights and makes the roof obviously 3D
-  // instead of a flat tent fold.
-  pushBox(0, roofPeakY + 0.02, 0, 0.04, 0.02, roofHD - 0.02);
 
   return { vertices: verts, triangleIndices: idx };
 }
 
-// v119 hut accents: door (large, prominent on front face) + chimney
-// (taller, on back-right) + 2 small windows on the front. All share the
-// dark accent material so they read as "openings + masonry" against the
-// warm body tone.
+// v120 hut accents — door (centered on front face) + a small chimney on
+// the back-right of the roof. Two boxes, single material. No windows.
 function buildHutDoorGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
@@ -626,16 +636,10 @@ function buildHutDoorGeom() {
     idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);
     idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
   }
-  // Door — front face, centered, half body height, protrudes 0.01m
-  // forward from the wall (z=0.40 + 0.01 = 0.41).
-  pushBox(0, -0.32, 0.41, 0.10, 0.18, 0.005);
-  // Two windows flanking the door — slightly smaller than the door,
-  // raised so they sit at "eye level" of the small hut.
-  pushBox(-0.30, -0.10, 0.41, 0.07, 0.06, 0.005);
-  pushBox( 0.30, -0.10, 0.41, 0.07, 0.06, 0.005);
-  // Chimney — square stone column emerging from the back-right slope,
-  // tall enough to clearly clear the ridge.
-  pushBox(0.32, 0.70, -0.22, 0.08, 0.22, 0.08);
+  // Door — front face, slightly protruding (z=0.41 vs body face z=0.40).
+  pushBox(0, -0.34, 0.41, 0.09, 0.16, 0.005);
+  // Chimney — small square column at back-right corner of roof.
+  pushBox(0.24, 0.55, -0.20, 0.06, 0.16, 0.06);
   return { vertices: verts, triangleIndices: idx };
 }
 
@@ -868,6 +872,12 @@ function CairnARScene(props: any) {
 
   const { arkitOrigin, markers, onCairnPress, onArFrame, beamingId } = liveProps;
   const [tracking, setTracking] = useState(false);
+  // v120: stableTracking is delayed ~1.5s behind tracking going true.
+  // ARKit briefly reports TRACKING_NORMAL during relocalisation while
+  // the world transform is still being corrected — rendering markers in
+  // that window is exactly when "they fly into the sky" happens. We
+  // hide cairns until tracking has been stable for the settle window.
+  const [stableTracking, setStableTracking] = useState(false);
   const [materialsReady, setMaterialsReady] = useState(false);
   // Refs for the camera-frame callback so we can throttle without
   // re-firing the closure on every Viro render.
@@ -989,10 +999,27 @@ function CairnARScene(props: any) {
     }
   }, []);
 
+  const stableTrackingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTrackingUpdated = (state: ViroTrackingState, _reason: ViroTrackingReason) => {
     const ok = state === ViroTrackingStateConstants.TRACKING_NORMAL;
     setTracking(ok);
     crashLogger.breadcrumb(`viro:tracking state=${state} ok=${ok}`);
+    if (ok) {
+      // Delay before showing cairns — gives ARKit time to finish any
+      // post-relocalisation world-transform settling.
+      if (stableTrackingTimerRef.current) clearTimeout(stableTrackingTimerRef.current);
+      stableTrackingTimerRef.current = setTimeout(() => {
+        setStableTracking(true);
+        crashLogger.breadcrumb('viro:tracking-stable (cairns visible)');
+      }, 1500);
+    } else {
+      // Tracking degraded — hide cairns immediately.
+      if (stableTrackingTimerRef.current) {
+        clearTimeout(stableTrackingTimerRef.current);
+        stableTrackingTimerRef.current = null;
+      }
+      setStableTracking(false);
+    }
   };
 
   // v108 drift 监控: 记录上次 cairnY, 检测每次重算的 delta. 用户反馈
@@ -1185,7 +1212,14 @@ function CairnARScene(props: any) {
         direction={[0.0, 0.7, 0.0]}
         intensity={200}
       />
-      {materialsReady && cairnNodes.map((c) => (
+      {/* v120: gate cairn rendering on stableTracking (= TRACKING_NORMAL
+          held for 1.5s). When ARKit is relocalising or just recovered,
+          the world coordinate system is unstable and cairns visibly
+          drift / tilt. Hiding them until tracking has been stable for
+          a settle window prevents the "flags flew into the sky" bug
+          after the phone is laid down then picked up — the user briefly
+          sees nothing instead of seeing everything in the wrong place. */}
+      {materialsReady && stableTracking && cairnNodes.map((c) => (
         <CairnInstance
           key={c.id}
           id={c.id}

@@ -429,25 +429,17 @@ function ActivitySheet({
           </View>
         </View>
 
-        {/* Actions: delete left, view right.
-            "Save as Route" was removed — the same action is reachable from
-            inside View (MapHistory has its own "Save as Route" CTA), and
-            keeping all three made the row feel cramped. */}
-        {/* Actions — v119: View left, Delete right (delete always rightmost
-            for safety; user is unlikely to mis-tap Delete when reaching
-            for the obvious "View" CTA). */}
+        {/* Actions — v120: only View. Delete was removed — the destination
+            (MapHistory detail) already has a Delete button, having two
+            entry points was redundant and made the row feel cramped. */}
         <View style={sheetStyles.actions}>
           <PressBtn
-            style={sheetStyles.saveBtn}
+            style={[sheetStyles.saveBtn, { flex: 1 }]}
             onPress={() => dismiss(() => nav.navigate('MapHistory', { sessionId: data.id }))}
             scaleTo={0.96}
           >
             <Icon name="Map" size={14} color="#fff" strokeWidth={2} />
             <Text style={sheetStyles.saveBtnText}>View</Text>
-          </PressBtn>
-          <PressBtn style={[sheetStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]} onPress={handleDelete} scaleTo={0.96}>
-            <Icon name="Trash2" size={14} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
-            <Text style={[sheetStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete'}</Text>
           </PressBtn>
         </View>
       </Animated.View>

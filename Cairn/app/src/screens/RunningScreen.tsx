@@ -203,6 +203,23 @@ export function RunningScreen() {
   // Animated values
   const startBtnScale = useRef(new Animated.Value(1)).current;
   const controlsFade = useRef(new Animated.Value(0)).current;
+  // v120: imperative camera ref so we can flyTo the user's GPS as soon
+  // as lastCoordinate arrives, even if the Camera was already rendered
+  // with the Auckland fallback (defaultSettings only takes effect on
+  // first mount). Mirrors HikingScreen's pattern.
+  const cameraRef = useRef<any>(null);
+
+  // v120: when lastCoordinate becomes known after first render, snap the
+  // camera to it without animation (matches HikingScreen instantCamera).
+  useEffect(() => {
+    if (!lastCoordinate || !cameraRef.current) return;
+    cameraRef.current.setCamera({
+      centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat],
+      zoomLevel: 15,
+      animationDuration: 0,
+      animationMode: 'none',
+    });
+  }, [lastCoordinate?.lat, lastCoordinate?.lng]);
 
   // Show/hide unlocked controls with animation
   useEffect(() => {
@@ -380,17 +397,20 @@ export function RunningScreen() {
           >
             {CameraComponent && (
               <CameraComponent
+                ref={cameraRef}
                 followUserLocation={foregroundGranted && !!lastCoordinate}
                 followZoomLevel={15}
-                // v118: avoid the "chaotic earth" intro — if we already have
-                // a GPS fix, jump straight there with zoom=15 and no animation.
-                // Without defaultSettings, Mapbox lands on zoom=0 (world view)
-                // for a few hundred ms before flying to user position.
+                // v118/v120: avoid the "chaotic earth" intro. defaultSettings
+                // takes effect at first mount only, so the useEffect above
+                // also imperatively setCamera when lastCoordinate arrives
+                // late. Without that, Camera mounts with Auckland fallback
+                // (or default zoom=0) and stays there until a real GPS fix
+                // triggers followUserLocation's flyTo (the "globe zoom").
                 defaultSettings={lastCoordinate
                   ? { centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat], zoomLevel: 15 }
                   : { centerCoordinate: [174.7633, -36.8485], zoomLevel: 6 }}
-                animationMode={lastCoordinate ? 'none' : 'flyTo'}
-                animationDuration={lastCoordinate ? 0 : 500}
+                animationMode="none"
+                animationDuration={0}
               />
             )}
             {UserLocationComponent && foregroundGranted && (
