@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTrackingStore } from '../store/useTrackingStore';
@@ -244,10 +244,21 @@ export function RunningScreen() {
   // instead of identical. Subsequent entries reuse the MapView and
   // skip the fly-in — same as Hiking, which is what the user wanted.
   const [gesturesEnabled, setGesturesEnabled] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setGesturesEnabled(true), 700);
-    return () => clearTimeout(t);
-  }, []);
+  // v128b: full MapView remount per focus. RunningScreen actually stays
+  // alive between exits (RootNavigator stack keeps it cached), so the
+  // Mapbox MapView reuses its previous camera state and the second
+  // entry starts mid-zoom instead of from the globe. Bumping mapEpoch
+  // on every focus forces a fresh `key` → MapView unmounts + remounts
+  // → Mapbox replays the fly-in.
+  const [mapEpoch, setMapEpoch] = useState(0);
+  useFocusEffect(
+    React.useCallback(() => {
+      setMapEpoch(e => e + 1);
+      setGesturesEnabled(false);
+      const t = setTimeout(() => setGesturesEnabled(true), 700);
+      return () => clearTimeout(t);
+    }, []),
+  );
 
   // Show/hide unlocked controls with animation
   useEffect(() => {
@@ -416,6 +427,7 @@ export function RunningScreen() {
         {/* Real Mapbox basemap (or fallback if Mapbox unavailable) */}
         {MapView ? (
           <MapView
+            key={`map-${mapEpoch}`}
             style={StyleSheet.absoluteFillObject}
             styleURL={getPrimaryMapStyle()}
             logoEnabled={false}
