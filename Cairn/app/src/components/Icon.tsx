@@ -38,6 +38,8 @@ import {
   Milestone, Calendar,
   // v80 — voice memo
   Mic,
+  // v119 — hut marker (PlantSheet uses 'House' as the label)
+  House,
 } from 'lucide-react-native';
 import { IconSize } from './tokens';
 
@@ -61,6 +63,7 @@ const ICON_MAP = {
   Footprints, SportShoe,
   Milestone, Calendar,
   Mic,
+  House,
 } as const;
 
 export type IconName = keyof typeof ICON_MAP;

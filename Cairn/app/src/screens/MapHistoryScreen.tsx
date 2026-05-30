@@ -21,6 +21,7 @@ import { useRouteStore } from '../store/useRouteStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { crashLogger } from '../services/crashLogger';
 import { getCurrentRegion } from '../config/regions';
+import { getPrimaryMapStyle } from '../config/mapbox';
 import { formatDistance, formatDuration, formatDate, getRelativeTime, haversineM, kalmanInit, kalmanUpdate, simplifyPolyline } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
@@ -137,7 +138,7 @@ function NativeTrackMap({ session, markers }: { session: TrackingSession; marker
   return (
     <MapView
       style={StyleSheet.absoluteFillObject}
-      styleURL="mapbox://styles/mapbox/outdoors-v12"
+      styleURL={getPrimaryMapStyle()}
       logoEnabled={false}
       attributionEnabled={false}
       scaleBarEnabled={false}
@@ -947,15 +948,15 @@ export function MapHistoryScreen() {
             </View>
           </View>
           <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
-            {/* Disable Save as Route when the session has fewer than 2
-                track points — there's no path to save. v118: also surface
-                a visible reason underneath the disabled button so the user
-                doesn't wonder why it's not tappable. */}
-            <View style={{ flex: 1 }}>
+            {/* v119: Save as Route on the LEFT, Delete on the RIGHT.
+                Equal sizes (flex: 1 each). Removed the "No path data"
+                helper text and the wrapping View — the disabled state
+                is communicated by opacity alone. Users with track data
+                see a fully-tappable button. */}
             <TouchableOpacity
               style={[
                 cardStyles.deleteBtn,
-                { flex: 0, borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+                { flex: 1, borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
                 selectedSession.trackPoints.length < 2 && { opacity: 0.4 },
               ]}
               disabled={selectedSession.trackPoints.length < 2}
@@ -963,7 +964,7 @@ export function MapHistoryScreen() {
                 // Save as Route: directly persist the raw GPS trace as
                 // a free route (no editor dialog). Honours route-rules.md
                 // §1 — "GPS Free is the foundation, Edit is an optional
-                // aid". Edit path is a separate sibling button.
+                // aid".
                 //
                 // No `originalPoints` field — backend doesn't accept it
                 // yet (Phase 1 dual-line storage will land server-side
@@ -1002,16 +1003,6 @@ export function MapHistoryScreen() {
               <Icon name="Route" size={IconSize.sm} color={Colors.primary} strokeWidth={2} />
               <Text style={[cardStyles.deleteBtnText, { color: Colors.primary }]}>Save as Route</Text>
             </TouchableOpacity>
-            {selectedSession.trackPoints.length < 2 && (
-              <Text style={{
-                marginTop: 4,
-                fontSize: 11,
-                color: Colors.textSecondary,
-                textAlign: 'center',
-                lineHeight: 14,
-              }}>No path data — too short to save</Text>
-            )}
-            </View>
             {/* v118: Edit button removed entirely. Per route-rules.md §4 the
                 edit engine (1km node corridor + dual-line UI) lives on Route
                 Detail, not Activity. Activity is the immutable raw GPS record.

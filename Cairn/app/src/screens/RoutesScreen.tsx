@@ -17,6 +17,7 @@ import { useSessionStore } from '../store/useSessionStore';
 import { useMarkerStore, type Marker, type MarkerPermission } from '../store/useMarkerStore';
 import { useTrackingStore } from '../store/useTrackingStore';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
+import { getPrimaryMapStyle } from '../config/mapbox';
 import { Icon, type IconName } from '../components/Icon';
 import { HikingIcon, RunningIcon } from '../components/ActivityIcons';
 import { BackButton } from '../components/BackButton';
@@ -65,9 +66,13 @@ const FLAG_TYPES: { id: MarkerType; icon: IconName; label: string; color: string
 
 // ── Segment Control ──────────────────────────────────────────────────────────
 function SegmentControl({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
+  // v119: tab order: Activities first (the source of truth — every walked
+  // session lives here), then Routes (curated, derived from Activities),
+  // then Flags (place markers). This matches user mental model: "I want
+  // to see what I did" → Activities; "I want to plan/redo a route" → Routes.
   const tabs: { id: Tab; label: string }[] = [
-    { id: 'routes', label: 'Routes' },
     { id: 'activities', label: 'Activities' },
+    { id: 'routes', label: 'Routes' },
     { id: 'flags', label: 'Flags' },
   ];
   return (
@@ -194,7 +199,7 @@ function RouteMapPreview({ points }: { points: { lat: number; lng: number }[] })
     <View style={routePreviewStyles.mapWrap}>
       <MapView
         style={StyleSheet.absoluteFillObject}
-        styleURL="mapbox://styles/mapbox/outdoors-v12"
+        styleURL={getPrimaryMapStyle()}
         logoEnabled={false}
         attributionEnabled={false}
         compassEnabled={false}
@@ -320,12 +325,9 @@ function RouteSheet({
           <Text style={routeSheetStyles.lastRun}>Last used {lastRun}</Text>
         )}
 
-        {/* Actions */}
+        {/* Actions — v119: Delete always on the right per consistency rule
+            (Activity sheet uses Save-left / Delete-right). Edit on the left. */}
         <View style={sheetStyles.actions}>
-          <PressBtn style={[sheetStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]} onPress={handleDelete} scaleTo={0.96}>
-            <Icon name="Trash2" size={14} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
-            <Text style={[sheetStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete'}</Text>
-          </PressBtn>
           <PressBtn
             style={sheetStyles.saveBtn}
             onPress={() => dismiss(() => onEdit(data.id))}
@@ -333,6 +335,10 @@ function RouteSheet({
           >
             <Icon name="Pencil" size={14} color="#fff" strokeWidth={2} />
             <Text style={sheetStyles.saveBtnText}>Edit Route</Text>
+          </PressBtn>
+          <PressBtn style={[sheetStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]} onPress={handleDelete} scaleTo={0.96}>
+            <Icon name="Trash2" size={14} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
+            <Text style={[sheetStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete'}</Text>
           </PressBtn>
         </View>
       </Animated.View>
@@ -427,11 +433,10 @@ function ActivitySheet({
             "Save as Route" was removed — the same action is reachable from
             inside View (MapHistory has its own "Save as Route" CTA), and
             keeping all three made the row feel cramped. */}
+        {/* Actions — v119: View left, Delete right (delete always rightmost
+            for safety; user is unlikely to mis-tap Delete when reaching
+            for the obvious "View" CTA). */}
         <View style={sheetStyles.actions}>
-          <PressBtn style={[sheetStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]} onPress={handleDelete} scaleTo={0.96}>
-            <Icon name="Trash2" size={14} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
-            <Text style={[sheetStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete'}</Text>
-          </PressBtn>
           <PressBtn
             style={sheetStyles.saveBtn}
             onPress={() => dismiss(() => nav.navigate('MapHistory', { sessionId: data.id }))}
@@ -440,6 +445,10 @@ function ActivitySheet({
             <Icon name="Map" size={14} color="#fff" strokeWidth={2} />
             <Text style={sheetStyles.saveBtnText}>View</Text>
           </PressBtn>
+          <PressBtn style={[sheetStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]} onPress={handleDelete} scaleTo={0.96}>
+            <Icon name="Trash2" size={14} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
+            <Text style={[sheetStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete'}</Text>
+          </PressBtn>
         </View>
       </Animated.View>
     </Animated.View>
@@ -447,7 +456,7 @@ function ActivitySheet({
 }
 
 // ── Routes Tab ───────────────────────────────────────────────────────────────
-function RoutesTab() {
+function RoutesTab({ onGoToActivities }: { onGoToActivities?: () => void }) {
   const nav = useNavigation<Nav>();
   const routes = useRouteStore(s => s.routes);
   const deleteRoute = useRouteStore(s => s.deleteRoute);
@@ -540,10 +549,10 @@ function RoutesTab() {
               <TouchableOpacity
                 style={styles.emptyHeroCta}
                 activeOpacity={0.85}
-                onPress={() => nav.navigate('MapHistory')}
+                onPress={() => onGoToActivities?.()}
               >
                 <Icon name="Map" size={16} color="#fff" strokeWidth={2} />
-                <Text style={styles.emptyHeroCtaText}>Go to Activities</Text>
+                <Text style={styles.emptyHeroCtaText}>View Activities</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -987,7 +996,8 @@ function FlagsTab() {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 export function RoutesScreen() {
-  const [tab, setTab] = useState<Tab>('routes');
+  // v119: default to Activities tab (matches new tab order — see SegmentControl).
+  const [tab, setTab] = useState<Tab>('activities');
   const loadRoutes = useRouteStore(s => s.loadRoutes);
   const nav = useNavigation<Nav>();
 
@@ -1005,8 +1015,8 @@ export function RoutesScreen() {
       </View>
       <SegmentControl active={tab} onChange={setTab} />
       <View style={{ flex: 1 }}>
-        {tab === 'routes' && <RoutesTab />}
         {tab === 'activities' && <ActivitiesTab />}
+        {tab === 'routes' && <RoutesTab onGoToActivities={() => setTab('activities')} />}
         {tab === 'flags' && <FlagsTab />}
       </View>
     </SafeAreaView>

@@ -29,6 +29,7 @@ import { MapBottomPanel, type PanelMarkerItem } from '../components/MapBottomPan
 import { OfflineMapSheet } from '../components/OfflineMapSheet';
 import { MARKER_META, MarkerType } from '../data/mockData';
 import { getCurrentRegion } from '../config/regions';
+import { getPrimaryMapStyle } from '../config/mapbox';
 
 // Mapbox — conditional import (native only; web uses fallback)
 let MapboxGL: any = null;
@@ -137,7 +138,7 @@ function RealMap({
     <View style={styles.mapContainer}>
       <MapView
         style={StyleSheet.absoluteFillObject}
-        styleURL="mapbox://styles/mapbox/outdoors-v12"
+        styleURL={getPrimaryMapStyle()}
         logoEnabled={false}
         attributionEnabled={false}
         compassEnabled={true}

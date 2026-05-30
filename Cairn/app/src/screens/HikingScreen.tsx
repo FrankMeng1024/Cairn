@@ -30,6 +30,7 @@ import { useTrackingStore } from '../store/useTrackingStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { useRouteStore } from '../store/useRouteStore';
 import { getCurrentRegion } from '../config/regions';
+import { getPrimaryMapStyle } from '../config/mapbox';
 import { formatDistance, formatDuration, haversineM, createTrackSmoother, smoothGPSPoint, getSamplingInterval, classifyMovement, type SmoothedTrackState, type GPSPoint } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon, type IconName } from '../components/Icon';
@@ -150,7 +151,7 @@ function CompassNeedle({ heading, size = 22 }: { heading: number | null; size?: 
 }
 
 // ── Map component (real Mapbox or fallback) ─────────────────────────────
-function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStart, userPos, instantCamera, followUser = true, onUserGesture }: {
+function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStart, userPos, instantCamera, followUser = true, onUserGesture, recenterImperativeRef }: {
   markers: Marker[];
   // v78 #1: trackPoints carry an optional `t` (epoch ms) so we can split
   // the polyline at GPS-signal-loss gaps. When two consecutive points are
@@ -175,6 +176,10 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
   // HikingMap) flips this back to true via setFollowUser.
   followUser?: boolean;
   onUserGesture?: () => void;
+  // v119: optional ref the parent fills with an imperative recenter()
+  // function so the recenter button can flyTo the user's location even
+  // when the cameraRef itself is private to HikingMap.
+  recenterImperativeRef?: React.MutableRefObject<(() => void) | null>;
 }) {
   const region = getCurrentRegion();
 
@@ -235,6 +240,27 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
   // auto-fly-to-puck animation that runs even when defaultSettings is
   // provided. Without this, "Resume" still flies in from globe view.
   const cameraRef = useRef<any>(null);
+
+  // v119: expose an imperative recenter() to the parent so the recenter
+  // button (rendered outside HikingMap) can flyTo the user's location
+  // and force zoom=15. Mapbox's followUserLocation alone doesn't reset
+  // zoom — toggling it true→true is a no-op when zoom has been changed.
+  useEffect(() => {
+    if (!recenterImperativeRef) return;
+    recenterImperativeRef.current = () => {
+      const cur = useTrackingStore.getState().lastCoordinate;
+      if (!cur || !cameraRef.current) return;
+      cameraRef.current.setCamera({
+        centerCoordinate: [cur.lng, cur.lat],
+        zoomLevel: 15,
+        animationDuration: 600,
+        animationMode: 'flyTo',
+      });
+    };
+    return () => {
+      if (recenterImperativeRef) recenterImperativeRef.current = null;
+    };
+  }, [recenterImperativeRef]);
 
   // When in instant mode (resume / re-entry with a known location),
   // skip Mapbox's followUserLocation entirely. Manually set the camera
@@ -298,7 +324,7 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
     <View style={styles.mapBg}>
       <MapView
         style={StyleSheet.absoluteFillObject}
-        styleURL="mapbox://styles/mapbox/outdoors-v12"
+        styleURL={getPrimaryMapStyle()}
         logoEnabled={false}
         attributionEnabled={false}
         // Mapbox's built-in compass is hidden — we draw our own as a
@@ -1094,6 +1120,9 @@ export function HikingScreen() {
   // camera to the user. false = user has manually panned/zoomed; we
   // honour that until they tap the recenter button.
   const [followUser, setFollowUser] = useState(true);
+  // v119: imperative ref filled by HikingMap; recenter button calls this
+  // to flyTo the user's position and reset zoom to 15.
+  const recenterImperativeRef = useRef<(() => void) | null>(null);
   // Stop-summary sheet state. We don't call stopTracking immediately
   // when the user hits Stop — instead we capture a snapshot of the
   // current stats and surface a summary sheet so the user can name
@@ -1468,6 +1497,7 @@ export function HikingScreen() {
         // v118: pass through followUser + gesture release callback.
         followUser={followUser}
         onUserGesture={() => setFollowUser(false)}
+        recenterImperativeRef={recenterImperativeRef}
       />
 
       {/* Top overlay: back button (left) + GPS chip (right). Uses
@@ -1632,10 +1662,11 @@ export function HikingScreen() {
                 )}
               </TouchableOpacity>
             </View>
-            {/* v118: recenter button — only shown after the user has
-                manually panned/zoomed (followUser=false). Tapping flips
-                followUser back to true; Mapbox's followUserLocation
-                handles the recenter animation natively. */}
+            {/* v118+v119: recenter button — only shown after the user has
+                manually panned/zoomed (followUser=false). Tapping fires
+                the imperative recenter (HikingMap → cameraRef.setCamera)
+                AND flips followUser back to true so subsequent GPS fixes
+                keep the camera locked. */}
             {!followUser && (
               <View style={styles.controlSlot}>
                 <TouchableOpacity
@@ -1643,7 +1674,12 @@ export function HikingScreen() {
                   activeOpacity={0.85}
                   onPress={() => {
                     Haptics.selectionAsync().catch(() => {});
-                    setFollowUser(true);
+                    recenterImperativeRef.current?.();
+                    // Re-enable follow after the flyTo animation has
+                    // settled — otherwise the in-flight gesture from
+                    // setCamera trips onCameraChanged and immediately
+                    // sets followUser=false again.
+                    setTimeout(() => setFollowUser(true), 700);
                   }}
                 >
                   <Icon name="Target" size={22} color={Colors.primary} strokeWidth={2} />

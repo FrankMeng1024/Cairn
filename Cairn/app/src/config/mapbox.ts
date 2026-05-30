@@ -54,12 +54,20 @@ export type MapStyle = keyof typeof MAP_STYLES;
  * reference a single source of truth.
  */
 export const CAIRN_TOPO_STYLE_URL =
-  process.env.EXPO_PUBLIC_CAIRN_TOPO_STYLE_URL ?? MAP_STYLES.outdoors;
+  process.env.EXPO_PUBLIC_CAIRN_TOPO_STYLE_URL ?? MAP_STYLES.streets;
 
 /**
  * Resolve the best available map style for primary views.
  * Reads CAIRN_TOPO_STYLE_URL at runtime so that the style can be
  * overridden via environment variable without a code change.
+ *
+ * v119: default fallback changed from `outdoors-v12` to `streets-v12`.
+ * Outdoors emphasizes terrain/contours but hides nearly all street-
+ * level POIs and locality names. Users zooming in to find shops, road
+ * names, or suburbs were seeing nothing — that's the "I zoomed in but
+ * still don't see place names" complaint. Streets-v12 keeps reasonable
+ * outdoor coverage (parks, water, terrain shading on zoom out) while
+ * surfacing the road + POI labels users actually look for.
  */
 export function getPrimaryMapStyle(): string {
   return CAIRN_TOPO_STYLE_URL;

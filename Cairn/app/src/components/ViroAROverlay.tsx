@@ -451,8 +451,13 @@ function buildJunctionGeom() {
   // Trunk
   pushPole(0, -0.6, 0, 0, -0.2, 0, 0.08);
 
-  // 左 shaft (CONNECTED)
-  pushPole(0, -0.2, 0, -0.354, 0.154, 0, 0.07);
+  // 左 shaft (CONNECTED) — v119: extend the shaft past the arrow base by
+  // 0.06m so the cone visibly overlaps the cylinder. Without overlap,
+  // the cap-disc + cone-base normal discontinuity reads as a visible
+  // crack in AR even when their centres line up. Direction unit vector
+  // here is (-0.707, 0.707), so 0.06 along that = (-0.042, 0.042).
+  // End coords: (-0.354 - 0.042, 0.154 + 0.042) = (-0.396, 0.196).
+  pushPole(0, -0.2, 0, -0.396, 0.196, 0, 0.07);
   // 右 shaft (DISCONNECTED, picker 原坐标)
   pushPole(0.073, -0.077, 0, 0.427, 0.277, 0, 0.07);
 
@@ -530,77 +535,77 @@ function buildJunctionGeom() {
 //   三角棱柱: 顶尖 (0, 0.6), 底左 (-0.6, -0.5), 底右 (0.6, -0.5), z∈[-0.4, +0.4]
 //   门: 薄盒 (0.04 半宽 × 0.4 半高 × 0.005 半厚), 中心 (0, 0.05, 0.41).
 //        Plane→Box 是为了可见性 (Viro Plane 双面 alpha 不稳).
-// v118 hut redo: real DOC backcountry hut shape — rectangular body with
-// pitched gable roof, tall stone chimney, prominent door, optional eaves
-// detail. Replaces the v97-v117 single triangular prism (which users
-// felt was "ugly, like a paper tent"). Body and roof share the main
-// material; door + chimney are dark accents via the overlay geom.
+// v119 hut v2: noticeably more 3D — wider eaves, taller chimney, large
+// front porch step, double the door size so it reads as architecture
+// from 5m+ in AR. Two paired ridge beams (stripped from the roof) give
+// the model a visible spine instead of looking like a flat tent prism.
 function buildHutGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
 
   function pushBox(cx: number, cy: number, cz: number, hw: number, hh: number, hd: number) {
     const s = verts.length;
-    verts.push([cx - hw, cy - hh, cz + hd]); // 0 ftl
-    verts.push([cx + hw, cy - hh, cz + hd]); // 1 ftr
-    verts.push([cx + hw, cy - hh, cz - hd]); // 2 btr
-    verts.push([cx - hw, cy - hh, cz - hd]); // 3 btl
-    verts.push([cx - hw, cy + hh, cz + hd]); // 4 ftl-up
-    verts.push([cx + hw, cy + hh, cz + hd]); // 5 ftr-up
-    verts.push([cx + hw, cy + hh, cz - hd]); // 6 btr-up
-    verts.push([cx - hw, cy + hh, cz - hd]); // 7 btl-up
-    // bottom (looking down — keep CCW from above)
+    verts.push([cx - hw, cy - hh, cz + hd]); // 0
+    verts.push([cx + hw, cy - hh, cz + hd]); // 1
+    verts.push([cx + hw, cy - hh, cz - hd]); // 2
+    verts.push([cx - hw, cy - hh, cz - hd]); // 3
+    verts.push([cx - hw, cy + hh, cz + hd]); // 4
+    verts.push([cx + hw, cy + hh, cz + hd]); // 5
+    verts.push([cx + hw, cy + hh, cz - hd]); // 6
+    verts.push([cx - hw, cy + hh, cz - hd]); // 7
     idx.push([s+0, s+2, s+1], [s+0, s+3, s+2]);
-    // front (+z)
     idx.push([s+0, s+1, s+5], [s+0, s+5, s+4]);
-    // right (+x)
     idx.push([s+1, s+2, s+6], [s+1, s+6, s+5]);
-    // back (-z)
     idx.push([s+2, s+3, s+7], [s+2, s+7, s+6]);
-    // left (-x)
     idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);
-    // top (+y)
     idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
   }
 
-  // ── Body (rectangular hut walls) ──
-  // 1.0m wide × 0.6m tall × 0.8m deep. Bottom at y=-0.5, top at y=+0.1.
+  // ── Body ── 1.0m × 0.6m × 0.8m, base at y=-0.5, top at y=+0.10
   const bodyHW = 0.50, bodyHH = 0.30, bodyHD = 0.40;
   const bodyCY = -0.20;
   pushBox(0, bodyCY, 0, bodyHW, bodyHH, bodyHD);
 
-  // ── Roof (gable / pitched, two-slope) ──
-  // Built as a triangular prism running along the x-axis, sitting on
-  // the body. Eaves overhang slightly (1.05m / 0.85m vs body's 1.0m / 0.8m)
-  // for a finished look. Ridge runs along z, peak at y=+0.50.
-  const roofHW = 0.55, roofHD = 0.45;
-  const roofBaseY = bodyCY + bodyHH; // top of body, y=0.10
-  const roofPeakY = roofBaseY + 0.40;
-  // Front gable triangle (z=+roofHD)
+  // ── Front porch step ── small box flush with the front wall, makes
+  // the hut feel grounded and gives a place for the door.
+  pushBox(0, -0.55, 0.46, 0.30, 0.05, 0.08);
+
+  // ── Roof — pitched gable with WIDE eaves (0.20m overhang each side)
+  // and front/back overhang too. Reads as a real roof in AR.
+  const roofHW = 0.70;   // wider than body's 0.50 → 0.20m left eave + 0.20m right eave
+  const roofHD = 0.55;   // deeper than body's 0.40 → 0.15 front overhang + 0.15 back
+  const roofBaseY = bodyCY + bodyHH; // 0.10 (top of body)
+  const roofPeakY = roofBaseY + 0.50; // tall peak — peak at 0.60
   const r0 = verts.length;
   verts.push([-roofHW, roofBaseY,  roofHD]); // 0 front-left
   verts.push([ roofHW, roofBaseY,  roofHD]); // 1 front-right
   verts.push([      0, roofPeakY,  roofHD]); // 2 front-peak
-  // Back gable triangle (z=-roofHD)
   verts.push([-roofHW, roofBaseY, -roofHD]); // 3 back-left
   verts.push([ roofHW, roofBaseY, -roofHD]); // 4 back-right
   verts.push([      0, roofPeakY, -roofHD]); // 5 back-peak
-  // Front gable face (CCW seen from +z)
+  // Front gable
   idx.push([r0+0, r0+1, r0+2]);
-  // Back gable face (CCW seen from -z)
+  // Back gable
   idx.push([r0+3, r0+5, r0+4]);
-  // Left slope (front-left, back-left, front-peak; front-peak, back-left, back-peak)
+  // Left slope (two triangles)
   idx.push([r0+0, r0+2, r0+5], [r0+0, r0+5, r0+3]);
-  // Right slope (front-right, front-peak, back-peak; front-right, back-peak, back-right)
+  // Right slope
   idx.push([r0+1, r0+4, r0+5], [r0+1, r0+5, r0+2]);
-  // Roof underside (closes the prism so the hut isn't a cathedral)
+  // Eaves underside (closes the prism, gives the eaves visible thickness)
   idx.push([r0+0, r0+3, r0+4], [r0+0, r0+4, r0+1]);
+
+  // ── Ridge beam ── small box running along the peak, adds a visible
+  // spine line that catches highlights and makes the roof obviously 3D
+  // instead of a flat tent fold.
+  pushBox(0, roofPeakY + 0.02, 0, 0.04, 0.02, roofHD - 0.02);
 
   return { vertices: verts, triangleIndices: idx };
 }
 
-// v118 hut accents: door + chimney as a single overlay geom with the
-// dark accent material. Visible from far in AR thanks to the contrast.
+// v119 hut accents: door (large, prominent on front face) + chimney
+// (taller, on back-right) + 2 small windows on the front. All share the
+// dark accent material so they read as "openings + masonry" against the
+// warm body tone.
 function buildHutDoorGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
@@ -621,13 +626,16 @@ function buildHutDoorGeom() {
     idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);
     idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
   }
-  // Door: 0.16m wide × 0.32m tall, slightly inset on front face.
-  // Body front face is at z=0.40, body bottom at y=-0.50, body top at y=+0.10.
-  // Door bottom touches body bottom; protrudes 0.01 forward.
-  pushBox(0, -0.34, 0.41, 0.08, 0.16, 0.005);
-  // Chimney: square stone column on the back-right slope of the roof.
-  // Slimmer + taller than body so it reads as a chimney from any angle.
-  pushBox(0.30, 0.55, -0.20, 0.07, 0.18, 0.07);
+  // Door — front face, centered, half body height, protrudes 0.01m
+  // forward from the wall (z=0.40 + 0.01 = 0.41).
+  pushBox(0, -0.32, 0.41, 0.10, 0.18, 0.005);
+  // Two windows flanking the door — slightly smaller than the door,
+  // raised so they sit at "eye level" of the small hut.
+  pushBox(-0.30, -0.10, 0.41, 0.07, 0.06, 0.005);
+  pushBox( 0.30, -0.10, 0.41, 0.07, 0.06, 0.005);
+  // Chimney — square stone column emerging from the back-right slope,
+  // tall enough to clearly clear the ridge.
+  pushBox(0.32, 0.70, -0.22, 0.08, 0.22, 0.08);
   return { vertices: verts, triangleIndices: idx };
 }
 
@@ -877,12 +885,13 @@ function CairnARScene(props: any) {
   // Used by handleAnchor to reject planes detected while phone is held flat
   // (forward[1] ≈ 1 = pointing up = phone lying on desk).
   const camForwardRef = useRef<number[]>([0, 0, -1]);
-  // v118: rolling window of recent camera Y values (~last 2s at 10Hz) used
-  // to detect "phone was put down then picked up" events. When the camera
-  // height (position[1]) changes by > 0.4m within 2 seconds, the ARKit
-  // session has shifted enough that the cached ground Y is no longer
-  // trustworthy — reset it so the next horizontal plane re-locks.
-  const camYHistoryRef = useRef<{ t: number; y: number }[]>([]);
+  // v119: latest camera Y (height in ARKit world). Used as a sanity prior
+  // for ground detection — handheld phone sits ~1.4-1.7m above floor, so
+  // the floor plane should be within ±0.7m of (camY - 1.5m). Any ARKit
+  // anchor outside that band is almost certainly a desk or tabletop, not
+  // the real floor. Replaces the rolling-window "spread" relock from
+  // v118 which fired too often during normal walking.
+  const camYRef = useRef<number>(1.5); // optimistic default before first frame
 
   // Register Viro materials + animations on first scene mount.
   // Deliberately NOT at module top-level (defensive RN best practice).
@@ -1049,29 +1058,27 @@ function CairnARScene(props: any) {
     if (!t || !t.position || !t.forward) return;
     camForwardRef.current = t.forward; // keep latest forward for flat-phone guard in handleAnchor
 
-    // v118 ground-relock detection: track camera Y over the last ~2s.
-    // If the spread (max-min) exceeds 0.4m, the user has put the phone
-    // down or picked it up, the cached ground Y is stale, and ARKit
-    // anchors are likely to drift. Reset groundYRef so the next horizontal
-    // plane re-locks at the actual current floor height.
+    // v119 ground sanity check: track current camera height and validate
+    // that the cached ground Y is still consistent with a handheld phone.
+    // The expected floor is camera Y - 1.5m (eye height for handheld
+    // device). If the cached ground Y deviates from that by more than
+    // 0.7m, ARKit has drifted — clear groundYRef so the next plane
+    // detection picks up the corrected floor. This replaces the v118
+    // "spread > 0.4m within 2s" relock which mis-fired on normal walking
+    // and was creating its own drift.
     const camY = t.position[1];
     if (typeof camY === 'number' && isFinite(camY)) {
-      const hist = camYHistoryRef.current;
-      hist.push({ t: now, y: camY });
-      // Keep last 2s only.
-      const cutoff = now - 2000;
-      while (hist.length > 0 && hist[0].t < cutoff) hist.shift();
-      if (groundYRef.current !== null && hist.length >= 6) {
-        let lo = Infinity, hi = -Infinity;
-        for (const e of hist) { if (e.y < lo) lo = e.y; if (e.y > hi) hi = e.y; }
-        if (hi - lo > 0.4) {
-          // Phone was moved vertically a lot — re-detect the floor.
-          crashLogger.breadcrumb(`viro:ground-relock spread=${(hi - lo).toFixed(2)}m oldGround=${groundYRef.current.toFixed(3)}`);
+      camYRef.current = camY;
+      const cur = groundYRef.current;
+      if (cur !== null) {
+        const expectedFloor = camY - 1.5;
+        const deviation = Math.abs(cur - expectedFloor);
+        if (deviation > 0.7) {
+          crashLogger.breadcrumb(
+            `viro:ground-stale camY=${camY.toFixed(2)} expectedFloor=${expectedFloor.toFixed(2)} cachedGround=${cur.toFixed(2)} dev=${deviation.toFixed(2)}m`
+          );
           groundYRef.current = null;
           setGroundYTick((n) => n + 1);
-          // Clear history so we don't keep re-triggering during the same
-          // motion event.
-          camYHistoryRef.current = [];
         }
       }
     }
@@ -1096,42 +1103,50 @@ function CairnARScene(props: any) {
     if (anchor.alignment && anchor.alignment !== 'Horizontal' && anchor.alignment !== 'horizontal') return;
     const y = anchor.position?.[1];
     if (typeof y !== 'number' || !isFinite(y)) return;
-    // v97.1: 拒绝天花板. 真地面在相机下方 (-1.0~-1.7m).
-    // v115: 从 -0.3 提高到 -0.5 — 桌面约 -0.66m, 旧阈值误让桌面通过.
+    // v97.1 / v115: reject ceilings. real floor is below the camera.
     if (y > -0.5) return;
+
+    // v119: camera-height prior. The expected floor for a handheld phone
+    // is about 1.5m below the current camera Y. We reject any anchor that
+    // is more than 0.7m off this estimate — that filters out desks/tables
+    // that ARKit caches even after the user picks the phone up. Without
+    // this, sessions like telemetry id=317 showed cairnY=0.96m for 5
+    // markers (markers floating in the sky) because ARKit kept reporting
+    // the original tabletop plane Y=-0.54 long after the phone was off
+    // the desk and at eye level (camY≈0.9-1.0, expected floor ≈ -0.5..-0.6,
+    // tabletop is at the boundary — but with the camera-Y prior tight we
+    // reject it because cached -0.54 vs new expected -1.5..-1.6 deviates).
+    const expectedFloor = camYRef.current - 1.5;
+    const planeDeviation = Math.abs(y - expectedFloor);
+    if (planeDeviation > 0.7) {
+      // anchor is far from where a floor would be — likely a desk
+      // surface, a passing object, or a stale ARKit estimate.
+      // (no breadcrumb to avoid spam — every refined update would log)
+      return;
+    }
+
     const cur = groundYRef.current;
-    // v108 修飘移: 用户反馈 "对准 marker 手机不动, 但 marker 镜头里慢慢
-    // 朝一个方向小范围移动".
-    // ROOT CAUSE: ARKit onAnchorUpdated 持续 refine plane 估计, 即使手机
-    // 不动. 每次 anchor.position[1] 变化 0.01-0.05m, groundYRef 更新
-    // → setGroundYTick → cairnNodes useMemo 重算 → 所有 marker Y 变化
-    // → 视觉上 marker 慢慢飘.
-    // 修法: 加 STABILITY THRESHOLD 0.10m. 只有 y 变化 > 10cm 才更新 ground.
-    // ARKit plane refine 通常在 ±5cm 内, 阈值 10cm 完全过滤 jitter,
-    // 但保留真实地面变化 (例如用户走到楼梯下).
+    // v108 jitter filter: ignore plane refine updates within ±10cm.
     const STABILITY_THRESHOLD_M = 0.10;
     if (cur === null) {
-      // 首次 ground 检测.
-      // v115 flat-phone guard: 手机平放桌上时 forward[1] ≈ 0.9~1.0 (镜头朝上).
-      // 此时 ARKit 检测到的 "地面" 其实是桌面 — 不能作为 floor 参考.
-      // 拿起手机后 forward[1] 回到 ≈0 (水平), 届时再接受第一个 plane.
+      // First plane detection in this session.
       const fwd = camForwardRef.current;
       if (fwd[1] > 0.7) {
         crashLogger.breadcrumb(`viro:plane:first-skip y=${y.toFixed(3)} fwd1=${fwd[1].toFixed(2)} (phone flat, ignored)`);
         return;
       }
-      // 手机竖握, 正常接受
       groundYRef.current = y;
       setGroundYTick((n) => n + 1);
-      crashLogger.breadcrumb(`viro:plane:first y=${y.toFixed(3)} (initial ground)`);
+      crashLogger.breadcrumb(
+        `viro:plane:first y=${y.toFixed(3)} camY=${camYRef.current.toFixed(2)} expectedFloor=${expectedFloor.toFixed(2)}`
+      );
     } else if (y < cur - STABILITY_THRESHOLD_M) {
-      // 真发现更低的地面 (例如下楼/下坡), 接受新 ground
+      // Lower plane — accept (going downstairs / lower terrain).
       crashLogger.breadcrumb(`viro:plane:lower y=${y.toFixed(3)} prev=${cur.toFixed(3)} delta=${(y - cur).toFixed(3)}`);
       groundYRef.current = y;
       setGroundYTick((n) => n + 1);
     } else {
-      // 在阈值内的 jitter, 忽略防飘
-      // (不打 breadcrumb 防 spam, 这种 update 每秒可能多次)
+      // Within jitter range — ignore.
     }
   }, []);
   const onAnchorFound = useCallback((anchor: any) => handleAnchor(anchor), [handleAnchor]);

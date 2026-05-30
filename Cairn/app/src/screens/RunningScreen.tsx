@@ -25,6 +25,7 @@ import { useTrackingStore } from '../store/useTrackingStore';
 import { useRouteStore } from '../store/useRouteStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { getCurrentRegion } from '../config/regions';
+import { getPrimaryMapStyle } from '../config/mapbox';
 import { formatDistance, formatDuration } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
@@ -144,11 +145,35 @@ export function RunningScreen() {
         const Location = await import('expo-location');
         const perm = await Location.getForegroundPermissionsAsync();
         if (cancelled) return;
-        if (perm.status === 'granted') {
-          setForegroundGranted(true);
-        } else if (perm.canAskAgain) {
+        let granted = perm.status === 'granted';
+        if (!granted && perm.canAskAgain) {
           const ask = await Location.requestForegroundPermissionsAsync();
-          if (!cancelled && ask.status === 'granted') setForegroundGranted(true);
+          if (!cancelled && ask.status === 'granted') granted = true;
+        }
+        if (granted) {
+          if (!cancelled) setForegroundGranted(true);
+          // v119: pre-fetch a one-shot GPS fix so the pre-start map opens
+          // centered on the user instead of falling back to the NZ-wide
+          // Auckland anchor. Mirrors the HikingScreen seed pattern at
+          // line ~1178. Skipped if a tracking session is already running
+          // (its watchPositionAsync stream owns lastCoordinate).
+          const cur = useTrackingStore.getState();
+          if (cur.status !== 'tracking' && !cur.lastCoordinate) {
+            try {
+              const fix = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Balanced,
+              });
+              if (cancelled) return;
+              useTrackingStore.setState({
+                lastCoordinate: {
+                  lat: fix.coords.latitude,
+                  lng: fix.coords.longitude,
+                  alt: fix.coords.altitude ?? null,
+                },
+                lastCoordinateTime: Date.now(),
+              });
+            } catch { /* getCurrentPositionAsync timed out; map will show fallback */ }
+          }
         }
       } catch { /* permission unavailable — dot stays hidden */ }
     })();
@@ -347,7 +372,7 @@ export function RunningScreen() {
         {MapView ? (
           <MapView
             style={StyleSheet.absoluteFillObject}
-            styleURL="mapbox://styles/mapbox/outdoors-v12"
+            styleURL={getPrimaryMapStyle()}
             logoEnabled={false}
             attributionEnabled={false}
             scaleBarEnabled={false}
