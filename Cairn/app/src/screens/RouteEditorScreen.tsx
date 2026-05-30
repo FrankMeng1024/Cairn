@@ -71,10 +71,17 @@ export function RouteEditorScreen() {
   const addRoute = useRouteStore(s => s.addRoute);
   const updateRoute = useRouteStore(s => s.updateRoute);
   const deleteRoute = useRouteStore(s => s.deleteRoute);
+  const loadRouteDetail = useRouteStore(s => s.loadRouteDetail);
   const existingRoute = useRouteStore(s => s.routes.find(r => r.id === routeId));
   const session = useSessionStore(s => fromSessionId ? s.sessions.find(x => x.id === fromSessionId) : null);
   const [name, setName] = useState('');
   const [waypoints, setWaypoints] = useState<WaypointDraft[]>([]);
+  // v123 fix #8: when entering with an existing routeId we open in
+  // VIEW mode by default — a read-only display of the cloned trace
+  // with Edit + Delete CTAs. User must tap Edit to enter the editing
+  // surface (waypoint drag, snap-to-road, save). New routes (no
+  // routeId) jump straight into edit mode.
+  const [editMode, setEditMode] = useState<boolean>(!routeId);
   // True when snapToRoadAndTrim couldn't align the trace to road data
   // — typical indoors / sparse-OSM areas. We honestly tell the user
   // we're showing raw GPS, which prevents the "why are 7 waypoints
@@ -140,6 +147,15 @@ export function RouteEditorScreen() {
     }, 400);
     return () => clearTimeout(timer);
   }, [searchQuery, showSearch]);
+
+  // v123 fix #8: when opened with a routeId but the in-store record
+  // doesn't yet have points (the list endpoint omits them for perf),
+  // hydrate the full detail so the polyline + waypoints can render.
+  useEffect(() => {
+    if (routeId && existingRoute && existingRoute.points.length === 0) {
+      loadRouteDetail(routeId);
+    }
+  }, [routeId, existingRoute?.points.length]);
 
   // Load existing route OR session data on mount
   useEffect(() => {
@@ -523,13 +539,13 @@ export function RouteEditorScreen() {
       </View>
 
       {/* Top bar — explicit safe-area inset so the back/save chips
-          never overlap the Dynamic Island. */}
+          never overlap the Dynamic Island.
+          v123 fix #8: in VIEW mode show Edit + Delete; in EDIT mode
+          show Save + Delete. Back arrow always present. */}
       <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
         <View style={styles.topRow}>
           <BackButton variant="pill" />
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            {/* v122 fix #8: Delete shown only when editing an existing
-                route (routeId set). Tapping deletes + goes back. */}
             {routeId && existingRoute && (
               <TouchableOpacity
                 style={styles.deleteTopBtn}
@@ -554,10 +570,17 @@ export function RouteEditorScreen() {
                 <Icon name="Trash2" size={16} color={Colors.danger} strokeWidth={2.5} />
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={styles.saveTopBtn} onPress={handleSave}>
-              <Icon name="Check" size={16} color="#fff" strokeWidth={2.5} />
-              <Text style={styles.saveTopBtnText}>Save</Text>
-            </TouchableOpacity>
+            {editMode ? (
+              <TouchableOpacity style={styles.saveTopBtn} onPress={handleSave}>
+                <Icon name="Check" size={16} color="#fff" strokeWidth={2.5} />
+                <Text style={styles.saveTopBtnText}>Save</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.saveTopBtn} onPress={() => setEditMode(true)}>
+                <Icon name="Pencil" size={16} color="#fff" strokeWidth={2.5} />
+                <Text style={styles.saveTopBtnText}>Edit</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -591,6 +614,26 @@ export function RouteEditorScreen() {
             </Text>
           </View>
         )}
+        {/* v123 fix #8: in VIEW mode the bottom panel is a read-only
+            summary card. Search / Undo / Clear / name-edit are all
+            edit-only. We always show the stats row (always useful). */}
+        {!editMode ? (
+          <>
+            <View style={styles.viewSummary}>
+              <Text style={styles.viewSummaryName} numberOfLines={1}>
+                {existingRoute?.name ?? name ?? 'Route'}
+              </Text>
+              <Text style={styles.viewSummaryHint}>
+                Tap Edit to modify · Delete to remove this route
+              </Text>
+            </View>
+            <View style={styles.statsRow}>
+              <Text style={styles.statText}>{waypoints.length} waypoints</Text>
+              <Text style={styles.statText}>{formatDistance(totalDistanceM, 'km', 1)} km</Text>
+            </View>
+          </>
+        ) : (
+        <>
         {/* Route name */}
         <TextInput
           style={styles.nameInput}
@@ -659,6 +702,8 @@ export function RouteEditorScreen() {
             <Text style={[styles.toolBtnText, { color: waypoints.length > 0 ? Colors.danger : Colors.textMuted }]}>Clear</Text>
           </TouchableOpacity>
         </View>
+        </>
+        )}
       </View>
       </KeyboardAvoidingView>
     </View>
@@ -710,6 +755,24 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border,
+  },
+  // v123 fix #8: read-only summary card shown when in VIEW mode (route
+  // detail). User taps Edit in the top bar to switch to the editing UI.
+  viewSummary: {
+    backgroundColor: Colors.primaryBg,
+    padding: Spacing.md,
+    borderRadius: Radius.card,
+    gap: 4,
+    marginBottom: Spacing.sm,
+  },
+  viewSummaryName: {
+    fontSize: FontSize.h3,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  viewSummaryHint: {
+    fontSize: FontSize.small,
+    color: Colors.textSecondary,
   },
 
   // KeyboardAvoidingView wrapper sits at the bottom of the screen and

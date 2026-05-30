@@ -1760,7 +1760,7 @@ export function HikingScreen() {
                 elevationGainM,
               });
               if (id) {
-                (nav as any).navigate('Routes', { initialTab: 'routes' });
+                (nav as any).navigate('RouteEditor', { routeId: id });
               } else {
                 Alert.alert('Save failed', 'Server returned no ID. Check connection and try again.');
               }

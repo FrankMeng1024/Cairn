@@ -989,12 +989,12 @@ export function MapHistoryScreen() {
                   });
                   if (id) {
                     crashLogger.breadcrumb(`saveroute:ok id=${id}`);
-                    // v122 fix #7: land on the Routes tab specifically
-                    // so the user can immediately see the entry they
-                    // just created. Without initialTab the screen
-                    // defaults to Activities and the user thinks save
-                    // failed silently.
-                    (nav as any).navigate('Routes', { initialTab: 'routes' });
+                    // v123 fix #7: jump straight to the new route's
+                    // detail page (RouteEditor opens with routeId for
+                    // the existing route). User wanted to land on the
+                    // detail of the route they just created, not the
+                    // Routes tab list.
+                    (nav as any).navigate('RouteEditor', { routeId: id });
                   } else {
                     crashLogger.breadcrumb(`saveroute:no-id-returned`);
                     Alert.alert('Save failed', 'Server returned no ID. Check connection and try again.');

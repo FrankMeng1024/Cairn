@@ -8,6 +8,7 @@ import { create } from 'zustand';
 import { generateId } from '../utils/geo';
 import {
   fetchRoutes,
+  fetchRouteDetail,
   createRoute,
   updateRoute as apiUpdateRoute,
   deleteRoute as apiDeleteRoute,
@@ -88,6 +89,11 @@ export interface RouteStore {
 
   // Load from backend
   loadRoutes: () => Promise<void>;
+  // v123: hydrate the FULL route (including points) for a single id.
+  // Used by RouteEditor when opening an existing route — the list
+  // endpoint omits points for perf, so the in-store route may have
+  // points=[]; this fills it in.
+  loadRouteDetail: (id: string) => Promise<void>;
 
   // CRUD
   addRoute: (route: Omit<Route, 'id' | 'createdAt' | 'updatedAt' | 'runCount' | 'isActive' | 'mutedMarkerIds'>) => Promise<string | null>;
@@ -119,6 +125,14 @@ export const useRouteStore = create<RouteStore>((set, get) => ({
   loadRoutes: async () => {
     const routes = await fetchRoutes();
     set({ routes });
+  },
+
+  loadRouteDetail: async (id) => {
+    const detail = await fetchRouteDetail(id);
+    if (!detail) return;
+    set((s) => ({
+      routes: s.routes.map(r => r.id === id ? { ...r, ...detail } : r),
+    }));
   },
 
   addRoute: async (routeData) => {

@@ -58,6 +58,20 @@ export async function fetchRoutes(): Promise<Route[]> {
   }
 }
 
+// v123: GET /api/routes/:id returns the full route including points + waypoints
+// (the list endpoint omits these for performance). Use this when opening
+// RouteEditor / route detail.
+export async function fetchRouteDetail(id: string): Promise<Route | null> {
+  try {
+    const res = await authenticatedFetch(`/api/routes/${id}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.route ? remoteToLocal(data.route) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function createRoute(payload: RoutePayload): Promise<Route | null> {
   try {
     const res = await authenticatedFetch('/api/routes', {

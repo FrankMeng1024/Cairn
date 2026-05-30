@@ -31,6 +31,7 @@ import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../componen
 import { Icon } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
 import { TooShortSheet } from '../components/TooShortSheet';
+import { crashLogger } from '../services/crashLogger';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -208,22 +209,32 @@ export function RunningScreen() {
   // synchronously on every userPos change when in instant mode (skip the
   // flyTo animation; we already know where the user is).
   const cameraRef = useRef<any>(null);
-  const instantCamera = lastCoordinate != null;
+  // v123 fix #2: use followUserLocation+flyTo every entry, ignoring
+  // whether lastCoordinate is already known. User wants the same fly-in
+  // experience on every Running open (so their entry is consistent),
+  // not the Hiking pattern of "fly-in once, then instant on subsequent
+  // resumes". instantCamera is intentionally always false here.
+  const instantCamera = false;
 
-  // v122: when in instant mode (lastCoordinate already known), skip
-  // Mapbox's followUserLocation flyTo entirely. Manually setCamera with
-  // animationMode='none' on every userPos change. For first-time entry
-  // with no GPS yet, fall through to followUserLocation+flyTo (Mapbox
-  // brief fly-in from default — same as HikingScreen first launch).
+  // v123 diag: log mount + key state so we can see in telemetry exactly
+  // what RunningScreen sees on first vs second open. The user's complaint
+  // ("第一次没动画 第二次没动画也不一致") is impossible to debug from a
+  // screenshot alone — the timing of lastCoordinate vs Camera mount is
+  // the variable.
   useEffect(() => {
-    if (!instantCamera || !lastCoordinate || !cameraRef.current) return;
-    cameraRef.current.setCamera({
-      centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat],
-      zoomLevel: 15,
-      animationDuration: 0,
-      animationMode: 'none',
-    });
-  }, [instantCamera, lastCoordinate?.lat, lastCoordinate?.lng]);
+    crashLogger.breadcrumb(
+      `runscreen:mount runState=${runState} lastCoord=${lastCoordinate ? `(${lastCoordinate.lat.toFixed(5)},${lastCoordinate.lng.toFixed(5)})` : 'null'} instant=${instantCamera} fg=${foregroundGranted}`
+    );
+  }, []);
+  useEffect(() => {
+    crashLogger.breadcrumb(
+      `runscreen:lastCoord-change has=${lastCoordinate != null} instant=${instantCamera}`
+    );
+  }, [lastCoordinate?.lat, lastCoordinate?.lng]);
+
+  // v123: with instantCamera=false the imperative setCamera useEffect
+  // is no longer needed — followUserLocation handles positioning via
+  // its built-in flyTo each entry.
 
   // Show/hide unlocked controls with animation
   useEffect(() => {
