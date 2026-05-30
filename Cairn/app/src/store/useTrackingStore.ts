@@ -641,6 +641,14 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     }
     deactivateForegroundSource();
     deactivateBackgroundSource();
+    // v122 fix #6: stop the duration timer so the live "elapsed" stat
+    // freezes when the user taps Stop. Without this the timer kept
+    // running while the StopSummarySheet was open, which contradicted
+    // "Stop = pause".
+    if (durationInterval) {
+      clearInterval(durationInterval);
+      durationInterval = null;
+    }
     // Clear lastCoordinate so the >200m glitch filter does not zero out
     // legitimate distance after a resume far from the pause point.
     set({ status: 'paused', lastCoordinate: null, lastFixTimestamp: null });
@@ -648,6 +656,17 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
 
   resumeTracking: async () => {
     set({ status: 'tracking' });
+    // v122 fix #6: pauseTracking cleared the duration timer so the
+    // elapsed stat froze. Restart it on resume so the counter ticks
+    // again. Internal `if (status === 'tracking')` guard makes this
+    // safe even if pause/resume are toggled rapidly.
+    if (!durationInterval) {
+      durationInterval = setInterval(() => {
+        if (get().status === 'tracking') {
+          set((s) => ({ durationS: s.durationS + 1 }));
+        }
+      }, 1000);
+    }
     // Resume whichever source matches current AppState (treat 'unknown' as active)
     const currentAppState = AppState.currentState;
     if (currentAppState === 'background' || currentAppState === 'inactive') {

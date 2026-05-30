@@ -9,7 +9,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useRouteStore } from '../store/useRouteStore';
@@ -295,8 +295,10 @@ function RouteSheet({
           </PressBtn>
         </View>
 
-        {/* Map preview — non-interactive polyline of the route */}
-        <RouteMapPreview points={data.points} />
+        {/* v122 fix #8: preview map removed. Activities don't show a
+            preview either; route detail mirrors that. The View button
+            below opens the route's full-screen detail (clone of the
+            originating activity) where editing actually happens. */}
 
         {/* Stats row */}
         <View style={routeSheetStyles.statsRow}>
@@ -325,20 +327,17 @@ function RouteSheet({
           <Text style={routeSheetStyles.lastRun}>Last used {lastRun}</Text>
         )}
 
-        {/* Actions — v119: Delete always on the right per consistency rule
-            (Activity sheet uses Save-left / Delete-right). Edit on the left. */}
+        {/* Actions — v122 fix #8: a single View button (full-width
+            primary). Edit + Delete moved to inside the View screen.
+            Matches the Activity flow: list → tap → detail → edit/delete. */}
         <View style={sheetStyles.actions}>
           <PressBtn
-            style={sheetStyles.saveBtn}
+            style={[sheetStyles.saveBtn, { flex: 1 }]}
             onPress={() => dismiss(() => onEdit(data.id))}
             scaleTo={0.96}
           >
-            <Icon name="Pencil" size={14} color="#fff" strokeWidth={2} />
-            <Text style={sheetStyles.saveBtnText}>Edit Route</Text>
-          </PressBtn>
-          <PressBtn style={[sheetStyles.deleteBtn, deleteConfirm && { backgroundColor: Colors.danger }]} onPress={handleDelete} scaleTo={0.96}>
-            <Icon name="Trash2" size={14} color={deleteConfirm ? '#fff' : Colors.danger} strokeWidth={2} />
-            <Text style={[sheetStyles.deleteBtnText, deleteConfirm && { color: '#fff' }]}>{deleteConfirm ? 'Confirm Delete' : 'Delete'}</Text>
+            <Icon name="Map" size={14} color="#fff" strokeWidth={2} />
+            <Text style={sheetStyles.saveBtnText}>View</Text>
           </PressBtn>
         </View>
       </Animated.View>
@@ -988,8 +987,13 @@ function FlagsTab() {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 export function RoutesScreen() {
-  // v119: default to Activities tab (matches new tab order — see SegmentControl).
-  const [tab, setTab] = useState<Tab>('activities');
+  // v122 fix #7: honour an `initialTab` route param so callers can land
+  // on a specific tab. e.g. MapHistoryScreen's "Save as Route" success
+  // navigates here with initialTab='routes' so the user immediately
+  // sees the new entry instead of the default Activities list.
+  const route = useRoute<RouteProp<RootStackParamList, 'Routes'>>();
+  const initialTab = route.params?.initialTab ?? 'activities';
+  const [tab, setTab] = useState<Tab>(initialTab);
   const loadRoutes = useRouteStore(s => s.loadRoutes);
   const nav = useNavigation<Nav>();
 

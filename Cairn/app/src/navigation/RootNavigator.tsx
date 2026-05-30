@@ -29,7 +29,7 @@ export type RootStackParamList = {
   Running: undefined;
   MapHistory: { sessionId?: string } | undefined;
   Map: { focusLat?: number; focusLng?: number; focusMarkerId?: string } | undefined;
-  Routes: undefined;
+  Routes: { initialTab?: 'routes' | 'activities' | 'flags' } | undefined;
   RouteEditor: { routeId?: string; fromSessionId?: string } | undefined;
   Friends: undefined;
   Settings: undefined;

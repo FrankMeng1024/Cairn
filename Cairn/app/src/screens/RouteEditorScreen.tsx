@@ -70,6 +70,7 @@ export function RouteEditorScreen() {
   const fromSessionId = route.params?.fromSessionId as string | undefined;
   const addRoute = useRouteStore(s => s.addRoute);
   const updateRoute = useRouteStore(s => s.updateRoute);
+  const deleteRoute = useRouteStore(s => s.deleteRoute);
   const existingRoute = useRouteStore(s => s.routes.find(r => r.id === routeId));
   const session = useSessionStore(s => fromSessionId ? s.sessions.find(x => x.id === fromSessionId) : null);
   const [name, setName] = useState('');
@@ -526,10 +527,38 @@ export function RouteEditorScreen() {
       <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
         <View style={styles.topRow}>
           <BackButton variant="pill" />
-          <TouchableOpacity style={styles.saveTopBtn} onPress={handleSave}>
-            <Icon name="Check" size={16} color="#fff" strokeWidth={2.5} />
-            <Text style={styles.saveTopBtnText}>Save</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {/* v122 fix #8: Delete shown only when editing an existing
+                route (routeId set). Tapping deletes + goes back. */}
+            {routeId && existingRoute && (
+              <TouchableOpacity
+                style={styles.deleteTopBtn}
+                onPress={() => {
+                  Alert.alert(
+                    'Delete route?',
+                    `"${existingRoute.name}" will be removed. Source activity stays.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                          deleteRoute(routeId);
+                          nav.goBack();
+                        },
+                      },
+                    ],
+                  );
+                }}
+              >
+                <Icon name="Trash2" size={16} color={Colors.danger} strokeWidth={2.5} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.saveTopBtn} onPress={handleSave}>
+              <Icon name="Check" size={16} color="#fff" strokeWidth={2.5} />
+              <Text style={styles.saveTopBtnText}>Save</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -674,6 +703,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md, paddingVertical: 8,
   },
   saveTopBtnText: { fontSize: FontSize.small, fontWeight: '700', color: '#fff' },
+  // v122 fix #8: delete button on the route editor top bar (only
+  // shown when editing an existing route).
+  deleteTopBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border,
+  },
 
   // KeyboardAvoidingView wrapper sits at the bottom of the screen and
   // pushes its child up when the keyboard appears.

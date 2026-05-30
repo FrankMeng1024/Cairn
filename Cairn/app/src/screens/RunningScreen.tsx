@@ -203,11 +203,27 @@ export function RunningScreen() {
   // Animated values
   const startBtnScale = useRef(new Animated.Value(1)).current;
   const controlsFade = useRef(new Animated.Value(0)).current;
-  // v120: cameraRef kept for any future imperative camera ops; the
-  // initial GPS positioning is now handled by gating the <Camera> on
-  // lastCoordinate (Camera only mounts after a fix exists, so its
-  // defaultSettings is correct on first mount).
+  // v122: full mirror of HikingScreen's instantCamera pattern. cameraRef
+  // is the imperative handle used by the useEffect below to setCamera
+  // synchronously on every userPos change when in instant mode (skip the
+  // flyTo animation; we already know where the user is).
   const cameraRef = useRef<any>(null);
+  const instantCamera = lastCoordinate != null;
+
+  // v122: when in instant mode (lastCoordinate already known), skip
+  // Mapbox's followUserLocation flyTo entirely. Manually setCamera with
+  // animationMode='none' on every userPos change. For first-time entry
+  // with no GPS yet, fall through to followUserLocation+flyTo (Mapbox
+  // brief fly-in from default — same as HikingScreen first launch).
+  useEffect(() => {
+    if (!instantCamera || !lastCoordinate || !cameraRef.current) return;
+    cameraRef.current.setCamera({
+      centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat],
+      zoomLevel: 15,
+      animationDuration: 0,
+      animationMode: 'none',
+    });
+  }, [instantCamera, lastCoordinate?.lat, lastCoordinate?.lng]);
 
   // Show/hide unlocked controls with animation
   useEffect(() => {
@@ -383,19 +399,22 @@ export function RunningScreen() {
             scaleBarEnabled={false}
             compassEnabled={false}
           >
-            {/* v121 fix #2: mirror HikingScreen's instantCamera logic
-                exactly. When lastCoordinate is known, mount Camera with
-                instant placement (defaultSettings + no animation). When
-                not known, fall back to followUserLocation with a flyTo
-                animation — same as Hiking. */}
+            {/* v122 fix #2: full mirror of HikingScreen — Camera always
+                mounts. instantCamera mode (lastCoordinate known) uses
+                defaultSettings + animationMode='none' AND the imperative
+                setCamera useEffect above. Cold mode (no GPS yet) uses
+                followUserLocation+flyTo, same as HikingScreen first
+                entry. The previous version (only mount when lastCoord
+                known) caused the inconsistent "stuck globe → instant"
+                divergence between first/second open. */}
             {CameraComponent && (
               <CameraComponent
                 ref={cameraRef}
-                followUserLocation={foregroundGranted && !lastCoordinate}
+                followUserLocation={!instantCamera && foregroundGranted}
                 followZoomLevel={15}
-                animationDuration={lastCoordinate ? 0 : 600}
-                animationMode={lastCoordinate ? 'none' : 'flyTo'}
-                defaultSettings={lastCoordinate
+                animationDuration={instantCamera ? 0 : 600}
+                animationMode={instantCamera ? 'none' : 'flyTo'}
+                defaultSettings={instantCamera && lastCoordinate
                   ? { centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat], zoomLevel: 15 }
                   : undefined}
               />

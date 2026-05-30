@@ -989,10 +989,12 @@ export function MapHistoryScreen() {
                   });
                   if (id) {
                     crashLogger.breadcrumb(`saveroute:ok id=${id}`);
-                    // Navigate straight to the Routes screen — no Alert,
-                    // no intermediate dialog. Matches user expectation
-                    // ("Save = save and show me where it landed").
-                    (nav as any).navigate('Routes');
+                    // v122 fix #7: land on the Routes tab specifically
+                    // so the user can immediately see the entry they
+                    // just created. Without initialTab the screen
+                    // defaults to Activities and the user thinks save
+                    // failed silently.
+                    (nav as any).navigate('Routes', { initialTab: 'routes' });
                   } else {
                     crashLogger.breadcrumb(`saveroute:no-id-returned`);
                     Alert.alert('Save failed', 'Server returned no ID. Check connection and try again.');
