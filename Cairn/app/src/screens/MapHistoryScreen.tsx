@@ -770,11 +770,14 @@ export function MapHistoryScreen() {
         out.push({ ...p, lat: sLat, lng: sLng });
       }
     }
-    // v77: Douglas-Peucker simplification ε=2m. Removes vertices that
-    // are within 2m of the line between their kept neighbours. Reduces
-    // vertex count ~30% on a typical hike with no visible change to the
-    // rendered polyline. Mapbox renders fewer cusps → smoother visual.
-    return simplifyPolyline(out, 2);
+    // v118: Douglas-Peucker simplify removed (was reducing vertices ~30%).
+    // User reported the live hike polyline looked smoother than the activity
+    // view of the same hike. Both should be visually identical. HikingScreen
+    // renders trackPointsSmoothed live (Kalman only); we now do the same here
+    // (Kalman + filters above, but no DP simplify). Slightly more vertices
+    // on long hikes but typical NZ trail is < 2000 points — Mapbox handles
+    // it without effort.
+    return out;
   }, [sessionForDisplay?.trackPoints]);
 
   // Replace raw with smoothed in sessionForDisplay so all downstream
@@ -945,11 +948,14 @@ export function MapHistoryScreen() {
           </View>
           <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
             {/* Disable Save as Route when the session has fewer than 2
-                track points — there's no path to save. */}
+                track points — there's no path to save. v118: also surface
+                a visible reason underneath the disabled button so the user
+                doesn't wonder why it's not tappable. */}
+            <View style={{ flex: 1 }}>
             <TouchableOpacity
               style={[
                 cardStyles.deleteBtn,
-                { flex: 1, borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+                { flex: 0, borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
                 selectedSession.trackPoints.length < 2 && { opacity: 0.4 },
               ]}
               disabled={selectedSession.trackPoints.length < 2}
@@ -996,24 +1002,20 @@ export function MapHistoryScreen() {
               <Icon name="Route" size={IconSize.sm} color={Colors.primary} strokeWidth={2} />
               <Text style={[cardStyles.deleteBtnText, { color: Colors.primary }]}>Save as Route</Text>
             </TouchableOpacity>
-            {/* Edit & Save — secondary smaller button, opens RouteEditor
-                with the session pre-loaded (snap to roads + adjustable
-                waypoints). Distinct from the primary Save which preserves
-                the raw GPS trace. */}
-            <TouchableOpacity
-              style={[
-                cardStyles.deleteBtn,
-                { borderColor: Colors.border, backgroundColor: Colors.surface, paddingHorizontal: Spacing.md },
-                selectedSession.trackPoints.length < 2 && { opacity: 0.4 },
-              ]}
-              disabled={selectedSession.trackPoints.length < 2}
-              onPress={() => {
-                (nav as any).navigate('RouteEditor', { fromSessionId: selectedSession.id });
-              }}
-            >
-              <Icon name="Pencil" size={IconSize.sm} color={Colors.textSecondary} strokeWidth={2} />
-              <Text style={[cardStyles.deleteBtnText, { color: Colors.textSecondary }]}>Edit</Text>
-            </TouchableOpacity>
+            {selectedSession.trackPoints.length < 2 && (
+              <Text style={{
+                marginTop: 4,
+                fontSize: 11,
+                color: Colors.textSecondary,
+                textAlign: 'center',
+                lineHeight: 14,
+              }}>No path data — too short to save</Text>
+            )}
+            </View>
+            {/* v118: Edit button removed entirely. Per route-rules.md §4 the
+                edit engine (1km node corridor + dual-line UI) lives on Route
+                Detail, not Activity. Activity is the immutable raw GPS record.
+                Editing here had no meaningful semantics so it's gone. */}
             <TouchableOpacity
               style={[cardStyles.deleteBtn, { flex: 1 }, deleteConfirm && { backgroundColor: Colors.danger }]}
               onPress={() => {

@@ -301,11 +301,15 @@ export function HomeScreen() {
           />
         </View>
 
-        {/* Tools */}
+        {/* Tools — v118: added Activities entry as a peer to Routes
+            (per user request to give Activities its own discoverable
+            tile alongside Routes). Order: Activities first (the source
+            of truth for everything walked), then Routes (the curated
+            collection saved from Activities). */}
         <View style={styles.toolsRow}>
+          <ToolBtn iconName="Map" label="Activities" onPress={() => nav.navigate('MapHistory')} />
           <ToolBtn iconName="Route" label="Routes" onPress={() => nav.navigate('Routes')} />
           <ToolBtn iconName="Users" label="Friends" onPress={() => nav.navigate('Friends')} />
-          <ToolBtn iconName="Compass" label="AR" onPress={() => nav.navigate('AR')} />
           <ToolBtn iconName="Settings2" label="Settings" onPress={() => nav.navigate('Settings')} />
         </View>
 

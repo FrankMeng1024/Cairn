@@ -54,6 +54,16 @@ function storageKey(userId: string): string {
   return `${STORAGE_KEY_PREFIX}_${userId}`;
 }
 
+// v118: persistent ARKit origin. Cairn world positions are computed as
+// (lat, lng) deltas relative to a single origin captured the first time
+// the user plants in AR. Using a persistent origin (not a fresh GPS read
+// every session) eliminates the 5-15m inter-session drift that made
+// markers visibly jump between AR sessions on the same spot.
+const AR_ORIGIN_KEY_PREFIX = 'cairn_ar_origin_v1';
+function arOriginKey(userId: string): string {
+  return `${AR_ORIGIN_KEY_PREFIX}_${userId}`;
+}
+
 /** Convert backend row → frontend Marker */
 function fromBackend(row: {
   id: number | string;
@@ -86,6 +96,11 @@ interface MarkerState {
   markers: Marker[];
   userId: string | null;
   syncing: boolean;
+  /** v118: persistent AR origin (captured once on first plant per user).
+   *  null until first plant. All cairns are positioned in ARKit world
+   *  space via (lat, lng) deltas from this origin, so it must NOT change
+   *  between AR sessions or markers will appear to jump 5-15m. */
+  arOrigin: { lat: number; lng: number; alt: number | null } | null;
   addMarker: (marker: Omit<Marker, 'id' | 'createdAt'>) => Promise<Marker>;
   updateMarker: (id: string, updates: Partial<Omit<Marker, 'id' | 'createdAt'>>) => Promise<void>;
   deleteMarker: (id: string) => Promise<void>;
@@ -93,12 +108,19 @@ interface MarkerState {
   getMarkersForRegion: (regionCode: string) => Marker[];
   hydrate: (userId: string) => Promise<void>;
   loadFromBackend: () => Promise<void>;
+  /** v118: set the AR origin if not yet set. Called from ViroAROverlay
+   *  when the first GPS fix arrives in a new AR session AND no origin
+   *  exists yet. Subsequent calls are no-ops. */
+  setArOriginIfMissing: (origin: { lat: number; lng: number; alt: number | null }) => void;
+  /** v118: clear the AR origin (used when the user wipes all markers). */
+  clearArOrigin: () => void;
 }
 
 export const useMarkerStore = create<MarkerState>((set, get) => ({
   markers: [],
   userId: null,
   syncing: false,
+  arOrigin: null,
 
   addMarker: async (data) => {
     // Optimistic local create
@@ -256,7 +278,39 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
     } else {
       set({ markers: [], userId });
     }
+    // v118: hydrate persistent AR origin too.
+    const oRaw = await storage.getItem(arOriginKey(userId));
+    if (oRaw) {
+      try {
+        const o = JSON.parse(oRaw);
+        if (o && typeof o.lat === 'number' && typeof o.lng === 'number') {
+          set({ arOrigin: { lat: o.lat, lng: o.lng, alt: o.alt ?? null } });
+        }
+      } catch {
+        storage.removeItem(arOriginKey(userId));
+      }
+    } else {
+      set({ arOrigin: null });
+    }
     // 2. Then fetch from backend (async, updates state when done)
     get().loadFromBackend();
+  },
+
+  setArOriginIfMissing: (origin) => {
+    const cur = get().arOrigin;
+    if (cur) return; // origin already locked — never overwrite
+    const userId = get().userId;
+    set({ arOrigin: { lat: origin.lat, lng: origin.lng, alt: origin.alt ?? null } });
+    if (userId) {
+      storage.setItem(arOriginKey(userId), JSON.stringify(origin));
+    }
+    crashLogger.breadcrumb(`ar:origin:locked lat=${origin.lat.toFixed(6)} lng=${origin.lng.toFixed(6)}`);
+  },
+
+  clearArOrigin: () => {
+    const userId = get().userId;
+    set({ arOrigin: null });
+    if (userId) storage.removeItem(arOriginKey(userId));
+    crashLogger.breadcrumb('ar:origin:cleared');
   },
 }));

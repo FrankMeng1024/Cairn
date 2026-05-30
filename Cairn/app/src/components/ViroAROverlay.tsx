@@ -37,6 +37,7 @@ import {
   type ViroTrackingReason,
 } from '@reactvision/react-viro';
 import type { Marker } from '../store/useMarkerStore';
+import { useMarkerStore } from '../store/useMarkerStore';
 import { crashLogger } from '../services/crashLogger';
 
 // ── Type colours (v112 严格复刻 picker mid 色) ──────────────────
@@ -484,8 +485,8 @@ function buildJunctionGeom() {
       idx.push([baseCenter, a, b]);
     }
   }
-  // 左箭头 (CONNECTED, 整体下移): tip (-0.513, 0.313), base (-0.336, 0.136)
-  pushArrowHead(-0.513, 0.313, -0.336, 0.136, 0.15);
+  // 左箭头 (CONNECTED): base 严格对齐 shaft 终点 (-0.354, 0.154) 实现"一体"无缝
+  pushArrowHead(-0.513, 0.313, -0.354, 0.154, 0.15);
   // 右箭头 (DISCONNECTED, picker 原坐标): tip (0.586, 0.436), base (0.409, 0.259)
   pushArrowHead( 0.586, 0.436,  0.409, 0.259, 0.15);
 
@@ -529,41 +530,77 @@ function buildJunctionGeom() {
 //   三角棱柱: 顶尖 (0, 0.6), 底左 (-0.6, -0.5), 底右 (0.6, -0.5), z∈[-0.4, +0.4]
 //   门: 薄盒 (0.04 半宽 × 0.4 半高 × 0.005 半厚), 中心 (0, 0.05, 0.41).
 //        Plane→Box 是为了可见性 (Viro Plane 双面 alpha 不稳).
+// v118 hut redo: real DOC backcountry hut shape — rectangular body with
+// pitched gable roof, tall stone chimney, prominent door, optional eaves
+// detail. Replaces the v97-v117 single triangular prism (which users
+// felt was "ugly, like a paper tent"). Body and roof share the main
+// material; door + chimney are dark accents via the overlay geom.
 function buildHutGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
 
-  // ── 三角棱柱主体 (picker dims) ──
-  const tipY    =  0.60;
-  const baseY   = -0.50;
-  const halfW   =  0.60;
-  const zFront  =  0.40;
-  const zBack   = -0.40;
+  function pushBox(cx: number, cy: number, cz: number, hw: number, hh: number, hd: number) {
+    const s = verts.length;
+    verts.push([cx - hw, cy - hh, cz + hd]); // 0 ftl
+    verts.push([cx + hw, cy - hh, cz + hd]); // 1 ftr
+    verts.push([cx + hw, cy - hh, cz - hd]); // 2 btr
+    verts.push([cx - hw, cy - hh, cz - hd]); // 3 btl
+    verts.push([cx - hw, cy + hh, cz + hd]); // 4 ftl-up
+    verts.push([cx + hw, cy + hh, cz + hd]); // 5 ftr-up
+    verts.push([cx + hw, cy + hh, cz - hd]); // 6 btr-up
+    verts.push([cx - hw, cy + hh, cz - hd]); // 7 btl-up
+    // bottom (looking down — keep CCW from above)
+    idx.push([s+0, s+2, s+1], [s+0, s+3, s+2]);
+    // front (+z)
+    idx.push([s+0, s+1, s+5], [s+0, s+5, s+4]);
+    // right (+x)
+    idx.push([s+1, s+2, s+6], [s+1, s+6, s+5]);
+    // back (-z)
+    idx.push([s+2, s+3, s+7], [s+2, s+7, s+6]);
+    // left (-x)
+    idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);
+    // top (+y)
+    idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
+  }
 
-  const front = verts.length;
-  verts.push([     0, tipY,  zFront]);   // 0 前顶尖
-  verts.push([-halfW, baseY, zFront]);   // 1 前底左
-  verts.push([ halfW, baseY, zFront]);   // 2 前底右
-  verts.push([     0, tipY,  zBack]);    // 3 后顶尖
-  verts.push([-halfW, baseY, zBack]);    // 4 后底左
-  verts.push([ halfW, baseY, zBack]);    // 5 后底右
+  // ── Body (rectangular hut walls) ──
+  // 1.0m wide × 0.6m tall × 0.8m deep. Bottom at y=-0.5, top at y=+0.1.
+  const bodyHW = 0.50, bodyHH = 0.30, bodyHD = 0.40;
+  const bodyCY = -0.20;
+  pushBox(0, bodyCY, 0, bodyHW, bodyHH, bodyHD);
 
-  idx.push([front + 0, front + 1, front + 2]);          // 前三角
-  idx.push([front + 3, front + 5, front + 4]);          // 后三角
-  idx.push([front + 0, front + 4, front + 1]);          // 左斜面 (1)
-  idx.push([front + 0, front + 3, front + 4]);          // 左斜面 (2)
-  idx.push([front + 0, front + 2, front + 5]);          // 右斜面 (1)
-  idx.push([front + 0, front + 5, front + 3]);          // 右斜面 (2)
-  idx.push([front + 1, front + 4, front + 5]);          // 底面 (1)
-  idx.push([front + 1, front + 5, front + 2]);          // 底面 (2)
+  // ── Roof (gable / pitched, two-slope) ──
+  // Built as a triangular prism running along the x-axis, sitting on
+  // the body. Eaves overhang slightly (1.05m / 0.85m vs body's 1.0m / 0.8m)
+  // for a finished look. Ridge runs along z, peak at y=+0.50.
+  const roofHW = 0.55, roofHD = 0.45;
+  const roofBaseY = bodyCY + bodyHH; // top of body, y=0.10
+  const roofPeakY = roofBaseY + 0.40;
+  // Front gable triangle (z=+roofHD)
+  const r0 = verts.length;
+  verts.push([-roofHW, roofBaseY,  roofHD]); // 0 front-left
+  verts.push([ roofHW, roofBaseY,  roofHD]); // 1 front-right
+  verts.push([      0, roofPeakY,  roofHD]); // 2 front-peak
+  // Back gable triangle (z=-roofHD)
+  verts.push([-roofHW, roofBaseY, -roofHD]); // 3 back-left
+  verts.push([ roofHW, roofBaseY, -roofHD]); // 4 back-right
+  verts.push([      0, roofPeakY, -roofHD]); // 5 back-peak
+  // Front gable face (CCW seen from +z)
+  idx.push([r0+0, r0+1, r0+2]);
+  // Back gable face (CCW seen from -z)
+  idx.push([r0+3, r0+5, r0+4]);
+  // Left slope (front-left, back-left, front-peak; front-peak, back-left, back-peak)
+  idx.push([r0+0, r0+2, r0+5], [r0+0, r0+5, r0+3]);
+  // Right slope (front-right, front-peak, back-peak; front-right, back-peak, back-right)
+  idx.push([r0+1, r0+4, r0+5], [r0+1, r0+5, r0+2]);
+  // Roof underside (closes the prism so the hut isn't a cathedral)
+  idx.push([r0+0, r0+3, r0+4], [r0+0, r0+4, r0+1]);
 
   return { vertices: verts, triangleIndices: idx };
 }
 
-// Hut H2 门 (v113): 单独 geom 用 dark material 高对比.
-// 用户反馈 "看不清就是个三角" — picker 的门是 PlaneGeometry color=0x000000.
-// Viro 单 material 不能 mix, 所以门拆成单独 ViroGeometry.
-// 加宽到 0.12 (picker 0.04 太细 在 AR 远看一条线), 高度 0.50, 凸出 z=0.41.
+// v118 hut accents: door + chimney as a single overlay geom with the
+// dark accent material. Visible from far in AR thanks to the contrast.
 function buildHutDoorGeom() {
   const verts: [number, number, number][] = [];
   const idx: [number, number, number][] = [];
@@ -584,9 +621,13 @@ function buildHutDoorGeom() {
     idx.push([s+3, s+0, s+4], [s+3, s+4, s+7]);
     idx.push([s+4, s+5, s+6], [s+4, s+6, s+7]);
   }
-  // 门: half-width 0.06 (放宽 让 AR 远看可识别), half-height 0.25,
-  //     half-depth 0.005, 中心 y=-0.20 (底部贴地), z=0.41 (凸出前面)
-  pushBox(0, -0.20, 0.41, 0.06, 0.25, 0.005);
+  // Door: 0.16m wide × 0.32m tall, slightly inset on front face.
+  // Body front face is at z=0.40, body bottom at y=-0.50, body top at y=+0.10.
+  // Door bottom touches body bottom; protrudes 0.01 forward.
+  pushBox(0, -0.34, 0.41, 0.08, 0.16, 0.005);
+  // Chimney: square stone column on the back-right slope of the roof.
+  // Slimmer + taller than body so it reads as a chimney from any angle.
+  pushBox(0.30, 0.55, -0.20, 0.07, 0.18, 0.07);
   return { vertices: verts, triangleIndices: idx };
 }
 
@@ -836,6 +877,12 @@ function CairnARScene(props: any) {
   // Used by handleAnchor to reject planes detected while phone is held flat
   // (forward[1] ≈ 1 = pointing up = phone lying on desk).
   const camForwardRef = useRef<number[]>([0, 0, -1]);
+  // v118: rolling window of recent camera Y values (~last 2s at 10Hz) used
+  // to detect "phone was put down then picked up" events. When the camera
+  // height (position[1]) changes by > 0.4m within 2 seconds, the ARKit
+  // session has shifted enough that the cached ground Y is no longer
+  // trustworthy — reset it so the next horizontal plane re-locks.
+  const camYHistoryRef = useRef<{ t: number; y: number }[]>([]);
 
   // Register Viro materials + animations on first scene mount.
   // Deliberately NOT at module top-level (defensive RN best practice).
@@ -995,19 +1042,48 @@ function CairnARScene(props: any) {
   // to ~10Hz so we don't flood the JS bridge. Forward the camera state +
   // cairn world positions to the parent for off-screen arrow rendering.
   const onCameraTransformUpdate = useCallback((evt: any) => {
-    if (!onArFrame) return;
     const now = Date.now();
     if (now - lastFrameTsRef.current < 100) return; // 10Hz
     lastFrameTsRef.current = now;
     const t = evt?.cameraTransform;
     if (!t || !t.position || !t.forward) return;
     camForwardRef.current = t.forward; // keep latest forward for flat-phone guard in handleAnchor
-    onArFrame({
-      camera: { position: t.position, forward: t.forward },
-      cairns: cairnNodesRef.current,
-      origin: arkitOrigin ? { lat: arkitOrigin.lat, lng: arkitOrigin.lng, alt: arkitOrigin.alt ?? null } : null,
-      groundY: groundYRef.current,
-    });
+
+    // v118 ground-relock detection: track camera Y over the last ~2s.
+    // If the spread (max-min) exceeds 0.4m, the user has put the phone
+    // down or picked it up, the cached ground Y is stale, and ARKit
+    // anchors are likely to drift. Reset groundYRef so the next horizontal
+    // plane re-locks at the actual current floor height.
+    const camY = t.position[1];
+    if (typeof camY === 'number' && isFinite(camY)) {
+      const hist = camYHistoryRef.current;
+      hist.push({ t: now, y: camY });
+      // Keep last 2s only.
+      const cutoff = now - 2000;
+      while (hist.length > 0 && hist[0].t < cutoff) hist.shift();
+      if (groundYRef.current !== null && hist.length >= 6) {
+        let lo = Infinity, hi = -Infinity;
+        for (const e of hist) { if (e.y < lo) lo = e.y; if (e.y > hi) hi = e.y; }
+        if (hi - lo > 0.4) {
+          // Phone was moved vertically a lot — re-detect the floor.
+          crashLogger.breadcrumb(`viro:ground-relock spread=${(hi - lo).toFixed(2)}m oldGround=${groundYRef.current.toFixed(3)}`);
+          groundYRef.current = null;
+          setGroundYTick((n) => n + 1);
+          // Clear history so we don't keep re-triggering during the same
+          // motion event.
+          camYHistoryRef.current = [];
+        }
+      }
+    }
+
+    if (onArFrame) {
+      onArFrame({
+        camera: { position: t.position, forward: t.forward },
+        cairns: cairnNodesRef.current,
+        origin: arkitOrigin ? { lat: arkitOrigin.lat, lng: arkitOrigin.lng, alt: arkitOrigin.alt ?? null } : null,
+        groundY: groundYRef.current,
+      });
+    }
   }, [onArFrame, arkitOrigin]);
 
   // v70: ARKit horizontal plane detection. We accept any plane reported by
@@ -1402,31 +1478,53 @@ export function ViroAROverlay({
   const arkitOriginRef = useRef<{ lat: number; lng: number; alt?: number | null } | null>(null);
   const [originReady, setOriginReady] = useState(false);
 
-  // Reset origin every time component mounts. ViroAROverlay mounts/unmounts
-  // with the AR screen lifecycle, so this gives one fresh origin per
-  // AR session — matching ARKit's own session-origin behavior.
+  // v118: persistent AR origin from markerStore. If a previous AR session
+  // already locked an origin, reuse it across all future sessions so
+  // markers don't visibly jump when GPS jitters between session starts.
+  // First-ever session: arOrigin is null until the first GPS fix arrives,
+  // at which point we lock it via setArOriginIfMissing.
+  const persistedArOrigin = useMarkerStore(s => s.arOrigin);
+  const setArOriginIfMissing = useMarkerStore(s => s.setArOriginIfMissing);
+
+  // Reset session-local refs every time component mounts. The PERSISTENT
+  // arOrigin (in markerStore) is intentionally NOT touched here — that's
+  // the whole point of v118 inter-session stability.
   //
   // NOTE: groundYRef is owned by CairnARScene (not this component) — it
   // resets automatically when CairnARScene remounts. Do NOT touch it from
   // here; it's out of scope and would throw ReferenceError (v115 black-
   // screen incident).
   useEffect(() => {
-    arkitOriginRef.current = null;
-    setOriginReady(false);
-    crashLogger.breadcrumb('viro:origin-reset (AR session start)');
-    return () => {
+    // Seed arkitOriginRef from persisted origin if available so the first
+    // render has a usable origin immediately (markers placed at correct
+    // GPS deltas with no visual settle).
+    if (persistedArOrigin) {
+      arkitOriginRef.current = { ...persistedArOrigin };
+      setOriginReady(true);
+      crashLogger.breadcrumb(
+        `viro:origin-restored lat=${persistedArOrigin.lat.toFixed(6)} lng=${persistedArOrigin.lng.toFixed(6)} (from store)`
+      );
+    } else {
       arkitOriginRef.current = null;
-      crashLogger.breadcrumb('viro:origin-cleared (AR session end)');
+      setOriginReady(false);
+      crashLogger.breadcrumb('viro:origin-reset (AR session start, no persisted origin)');
+    }
+    return () => {
+      // Don't clear persisted origin on unmount — it's the whole point.
+      crashLogger.breadcrumb('viro:origin-session-ended');
     };
   }, []);
 
-  // Set origin as soon as GPS is available. With worldAlignment="GravityAndHeading",
-  // ARKit handles north-alignment internally (fused compass + gyro), so we don't
-  // need to capture heading ourselves.
+  // Lock origin to the FIRST GPS fix we see this session, but only if no
+  // persisted origin exists. Once persisted, subsequent sessions skip
+  // this and use the stored value (loaded in the mount effect above).
   useEffect(() => {
     if (!arkitOriginRef.current && userPos) {
-      arkitOriginRef.current = { ...userPos };
+      const o = { lat: userPos.lat, lng: userPos.lng, alt: userPos.alt ?? null };
+      arkitOriginRef.current = o;
       setOriginReady(true);
+      // Persist so next session uses this same origin (key v118 fix).
+      setArOriginIfMissing(o);
       crashLogger.breadcrumb(
         `viro:origin-set lat=${userPos.lat.toFixed(6)} lng=${userPos.lng.toFixed(6)} alt=${userPos.alt ?? 'null'} hdg=${userHeading?.toFixed(1) ?? 'null'} fixedFwd=${FIXED_FORWARD_M} align=GravityAndHeading`
       );

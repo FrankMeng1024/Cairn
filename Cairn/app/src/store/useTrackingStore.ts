@@ -161,6 +161,11 @@ interface TrackingState {
   reset: () => void;
   /** Clear lastStopReason after the screen has surfaced its notice. */
   clearLastStopReason: () => void;
+  /** v118: discard the current too-short session entirely. Called when
+   *  the user taps "End anyway" in the TooShortSheet — does the full
+   *  cleanup (delete server row, stop subscriptions/intervals, reset
+   *  store) that stopTracking normally would. */
+  discardCurrentSession: () => void;
 }
 
 const initialState = {
@@ -461,6 +466,26 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   },
 
   stopTracking: (sessionName?: string) => {
+    // v118 too-short pre-check (BEFORE any cleanup): if the session has
+    // < 2 trackPoints, surface a "too short" sheet but DON'T tear down
+    // location subscriptions / intervals. The user gets a friendly modal
+    // with two options:
+    //   - "Got it"     → dismisses the sheet; tracking continues from
+    //                    where it was (subscriptions and intervals never
+    //                    stopped, so this is seamless).
+    //   - "End anyway" → the screen calls discardCurrentSession() which
+    //                    does the full cleanup + reset.
+    // Without this guard the user would lose their session as soon as
+    // they tapped Stop, even if they only meant to check.
+    {
+      const pre = get();
+      if (pre.status !== 'idle' && pre.trackPoints.length < 2) {
+        crashLogger.breadcrumb(`session:stop:too-short pts=${pre.trackPoints.length} — preserving session`);
+        set({ lastStopReason: 'too-short' });
+        return;
+      }
+    }
+
     // App-state subscription
     try { appStateSubscription?.remove(); } catch { /* no-op */ }
     appStateSubscription = null;
@@ -799,6 +824,39 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   },
 
   clearLastStopReason: () => set({ lastStopReason: null }),
+
+  discardCurrentSession: () => {
+    // Full teardown for too-short sessions when user taps "End anyway".
+    // Mirrors the cleanup at the top of stopTracking() but without the
+    // saved-session bookkeeping (no addSession, no name dialog).
+    try { appStateSubscription?.remove(); } catch { /* no-op */ }
+    appStateSubscription = null;
+    try { locationSubscription?.remove(); } catch { /* no-op */ }
+    locationSubscription = null;
+    if (backgroundTaskActive && Location) {
+      Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK).catch(() => {});
+      backgroundTaskActive = false;
+    }
+    if (durationInterval) { clearInterval(durationInterval); durationInterval = null; }
+    if (drainInterval) { clearInterval(drainInterval); drainInterval = null; }
+    if (dynamicSamplingInterval) { clearInterval(dynamicSamplingInterval); dynamicSamplingInterval = null; }
+    if (incrementalFlushInterval) { clearInterval(incrementalFlushInterval); incrementalFlushInterval = null; }
+
+    networkMonitor.stop();
+    sessionRecorder.stop();
+    batteryMonitor.stop().catch(() => {})
+      .finally(() => {
+        debugLogger.endSession().catch(() => {});
+        persistBackgroundContext(null, false).catch(() => {});
+      });
+
+    const s = get();
+    if (s.remoteSessionId) {
+      deleteRemoteSession(s.remoteSessionId).catch(() => {});
+    }
+    crashLogger.breadcrumb(`session:discard pts=${s.trackPoints.length}`);
+    set({ ...initialState });
+  },
 }));
 
 // ── Source activation helpers (single-source guarantee) ────────────────────

@@ -455,10 +455,17 @@ function RoutesTab() {
   // Filter + sort state — local-only, resets if user leaves the tab.
   const [filter, setFilter] = useState<'all' | 'hiking' | 'running'>('all');
   const [sort, setSort] = useState<'recent' | 'distance-desc' | 'distance-asc'>('recent');
+  // v118: search by name. Routes can pile up on long-running users; a quick
+  // typed filter is faster than scrolling. Case-insensitive substring match.
+  const [search, setSearch] = useState('');
 
   const visible = useMemo(() => {
     let list = routes;
     if (filter !== 'all') list = list.filter(r => r.activityMode === filter);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(r => (r.name ?? '').toLowerCase().includes(q));
+    }
     if (sort === 'recent') {
       list = [...list].sort((a, b) => b.updatedAt - a.updatedAt);
     } else if (sort === 'distance-desc') {
@@ -467,7 +474,7 @@ function RoutesTab() {
       list = [...list].sort((a, b) => a.distanceM - b.distanceM);
     }
     return list;
-  }, [routes, filter, sort]);
+  }, [routes, filter, sort, search]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -492,19 +499,60 @@ function RoutesTab() {
         keyExtractor={r => r.id}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
-          <PressBtn style={styles.newRouteBtn} onPress={() => nav.navigate('RouteEditor')} scaleTo={0.96}>
-            <Icon name="Plus" size={18} color={Colors.primary} strokeWidth={2.5} />
-            <Text style={styles.newRouteBtnText}>New Route</Text>
-          </PressBtn>
+          /* v118: New Route button removed per route-rules.md §2.3 — manual
+             route drawing is forbidden; routes can only be created from a
+             real walked Activity. The header is now a search field instead. */
+          <View style={styles.searchWrap}>
+            <Icon name="Map" size={16} color={Colors.textMuted} strokeWidth={2} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search routes by name…"
+              placeholderTextColor={Colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              autoCorrect={false}
+            />
+            {search.length > 0 && Platform.OS === 'android' && (
+              <TouchableOpacity onPress={() => setSearch('')}>
+                <Icon name="X" size={16} color={Colors.textMuted} strokeWidth={2} />
+              </TouchableOpacity>
+            )}
+          </View>
         }
         ListEmptyComponent={
-          <View style={{ alignItems: 'center', paddingTop: 40 }}>
-            <Text style={styles.emptyHint}>
-              {routes.length === 0
-                ? 'Plan your next track. Save routes for offline use.'
-                : 'No routes match this filter.'}
-            </Text>
-          </View>
+          /* v118: friendly empty state. If no routes exist at all, guide
+             the user to Activities (the only valid creation source). If
+             they exist but the current filter/search hides them, just say so. */
+          routes.length === 0 ? (
+            <View style={styles.emptyHero}>
+              <View style={styles.emptyHeroIcon}>
+                <Icon name="Route" size={40} color={Colors.primary} strokeWidth={1.5} />
+              </View>
+              <Text style={styles.emptyHeroTitle}>No saved routes yet</Text>
+              <Text style={styles.emptyHeroBody}>
+                Routes are paths you've already walked.{'\n'}
+                Open an Activity, tap{' '}
+                <Text style={{ fontWeight: '700', color: Colors.primary }}>Save as Route</Text>
+                , and it'll show up here.
+              </Text>
+              <TouchableOpacity
+                style={styles.emptyHeroCta}
+                activeOpacity={0.85}
+                onPress={() => nav.navigate('MapHistory')}
+              >
+                <Icon name="Map" size={16} color="#fff" strokeWidth={2} />
+                <Text style={styles.emptyHeroCtaText}>Go to Activities</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ alignItems: 'center', paddingTop: 40 }}>
+              <Text style={styles.emptyHint}>
+                {search.trim() ? 'No routes match your search.' : 'No routes match this filter.'}
+              </Text>
+            </View>
+          )
         }
         renderItem={({ item }) => (
           <PressBtn style={styles.card} onPress={() => setSelectedRoute(item)} scaleTo={0.97}>
@@ -1018,6 +1066,71 @@ const styles = StyleSheet.create({
   emptyHint: { fontSize: FontSize.caption, color: Colors.textMuted, marginTop: 8, textAlign: 'center', paddingHorizontal: Spacing.xl },
   newRouteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md, borderRadius: Radius.card, borderWidth: 2, borderColor: Colors.primary, borderStyle: 'dashed', marginBottom: Spacing.sm },
   newRouteBtnText: { fontSize: FontSize.body, fontWeight: '600', color: Colors.primary },
+
+  // v118: search input row at the top of the Routes list.
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    marginBottom: Spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: FontSize.body,
+    color: Colors.textPrimary,
+    padding: 0,
+  },
+
+  // v118: hero empty-state when there are no routes at all (vs the
+  // narrower "no match" message when filter/search hides everything).
+  emptyHero: {
+    alignItems: 'center',
+    paddingTop: 64,
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.md,
+  },
+  emptyHeroIcon: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: Colors.primaryBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.sm,
+  },
+  emptyHeroTitle: {
+    fontSize: FontSize.h2,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  emptyHeroBody: {
+    fontSize: FontSize.body,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  emptyHeroCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: Radius.button,
+    marginTop: Spacing.sm,
+  },
+  emptyHeroCtaText: {
+    color: '#fff',
+    fontSize: FontSize.body,
+    fontWeight: '700',
+  },
 });
 
 // ── Sheet Styles (mirrors MapScreen sheet styles exactly) ────────────────────

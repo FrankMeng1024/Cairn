@@ -29,6 +29,7 @@ import { formatDistance, formatDuration } from '../utils/geo';
 import { Colors, Spacing, Radius, FontSize, Shadow, IconSize } from '../components/tokens';
 import { Icon } from '../components/Icon';
 import { BackButton } from '../components/BackButton';
+import { TooShortSheet } from '../components/TooShortSheet';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -118,10 +119,11 @@ export function RunningScreen() {
   const setActivityMode = useTrackingStore(s => s.setActivityMode);
   const startTracking = useTrackingStore(s => s.startTracking);
   const stopTracking = useTrackingStore(s => s.stopTracking);
-  // v116: surface a friendly explanation when stopTracking discards a session
-  // because it had no drawable path (< 2 GPS points).
+  // v116/v118: too-short modal hooks. v118 changed Alert → TooShortSheet
+  // and the session is now preserved on too-short stops.
   const lastStopReason = useTrackingStore(s => s.lastStopReason);
   const clearLastStopReason = useTrackingStore(s => s.clearLastStopReason);
+  const discardCurrentSession = useTrackingStore(s => s.discardCurrentSession);
   const addMarker = useMarkerStore(s => s.addMarker);
   // Toast for the "cairn planted" feedback shown after the user uses
   // the unlock-protected plant button. Only relevant in the unlocked
@@ -186,17 +188,10 @@ export function RunningScreen() {
     }).start();
   }, [isLocked]);
 
-  // v116: friendly notice when a too-short run gets discarded.
-  useEffect(() => {
-    if (lastStopReason === 'too-short') {
-      Alert.alert(
-        'Run too short to save',
-        "We didn't capture enough GPS points to draw a path, so this run wasn't saved to Activities. To save a run you need to keep moving for at least a few seconds with location available.",
-        [{ text: 'Got it', onPress: () => clearLastStopReason() }],
-        { cancelable: true, onDismiss: () => clearLastStopReason() },
-      );
-    }
-  }, [lastStopReason, clearLastStopReason]);
+  // v118: friendly notice when a too-short run gets stopped. The session
+  // is preserved by stopTracking's pre-check; "Got it" simply dismisses
+  // the modal and tracking continues. The TooShortSheet element is
+  // rendered at the bottom of this component.
 
   const onStartPressIn = () =>
     Animated.spring(startBtnScale, { toValue: 0.96, useNativeDriver: true, tension: 300, friction: 10 }).start();
@@ -228,8 +223,12 @@ export function RunningScreen() {
 
   function handleStop() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // v118: stopTracking has a too-short pre-check that preserves the
+    // session and sets lastStopReason='too-short'. We only transition to
+    // 'stopped' if a real stop happened (status moved off tracking).
     stopTracking();
-    setRunState('stopped');
+    const stillTracking = useTrackingStore.getState().status !== 'idle';
+    if (!stillTracking) setRunState('stopped');
   }
 
   // Plant a cairn at the user's current GPS position.
@@ -356,10 +355,17 @@ export function RunningScreen() {
           >
             {CameraComponent && (
               <CameraComponent
-                followUserLocation={foregroundGranted}
+                followUserLocation={foregroundGranted && !!lastCoordinate}
                 followZoomLevel={15}
-                animationMode="flyTo"
-                animationDuration={500}
+                // v118: avoid the "chaotic earth" intro — if we already have
+                // a GPS fix, jump straight there with zoom=15 and no animation.
+                // Without defaultSettings, Mapbox lands on zoom=0 (world view)
+                // for a few hundred ms before flying to user position.
+                defaultSettings={lastCoordinate
+                  ? { centerCoordinate: [lastCoordinate.lng, lastCoordinate.lat], zoomLevel: 15 }
+                  : { centerCoordinate: [174.7633, -36.8485], zoomLevel: 6 }}
+                animationMode={lastCoordinate ? 'none' : 'flyTo'}
+                animationDuration={lastCoordinate ? 0 : 500}
               />
             )}
             {UserLocationComponent && foregroundGranted && (
@@ -583,6 +589,20 @@ export function RunningScreen() {
           </Animated.View>
         </View>
       </TouchableOpacity>
+
+      {/* v118: too-short modal — rendered at the running layer so it
+          covers the lock + controls. Got it = continue tracking (state
+          preserved by stopTracking pre-check). End anyway = full discard. */}
+      <TooShortSheet
+        visible={lastStopReason === 'too-short'}
+        activityMode="running"
+        onContinue={() => clearLastStopReason()}
+        onDiscard={() => {
+          clearLastStopReason();
+          discardCurrentSession();
+          setRunState('stopped');
+        }}
+      />
     </View>
   );
 }

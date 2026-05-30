@@ -37,6 +37,7 @@ import { BackButton } from '../components/BackButton';
 import { PressBtn } from '../components/PressBtn';
 import { MARKER_META, type MarkerType } from '../data/mockData';
 import type { Marker } from '../store/useMarkerStore';
+import { TooShortSheet } from '../components/TooShortSheet';
 
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -149,7 +150,7 @@ function CompassNeedle({ heading, size = 22 }: { heading: number | null; size?: 
 }
 
 // ── Map component (real Mapbox or fallback) ─────────────────────────────
-function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStart, userPos, instantCamera }: {
+function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStart, userPos, instantCamera, followUser = true, onUserGesture }: {
   markers: Marker[];
   // v78 #1: trackPoints carry an optional `t` (epoch ms) so we can split
   // the polyline at GPS-signal-loss gaps. When two consecutive points are
@@ -168,6 +169,12 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
   // an in-progress hike — the user already knows where they are, the
   // 1-second zoom-in feels slow.
   instantCamera?: boolean;
+  // v118: external follow-user toggle. When false, the Mapbox Camera
+  // disables followUserLocation so the user can pan/zoom without being
+  // snapped back. The recenter button (rendered by HikingScreen, not
+  // HikingMap) flips this back to true via setFollowUser.
+  followUser?: boolean;
+  onUserGesture?: () => void;
 }) {
   const region = getCurrentRegion();
 
@@ -307,14 +314,22 @@ function HikingMap({ markers, trackPoints, onMarkerPress, showCompass, routeStar
         rotateEnabled={gesturesEnabled}
         pitchEnabled={gesturesEnabled}
         scaleBarEnabled={false}
+        // v118: detect user gesture → notify parent to release followUser.
+        // Mapbox fires onCameraChanged for every camera move including
+        // programmatic ones; we only react to gestures.
+        onCameraChanged={(state: any) => {
+          if (state?.gestures?.isGestureActive && followUser) {
+            onUserGesture?.();
+          }
+        }}
       >
         <CameraComponent
           ref={cameraRef}
-          // Only auto-follow on first-launch new hikes. Resume mode
-          // uses the imperative cameraRef.setCamera in the useEffect
-          // above to keep the camera locked on the user without
-          // Mapbox's globe-zoom-in animation.
-          followUserLocation={!instantCamera}
+          // v118: followUser respects the new toggle state. While true,
+          // Mapbox auto-recenters on every GPS fix (original behaviour).
+          // While false, the user can pan/zoom freely until they tap the
+          // recenter button.
+          followUserLocation={!instantCamera && followUser}
           followZoomLevel={15}
           followPitch={0}
           animationDuration={instantCamera ? 0 : 600}
@@ -955,7 +970,7 @@ function StopSummarySheet({
               </TouchableOpacity>
             ) : (
               <View style={stopSheetStyles.noPathNotice}>
-                <Icon name="AlertTriangle" size={13} color="#C8A030" strokeWidth={2} />
+                <Icon name="TriangleAlert" size={13} color="#C8A030" strokeWidth={2} />
                 <Text style={stopSheetStyles.noPathText}>No path recorded — keep moving to save as route</Text>
               </View>
             )
@@ -1055,11 +1070,14 @@ export function HikingScreen() {
   const startTracking = useTrackingStore(s => s.startTracking);
   const stopTracking = useTrackingStore(s => s.stopTracking);
   const linkMarker = useTrackingStore(s => s.linkMarker);
-  // v116: surface a friendly explanation when stopTracking discards a session
-  // because it had no drawable path (< 2 GPS points). Without this the user
-  // sees the stop confirmation succeed but nothing in Activities — confusing.
+  // v116/v118: surface a friendly explanation when stopTracking discards a
+  // session because it had no drawable path (< 2 GPS points). v118 changed
+  // this from a system Alert to TooShortSheet — and the session is now
+  // PRESERVED, so "Got it" simply dismisses and tracking continues.
   const lastStopReason = useTrackingStore(s => s.lastStopReason);
   const clearLastStopReason = useTrackingStore(s => s.clearLastStopReason);
+  const discardCurrentSession = useTrackingStore(s => s.discardCurrentSession);
+  const activityMode = useTrackingStore(s => s.activityMode);
 
   // Real marker store
   const addMarker = useMarkerStore(s => s.addMarker);
@@ -1071,6 +1089,11 @@ export function HikingScreen() {
   const [ui, setUi] = useState<UIState>('map');
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
   const [showSavedToast, setShowSavedToast] = useState(false);
+  // v118: followUser controls whether the live map auto-recenters on
+  // each GPS update. true (default during tracking) = Mapbox snaps the
+  // camera to the user. false = user has manually panned/zoomed; we
+  // honour that until they tap the recenter button.
+  const [followUser, setFollowUser] = useState(true);
   // Stop-summary sheet state. We don't call stopTracking immediately
   // when the user hits Stop — instead we capture a snapshot of the
   // current stats and surface a summary sheet so the user can name
@@ -1199,19 +1222,11 @@ export function HikingScreen() {
     }
   }, [status, phase]);
 
-  // v116: when stopTracking discards a too-short session, show an explanation
-  // so the user understands why nothing appears in Activities. Cleared as soon
-  // as the user dismisses, so a future stop on a real hike won't re-trigger.
-  useEffect(() => {
-    if (lastStopReason === 'too-short') {
-      Alert.alert(
-        'Hike too short to save',
-        "We didn't capture enough GPS points to draw a path, so this hike wasn't saved to Activities. To save a hike you need to walk for at least a few seconds with location available.",
-        [{ text: 'Got it', onPress: () => clearLastStopReason() }],
-        { cancelable: true, onDismiss: () => clearLastStopReason() },
-      );
-    }
-  }, [lastStopReason, clearLastStopReason]);
+  // v118: too-short modal replaced the v116 system Alert. The session is
+  // now preserved by stopTracking's pre-check (see useTrackingStore), so
+  // tapping "Got it" leaves the user back on the still-running tracking
+  // view with all stats intact. Tapping "End anyway" calls
+  // discardCurrentSession() which does the full teardown.
 
   // Spring press scales
   const trackBtnScale = useRef(new Animated.Value(1)).current;
@@ -1450,6 +1465,9 @@ export function HikingScreen() {
         //   - Returning from another screen mid-hike
         // Only first-launch with no GPS fix yet gets the fly-in.
         instantCamera={lastCoordinate != null}
+        // v118: pass through followUser + gesture release callback.
+        followUser={followUser}
+        onUserGesture={() => setFollowUser(false)}
       />
 
       {/* Top overlay: back button (left) + GPS chip (right). Uses
@@ -1614,6 +1632,24 @@ export function HikingScreen() {
                 )}
               </TouchableOpacity>
             </View>
+            {/* v118: recenter button — only shown after the user has
+                manually panned/zoomed (followUser=false). Tapping flips
+                followUser back to true; Mapbox's followUserLocation
+                handles the recenter animation natively. */}
+            {!followUser && (
+              <View style={styles.controlSlot}>
+                <TouchableOpacity
+                  style={styles.circleBtn}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setFollowUser(true);
+                  }}
+                >
+                  <Icon name="Target" size={22} color={Colors.primary} strokeWidth={2} />
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={styles.controlSlot}>
               <Animated.View style={{ transform: [{ scale: fabScale }] }}>
                 <TouchableOpacity
@@ -1668,6 +1704,11 @@ export function HikingScreen() {
             // We pass the name through stopTracking; useTrackingStore
             // forwards it to the saved session. Falsy / empty name
             // → store falls back to the default "Hike — DD/MM/YYYY".
+            //
+            // v118: stopTracking has a too-short pre-check that sets
+            // lastStopReason without resetting state. We close the
+            // summary sheet here either way; if a too-short was
+            // detected, TooShortSheet renders next based on lastStopReason.
             stopTracking(name);
             setStopSummary(null);
             // Phase reset back to selection screen on next render
@@ -1708,6 +1749,16 @@ export function HikingScreen() {
           }}
         />
       )}
+
+      {/* v118: too-short modal — renders when stopTracking detected the
+          session has < 2 GPS points. Got it = continue tracking (state
+          was preserved). End anyway = full discard via store action. */}
+      <TooShortSheet
+        visible={lastStopReason === 'too-short'}
+        activityMode={activityMode}
+        onContinue={() => clearLastStopReason()}
+        onDiscard={() => { clearLastStopReason(); discardCurrentSession(); }}
+      />
     </View>
   );
 }
