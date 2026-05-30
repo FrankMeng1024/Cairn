@@ -989,12 +989,20 @@ export function MapHistoryScreen() {
                   });
                   if (id) {
                     crashLogger.breadcrumb(`saveroute:ok id=${id}`);
-                    // v123 fix #7: jump straight to the new route's
-                    // detail page (RouteEditor opens with routeId for
-                    // the existing route). User wanted to land on the
-                    // detail of the route they just created, not the
-                    // Routes tab list.
-                    (nav as any).navigate('RouteEditor', { routeId: id });
+                    // v126 fix #8: reset the nav stack so that:
+                    //   Home → Routes list → RouteEditor (detail)
+                    // Back from RouteEditor lands on the Routes list,
+                    // not the Activity we came from. User reported the
+                    // previous flow returned to Activity which felt
+                    // wrong because the route just got saved.
+                    (nav as any).reset({
+                      index: 2,
+                      routes: [
+                        { name: 'Home' },
+                        { name: 'Routes', params: { initialTab: 'routes' } },
+                        { name: 'RouteEditor', params: { routeId: id } },
+                      ],
+                    });
                   } else {
                     crashLogger.breadcrumb(`saveroute:no-id-returned`);
                     Alert.alert('Save failed', 'Server returned no ID. Check connection and try again.');

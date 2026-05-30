@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKeepAwake } from 'expo-keep-awake';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTrackingStore } from '../store/useTrackingStore';
@@ -242,11 +242,20 @@ export function RunningScreen() {
   // "first second of globe" land at a different zoom level than
   // Hiking. Disabled for the 600ms flyTo duration + 100ms safety.
   const [gesturesEnabled, setGesturesEnabled] = useState(false);
-  useEffect(() => {
-    setGesturesEnabled(false);
-    const t = setTimeout(() => setGesturesEnabled(true), 700);
-    return () => clearTimeout(t);
-  }, []);
+  // v126 fix #2: bump on every focus so the MapView/Camera get a new
+  // `key` and fully remount → Mapbox replays the fly-in from zoom=0.
+  // Without this, navigating away and back leaves the same MapView
+  // alive — Mapbox keeps the previous camera state and skips the
+  // globe intro on second/third entries.
+  const [mapEpoch, setMapEpoch] = useState(0);
+  useFocusEffect(
+    React.useCallback(() => {
+      setGesturesEnabled(false);
+      setMapEpoch(e => e + 1);
+      const t = setTimeout(() => setGesturesEnabled(true), 700);
+      return () => clearTimeout(t);
+    }, []),
+  );
 
   // Show/hide unlocked controls with animation
   useEffect(() => {
@@ -415,6 +424,7 @@ export function RunningScreen() {
         {/* Real Mapbox basemap (or fallback if Mapbox unavailable) */}
         {MapView ? (
           <MapView
+            key={`map-${mapEpoch}`}
             style={StyleSheet.absoluteFillObject}
             styleURL={getPrimaryMapStyle()}
             logoEnabled={false}

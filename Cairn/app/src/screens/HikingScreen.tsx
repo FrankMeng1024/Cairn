@@ -1760,7 +1760,15 @@ export function HikingScreen() {
                 elevationGainM,
               });
               if (id) {
-                (nav as any).navigate('RouteEditor', { routeId: id });
+                // v126: reset stack so Back from RouteEditor lands on Routes list.
+                (nav as any).reset({
+                  index: 2,
+                  routes: [
+                    { name: 'Home' },
+                    { name: 'Routes', params: { initialTab: 'routes' } },
+                    { name: 'RouteEditor', params: { routeId: id } },
+                  ],
+                });
               } else {
                 Alert.alert('Save failed', 'Server returned no ID. Check connection and try again.');
               }
