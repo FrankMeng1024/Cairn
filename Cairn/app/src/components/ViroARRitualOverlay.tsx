@@ -468,71 +468,46 @@ export const ViroARRitualOverlay = forwardRef<ViroARRitualOverlayHandle, Props>(
           `ritualAR:debug-snapshot-result success=${result?.success} url=${result?.url ?? 'none'} err=${result?.errorCode ?? 'none'}`
         );
         if (result?.success && result?.url) {
-          // Read file → base64. RNFS not in deps; use fetch on file:// URI.
+          // Read png file via fetch on file:// URI → Blob (RN supports this).
           const fileUri = result.url.startsWith('file://') ? result.url : `file://${result.url}`;
           const resp = await fetch(fileUri);
           const blob = await resp.blob();
-          const reader = new FileReader();
-          await new Promise<void>((resolve, reject) => {
-            reader.onload = () => resolve();
-            reader.onerror = () => reject(new Error('reader-failed'));
-            reader.readAsDataURL(blob);
-          });
-          const dataUrl = reader.result as string; // "data:image/png;base64,..."
-          const b64 = dataUrl.split(',')[1] ?? '';
-          // Chunk into multiple breadcrumbs because crashLogger may cap
-          // single-line size. 4KB chunks × N => reassembled by reader script.
-          const CHUNK_SIZE = 4000;
-          const totalChunks = Math.ceil(b64.length / CHUNK_SIZE);
           const snapshotId = `snap-${Date.now()}`;
           crashLogger.breadcrumb(
-            `ritualAR:debug-snapshot-meta id=${snapshotId} bytes=${b64.length} chunks=${totalChunks} markers=${markers.length}`
+            `ritualAR:debug-snapshot-meta id=${snapshotId} bytes=${blob.size} markers=${markers.length}`
           );
-          // v141: send base64 directly via fetch, NOT via crashLogger ring
-          // buffer (capped at 500 events; 240+ chunks risk overflow + chunks
-          // are rebuilt from RingBuffer.recentEvents which loses early ones).
-          // Single POST with full body to /api/telemetry/sessions matches
-          // crashLogger.uploadDiagnostic's wire format but bypasses the
-          // ring buffer entirely.
-          const sessionId = `diag-snap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          const events = [
-            JSON.stringify({ ts: Date.now(), session_id: sessionId, event: 'diagnostic_header', tag: 'snapshot' }),
-            JSON.stringify({ ts: Date.now(), session_id: sessionId, event: 'breadcrumb',
-              message: `ritualAR:debug-snapshot-meta id=${snapshotId} bytes=${b64.length} chunks=${totalChunks} markers=${markers.length}` }),
-          ];
-          for (let i = 0; i < totalChunks; i++) {
-            const chunk = b64.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-            events.push(JSON.stringify({
-              ts: Date.now(), session_id: sessionId, event: 'breadcrumb',
-              message: `ritualAR:debug-snapshot-data id=${snapshotId} i=${i} d=${chunk}`,
-            }));
-          }
-          events.push(JSON.stringify({
-            ts: Date.now(), session_id: sessionId, event: 'breadcrumb',
-            message: `ritualAR:debug-snapshot-end id=${snapshotId}`,
-          }));
-          const body = events.join('\n');
+          // v142: backend now has /api/debug-snapshot — POST raw PNG
+          // bytes directly. No base64, no chunking, no telemetry pollution.
+          // 10× simpler + faster than v141's JSONL chunking approach.
           const ts = Date.now();
+          const snapMeta = {
+            markers: markers.length,
+            ts,
+          };
           try {
-            const resp = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/api/telemetry/sessions`, {
+            const metaB64 = global.btoa
+              ? global.btoa(JSON.stringify(snapMeta))
+              : (require('buffer') as any).Buffer.from(JSON.stringify(snapMeta)).toString('base64');
+            const url = `${API_BASE_URL.replace(/\/$/, '')}/api/debug-snapshot`
+              + `?id=${encodeURIComponent(snapshotId)}`
+              + `&meta=${encodeURIComponent(metaB64)}`;
+            const resp = await fetch(url, {
               method: 'POST',
               headers: {
-                'Content-Type': 'application/x-ndjson',
+                'Content-Type': 'image/png',
                 'X-Cairn-Device-Os': 'ios',
                 'X-Cairn-App-Version': '0.2.0',
-                'X-Cairn-Activity-Mode': 'diagnostic',
-                'X-Cairn-Started-At': String(ts),
-                'X-Cairn-Ended-At': String(ts),
+                'X-Cairn-Ar-Mode': 'ritual',
               },
-              body,
+              body: blob,
             });
             const status = resp.status;
-            crashLogger.breadcrumb(`ritualAR:debug-snapshot-fetched sid=${sessionId} status=${status} bytes=${body.length}`);
+            const respText = await resp.text().catch(() => '');
+            crashLogger.breadcrumb(`ritualAR:debug-snapshot-uploaded sid=${snapshotId} status=${status} bytes=${blob.size} resp=${respText.slice(0, 100)}`);
             if (status >= 200 && status < 300) {
-              return { success: true, error: `OK ${status} sid=${sessionId} bytes=${body.length}` };
+              return { success: true, error: `OK ${status} sid=${snapshotId} bytes=${blob.size}` };
             }
-            const txt = await resp.text().catch(() => 'no-body');
-            return { success: false, error: `http ${status}: ${txt.slice(0, 100)}` };
+            return { success: false, error: `http ${status}: ${respText.slice(0, 100)}` };
           } catch (e: any) {
             return { success: false, error: `fetch-fail: ${e?.message ?? e}` };
           }

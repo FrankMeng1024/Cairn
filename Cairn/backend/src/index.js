@@ -39,8 +39,13 @@ app.use(cors({
 }));
 
 // Telemetry payloads can be large (full debug session JSONL); use 12MB ceiling there.
+// Debug snapshots use raw PNG bodies handled inside their own route.
 // Other endpoints stay at 1MB.
 app.use((req, res, next) => {
+  if (req.path.startsWith('/api/debug-snapshot')) {
+    // Skip global json/text middleware; route uses express.raw for PNG bodies.
+    return next();
+  }
   if (req.path.startsWith('/api/telemetry')) {
     express.json({ limit: '12mb' })(req, res, (err) => {
       if (err) return next(err);
@@ -80,6 +85,7 @@ app.use('/api/routes', require('./routes/routes'));
 app.use('/api/friends', require('./routes/friends'));
 app.use('/api/markers', require('./routes/markers'));
 app.use('/api/telemetry', require('./routes/telemetry'));
+app.use('/api/debug-snapshot', require('./routes/debug-snapshot'));
 
 // 404 fallback
 app.use((req, res) => {
