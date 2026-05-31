@@ -28,6 +28,7 @@ import { AR3DCairnOverlay } from '../components/AR3DCairnOverlay';
 // 如果 ARKit 仍崩 → ErrorBoundary fallback 自动切回 AR3DCairnOverlay (r3f),
 // 用户体验受损但 app 不崩, 给我们时间通过 OTA 修.
 import { ViroAROverlay } from '../components/ViroAROverlay';
+import { ViroARRitualOverlay } from '../components/ViroARRitualOverlay';
 import { CairnEdgeArrows } from '../components/CairnEdgeArrows';
 import { AimShutter } from '../components/AimShutter';
 import { PlantSheet, AimReticle, type PlantType } from '../components/PlantSheet';
@@ -203,6 +204,11 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   // v24 diagnostic: AR overlay reports its internal state up so the
   // ARDebugOverlay can show GL-ready + cairn count on screen.
   const [arStatus, setArStatus] = useState<{ glReady: boolean; cairnCount: number }>({ glReady: false, cairnCount: 0 });
+  // Experimental: ritual circle visual mode. Toggle in top-right pill
+  // switches between production sphere/icon (ViroAROverlay) and the
+  // DS-style ground ritual circle (ViroARRitualOverlay). Both share GPS
+  // anchoring + ARKit tracking; only the rendered visuals differ.
+  const [ritualMode, setRitualMode] = useState(false);
   // v78 #3: AR init UX. Tracks one of:
   //   'init'      — first 4 seconds, glReady === false. Show spinner.
   //   'ready'     — glReady === true. Hide overlay.
@@ -676,7 +682,17 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
           />
         }
       >
-        {USE_VIRO ? (
+        {USE_VIRO && ritualMode ? (
+          <ViroARRitualOverlay
+            markers={nearbyMarkers}
+            userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng, alt: lastCoord.alt ?? null } : null}
+            userHeading={userHeading}
+            onStatus={setArStatus}
+            onCairnPress={(id) => {
+              crashLogger.breadcrumb(`ritualAR:cairn:press id=${id.slice(-6)}`);
+            }}
+          />
+        ) : USE_VIRO ? (
           <ViroAROverlay
             markers={nearbyMarkers}
             userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng, alt: lastCoord.alt ?? null } : null}
@@ -793,6 +809,19 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
           regular nav screen, not a modal. */}
       <View style={[styles.topBar, { top: insets.top + 2 }]}>
         <BackButton variant="pill" onPress={() => onClose ? onClose() : nav.goBack()} />
+        {/* Experimental ritual-circle mode toggle. Tap to swap between
+            current production sphere render and the DS-style ground ritual
+            circle. Both share GPS anchoring; only visuals differ.
+            Auto-pushed to the right via marginLeft: 'auto'. */}
+        <TouchableOpacity
+          style={[styles.ritualToggle, ritualMode && styles.ritualToggleActive]}
+          onPress={() => setRitualMode(m => !m)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.ritualToggleText}>
+            {ritualMode ? '◉ Ritual' : '○ Sphere'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Drag-to-plant cairn picker — replaces the previous Place Flag FAB
@@ -910,6 +939,21 @@ const styles = StyleSheet.create({
   closeBtn: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
+  },
+  // Ritual-mode toggle pill — right side of topBar.
+  ritualToggle: {
+    marginLeft: 'auto',
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  ritualToggleActive: {
+    backgroundColor: 'rgba(212,160,80,0.25)',
+    borderColor: 'rgba(212,160,80,0.7)',
+  },
+  ritualToggleText: {
+    color: '#fff', fontSize: 12, fontWeight: '600',
   },
   placeFab: {
     position: 'absolute', bottom: 30, alignSelf: 'center',
