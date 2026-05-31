@@ -38,10 +38,20 @@ const RADIUS_BULGE = 0.10;        // 0.06 → 0.10 (mid-strand swelling more obv
 const RADIUS_WOBBLE = 0.03;
 const UV_V_REPEAT = 3;
 
-// 5 strand seeds — every strand now has non-zero jitter at every control
-// point so NO strand is straight. Y values rescaled to STRAND_HEIGHT_M = 8m.
-// Y heights: 0, 1.6, 3.6, 5.6, 8.0 (m) along the curve.
-// Jitter scaled down proportionally to height (was ±0.6 at 40m → ±0.20 at 8m).
+// Per-type GLB tinting. v4 (post-v142 visual debug): screenshots in
+// debug_snapshots table proved Viro3DObject ignores the `materials` prop —
+// strands rendered pure white regardless of registered material. Fix by
+// baking colour into the GLB's own pbrMetallicRoughness.baseColorFactor,
+// so the GLB ALREADY has the right colour without depending on Viro's
+// material override path. Generate 5× as many GLBs (5 curves × 5 types).
+const TYPE_TINTS = {
+  // [r, g, b, a] in 0-1 linear space. emissive duplicates to give bloom-glow.
+  danger:   [1.0, 0.30, 0.20, 1.0],   // red
+  supply:   [0.30, 0.85, 0.45, 1.0],  // green
+  junction: [1.0, 0.55, 0.15, 1.0],   // orange
+  scenic:   [0.30, 0.45, 1.0, 1.0],   // blue
+  cairn:    [0.95, 0.70, 0.30, 1.0],  // amber gold (DS canonical)
+};
 const SEEDS = [
   { name: 'a', jitter: [[ 0.05, 0.05], [ 0.18, 0.10], [-0.12, 0.20], [ 0.20,-0.08], [ 0.05,-0.05]] },
   { name: 'b', jitter: [[-0.05, 0.05], [-0.20, 0.12], [ 0.18,-0.16], [-0.12, 0.16], [ 0.05,-0.05]] },
@@ -109,7 +119,7 @@ function buildStrandGeometry(jitter) {
 //   Header (12 bytes)
 //   JSON chunk
 //   BIN chunk (POSITION + NORMAL + TEXCOORD_0 + INDICES)
-function geometryToGLB(geom) {
+function geometryToGLB(geom, tint) {
   const pos = geom.attributes.position.array;       // Float32Array, vec3
   const nrm = geom.attributes.normal.array;         // Float32Array, vec3
   const uv  = geom.attributes.uv.array;             // Float32Array, vec2
@@ -172,10 +182,15 @@ function geometryToGLB(geom) {
     materials: [{
       name: 'strandSlot',
       pbrMetallicRoughness: {
-        baseColorFactor: [1, 1, 1, 1],
+        baseColorFactor: tint,        // ← key fix: type colour baked in
         metallicFactor: 0.0,
         roughnessFactor: 1.0,
       },
+      // emissiveFactor at full strength for the bloom pass; alpha mode
+      // BLEND so additive-blend friendly when Viro composites.
+      emissiveFactor: [tint[0], tint[1], tint[2]],
+      alphaMode: 'OPAQUE',
+      doubleSided: true,
     }],
     accessors: [
       { bufferView: 0, componentType: 5126, count: vertexCount, type: 'VEC3', min, max }, // POSITION (FLOAT)
@@ -234,14 +249,16 @@ async function main() {
   await mkdir(OUT_DIR, { recursive: true });
   for (const seed of SEEDS) {
     const geom = buildStrandGeometry(seed.jitter);
-    const glb = geometryToGLB(geom);
-    const out = join(OUT_DIR, `strand_${seed.name}.glb`);
-    await writeFile(out, glb);
-    const tris = geom.index.count / 3;
-    const verts = geom.attributes.position.count;
-    console.log(`wrote ${out}  (${glb.length} bytes, ${verts} verts, ${tris} tris)`);
+    for (const [type, tint] of Object.entries(TYPE_TINTS)) {
+      const glb = geometryToGLB(geom, tint);
+      const out = join(OUT_DIR, `strand_${seed.name}_${type}.glb`);
+      await writeFile(out, glb);
+      const tris = geom.index.count / 3;
+      const verts = geom.attributes.position.count;
+      console.log(`wrote ${out}  (${glb.length} bytes, ${verts} verts, ${tris} tris)`);
+    }
   }
-  console.log('\nDone. Drag any .glb into https://gltf-viewer.donmccurdy.com/ to inspect.');
+  console.log('\n5 curves × 5 types = 25 GLBs total. Drag any into https://gltf-viewer.donmccurdy.com/ to inspect.');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
