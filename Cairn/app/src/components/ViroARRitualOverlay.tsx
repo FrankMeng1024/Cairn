@@ -25,6 +25,7 @@ import {
   ViroDirectionalLight,
   ViroMaterials,
   ViroAnimations,
+  ViroParticleEmitter,
   ViroTrackingStateConstants,
   type ViroTrackingState,
   type ViroTrackingReason,
@@ -43,6 +44,21 @@ const RITUAL_TEX = {
   scenic:   require('../../assets/ar/ritual_circle_scenic.png'),
   cairn:    require('../../assets/ar/ritual_circle_cairn.png'),
 } as const;
+
+// Strand sprite: vertically-elongated golden glow used by ViroParticleEmitter
+// to fake DS-style chiral threads. See app/scripts/gen_strand_sprite.mjs.
+const STRAND_SPRITE = require('../../assets/ar/strand_sprite.png');
+
+// Five strand emitters arranged 72° apart around the ring edge. The angles
+// are intentionally NOT uniform — slight random jitter (±0.15 rad) so the
+// arrangement reads as natural, not mechanical.
+const STRAND_OFFSETS = [
+  { x: Math.cos(0.0 * Math.PI * 2 + 0.10), z: Math.sin(0.0 * Math.PI * 2 + 0.10) },
+  { x: Math.cos(0.2 * Math.PI * 2 - 0.05), z: Math.sin(0.2 * Math.PI * 2 - 0.05) },
+  { x: Math.cos(0.4 * Math.PI * 2 + 0.12), z: Math.sin(0.4 * Math.PI * 2 + 0.12) },
+  { x: Math.cos(0.6 * Math.PI * 2 - 0.08), z: Math.sin(0.6 * Math.PI * 2 - 0.08) },
+  { x: Math.cos(0.8 * Math.PI * 2 + 0.04), z: Math.sin(0.8 * Math.PI * 2 + 0.04) },
+];
 
 // Type aliases — same normalisation as ViroAROverlay so old DB rows keep working
 const TYPE_REMAP: Record<string, keyof typeof RITUAL_TEX> = {
@@ -68,7 +84,12 @@ const NEAR_THRESHOLD_M = 10;
 const RITUAL_BASE_SIZE_M = 2.0;
 // Stable tracking settle window (ms). ARKit briefly reports TRACKING_NORMAL
 // during relocalisation while the world transform is still being corrected.
-const TRACKING_SETTLE_MS = 1500;
+// Production ViroAROverlay uses 1500ms to prevent the "flag flies into the
+// sky" bug, but the ritual circle is anchored to the ground (y is constant)
+// so a brief world-frame transient is much less visually catastrophic.
+// Shorter settle = faster recovery after putting the phone down + picking
+// it up (a common interaction the user explicitly flagged in M1 testing).
+const TRACKING_SETTLE_MS = 400;
 
 // ── GPS → ARKit world coords ──────────────────────────────────
 // Identical math to ViroAROverlay.gpsToArWorld but inlined to keep this
@@ -292,6 +313,63 @@ function RitualInstance(props: {
           materials={[matName]}
         />
       </ViroNode>
+
+      {/* Chiral strands — 5 vertical particle streams rising from the ring
+          edge to fake DS-style golden threads. Each strand is positioned at
+          a different angle around the circle (72° apart). Particles spawn
+          near the ground, rise upward with random horizontal jitter, and
+          fade out at the top. The cumulative additive-blended sprites read
+          as wavy thickness-varying threads from a distance. */}
+      {STRAND_OFFSETS.map((off, i) => (
+        <ViroParticleEmitter
+          key={`strand-${i}`}
+          position={[off.x * (RITUAL_BASE_SIZE_M * 0.4), 0, off.z * (RITUAL_BASE_SIZE_M * 0.4)]}
+          duration={3000}
+          delay={i * 200}              /* desync emissions so strands don't pulse in sync */
+          run={true}
+          loop
+          fixedToEmitter={true}
+          image={{
+            source: STRAND_SPRITE,
+            height: 0.45,
+            width: 0.10,
+            bloomThreshold: 0.10,
+          }}
+          spawnBehavior={{
+            particleLifetime: [2400, 3600],
+            maxParticles: 14,
+            emissionRatePerSecond: [3, 5],
+            spawnVolume: { shape: 'sphere', params: [0.05], spawnOnSurface: false },
+          }}
+          particleAppearance={{
+            opacity: {
+              initialRange: [0.0, 0.0],
+              factor: 'time',
+              interpolation: [
+                { interval: [0, 400],   endValue: 0.85 },   /* fade in */
+                { interval: [400, 2200], endValue: 0.85 },  /* hold */
+                { interval: [2200, 3600], endValue: 0.0 },  /* fade out at top */
+              ],
+            },
+            scale: {
+              initialRange: [[0.7, 0.6, 0.7], [1.1, 1.0, 1.1]],
+              factor: 'time',
+              interpolation: [
+                { interval: [0, 1500],    endValue: [1.0, 1.4, 1.0] },  /* taller mid-flight */
+                { interval: [1500, 3600], endValue: [0.4, 0.6, 0.4] },  /* shrink near top */
+              ],
+            },
+          }}
+          particlePhysics={{
+            /* upward velocity 1.2-1.8 m/s with slight horizontal jitter so
+               each particle drifts a little — gives the strand its
+               organic sway. */
+            velocity: { initialRange: [[-0.10, 1.2, -0.10], [0.10, 1.8, 0.10]] },
+            /* very small upward acceleration to keep them lifting */
+            acceleration: { initialRange: [[0, 0.05, 0], [0, 0.10, 0]] },
+          }}
+        />
+      ))}
     </ViroNode>
   );
 }
