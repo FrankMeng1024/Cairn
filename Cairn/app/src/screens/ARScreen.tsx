@@ -851,7 +851,19 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
               setSnapState('busy');
               setSnapMsg('');
               try {
+                const t0 = Date.now();
                 const res = await ritualOverlayRef.current?.takeDebugSnapshot();
+                const dur = Date.now() - t0;
+                // ALWAYS alert with raw result so we can see what's actually
+                // happening regardless of the success path. v139 testing
+                // showed user got '✓ uploaded' instantly even when snapshot
+                // never reached telemetry — the alert here will reveal
+                // whether res.success is mistakenly true or whether the
+                // success branch is somehow being taken with no payload.
+                Alert.alert(
+                  res?.success ? 'Snapshot OK' : 'Snapshot FAIL',
+                  `success=${res?.success}\nerror=${res?.error ?? 'none'}\nelapsed=${dur}ms`,
+                );
                 if (res?.success) {
                   setSnapState('done');
                   setSnapMsg('uploaded');
@@ -860,10 +872,10 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
                   setSnapMsg(res?.error ?? 'unknown');
                 }
               } catch (e: any) {
+                Alert.alert('Snapshot CRASH', String(e?.message ?? e));
                 setSnapState('err');
                 setSnapMsg(e?.message ?? 'crash');
               }
-              // auto-revert after 4s so user can keep using the button
               setTimeout(() => { setSnapState('idle'); setSnapMsg(''); }, 4000);
             }}
             activeOpacity={0.7}

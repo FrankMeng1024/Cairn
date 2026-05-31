@@ -33,6 +33,7 @@ import {
 import type { Marker } from '../store/useMarkerStore';
 import { useMarkerStore } from '../store/useMarkerStore';
 import { crashLogger } from '../services/crashLogger';
+import { API_BASE_URL } from '../config/api';
 
 // ── Type → ritual circle texture mapping ──────────────────────
 // Each PNG is a 1024×1024 transparent ring with type-coloured runes +
@@ -492,13 +493,18 @@ export const ViroARRitualOverlay = forwardRef<ViroARRitualOverlayHandle, Props>(
             crashLogger.breadcrumb(`ritualAR:debug-snapshot-data id=${snapshotId} i=${i} d=${chunk}`);
           }
           crashLogger.breadcrumb(`ritualAR:debug-snapshot-end id=${snapshotId}`);
-          // Force flush so it uploads immediately, not on next session
-          if ((crashLogger as any).flushNow) {
-            try { await (crashLogger as any).flushNow(); } catch {}
+          // v140: real flush via crashLogger.uploadDiagnostic — actually
+          // POSTs to /api/telemetry. v138/139 used a non-existent
+          // `flushNow()` so chunks sat in memory until next unmount.
+          try {
+            const sid = await crashLogger.uploadDiagnostic(API_BASE_URL, 'snapshot');
+            crashLogger.breadcrumb(`ritualAR:debug-snapshot-flushed sid=${sid}`);
+            return { success: true, error: `flushed sid=${sid}` };
+          } catch (e: any) {
+            return { success: false, error: `flush-fail: ${e?.message ?? e}` };
           }
-          return { success: true };
         }
-        return { success: false, error: result?.errorCode ?? 'unknown' };
+        return { success: false, error: result?.errorCode ?? 'no-url' };
       } catch (e: any) {
         crashLogger.breadcrumb(`ritualAR:debug-snapshot-error ${e?.message ?? e}`);
         return { success: false, error: String(e?.message ?? e) };
