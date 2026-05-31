@@ -26,16 +26,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(__dirname, '..', 'assets', 'ar');
 
 // ── Strand parameters ─────────────────────────────────────────
-// v3 (post-v135): user reported strands invisible despite logs confirming
-// load+render. Suspect: 0.04m base radius is too thin to see at 1m
-// distance even with solid colour. Bump back to 0.08m base, 0.16m bulge.
-// (v1 was 0.18 = white columns; v2 was 0.04 = invisible; v3 = 0.08 middle)
+// v4 (post-v143 visual debug): screenshots id=4,5 confirmed colour now
+// renders correctly (red/green visible) but strands are still too thick
+// — at 1m view distance they fill the screen as solid wedges. Reduce
+// radius 3× so they read as ribbons, not wedges. Also drop UV repeat
+// because we're moving to alphaMode BLEND for translucency.
 const STRAND_HEIGHT_M = 8;
 const TUBULAR_SEGS = 96;
 const RADIAL_SEGS = 8;
-const BASE_RADIUS = 0.08;         // 0.04 → 0.08 (visible thread, not hairline)
-const RADIUS_BULGE = 0.10;        // 0.06 → 0.10 (mid-strand swelling more obvious)
-const RADIUS_WOBBLE = 0.03;
+const BASE_RADIUS = 0.025;        // 0.08 → 0.025 (3× thinner — ribbon, not pillar)
+const RADIUS_BULGE = 0.030;       // 0.10 → 0.030 (proportional shrink; bulge still visible)
+const RADIUS_WOBBLE = 0.010;
 const UV_V_REPEAT = 3;
 
 // Per-type GLB tinting. v4 (post-v142 visual debug): screenshots in
@@ -182,14 +183,15 @@ function geometryToGLB(geom, tint) {
     materials: [{
       name: 'strandSlot',
       pbrMetallicRoughness: {
-        baseColorFactor: tint,        // ← key fix: type colour baked in
+        // v4: alpha 0.55 + alphaMode BLEND for ribbon-like translucency.
+        // Combined with emissive bloom this gives a glow-through effect
+        // instead of solid wedges (v143 was opaque white-bg-against-camera).
+        baseColorFactor: [tint[0], tint[1], tint[2], 0.55],
         metallicFactor: 0.0,
         roughnessFactor: 1.0,
       },
-      // emissiveFactor at full strength for the bloom pass; alpha mode
-      // BLEND so additive-blend friendly when Viro composites.
-      emissiveFactor: [tint[0], tint[1], tint[2]],
-      alphaMode: 'OPAQUE',
+      emissiveFactor: [tint[0] * 0.7, tint[1] * 0.7, tint[2] * 0.7],
+      alphaMode: 'BLEND',
       doubleSided: true,
     }],
     accessors: [
