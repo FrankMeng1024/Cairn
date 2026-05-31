@@ -24,12 +24,15 @@ const OUT_DIR = join(__dirname, '..', 'assets', 'ar');
 const W = 128, H = 512;
 
 // Hot-spot centres in normalised v space + gaussian sigma in px.
-// Three spots so when the texture scrolls, the user sees light packets
-// travelling up the strand at a regular cadence.
+// v2: tighter sigma + lower base + more spots = more pronounced flow packets,
+// less continuous glow. v1 was too uniformly bright (read as solid white
+// column). Now between hot bands the strand is dim, so when shader scrolls
+// the texture the hot bands move as visible "particles".
 const HOTS = [
-  { v: 0.16, sigma: 36 },
-  { v: 0.50, sigma: 44 },
-  { v: 0.83, sigma: 36 },
+  { v: 0.10, sigma: 22 },
+  { v: 0.36, sigma: 26 },
+  { v: 0.62, sigma: 26 },
+  { v: 0.88, sigma: 22 },
 ];
 
 // Cross-section profile: brightest at u=0.5, fades to 0 at edges.
@@ -42,13 +45,14 @@ function uProfile(u /* 0..1 */) {
 }
 
 function vProfile(v /* 0..1 */) {
-  // sum of three Gaussians + a faint base ridge
-  let s = 0.18; // base brightness so even between hots there's some glow
+  // sum of four Gaussians + a very faint base ridge. Lower base than v1
+  // so dark bands between hot spots are clearly dim — flow effect needs
+  // contrast to read.
+  let s = 0.04; // was 0.18 — much darker between hot spots
   for (const { v: hv, sigma } of HOTS) {
     const dv = (v - hv) * H; // px distance
     s += Math.exp(-(dv * dv) / (2 * sigma * sigma));
   }
-  // Soft cap so additive doesn't over-saturate when material multiplies.
   return Math.min(1.0, s);
 }
 

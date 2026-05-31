@@ -75,9 +75,10 @@ const STRAND_OFFSETS = [
 // 5 strands sway independently (not in lockstep).
 const STRAND_SWAY_ANIMS = ['strandSway0', 'strandSway1', 'strandSway2', 'strandSway3', 'strandSway4'];
 
-// Strand visual constants
-const STRAND_HEIGHT_M = 40;       // matches GLB authoring height
-const STRAND_BASE_SCALE = 1.0;    // 1.0 = author scale; 0.5 in indoor (future)
+// Strand visual constants. v2: GLB regenerated with 8m height (was 40m) and
+// 0.04m base radius (was 0.18m) — see scripts/gen_strand_glb.mjs.
+const STRAND_HEIGHT_M = 8;
+const STRAND_BASE_SCALE = 1.0;
 
 // Type aliases — same normalisation as ViroAROverlay so old DB rows keep working
 const TYPE_REMAP: Record<string, keyof typeof RITUAL_TEX> = {
@@ -99,8 +100,10 @@ const RITUAL_GROUND_OFFSET_M = -1.2;
 // take over, same threshold as production overlay).
 const VISIBLE_RANGE_M = 50;
 const NEAR_THRESHOLD_M = 10;
-// Ritual circle physical size. 2m diameter = readable at 5–20m.
-const RITUAL_BASE_SIZE_M = 2.0;
+// Ritual circle physical size. v2 (post-v133 feedback): 2.0m → 0.6m.
+// 2m felt like standing inside a fortress; 0.6m = wash-basin scale lets the
+// user see the whole ring + strands in one glance even at 1m distance.
+const RITUAL_BASE_SIZE_M = 0.6;
 // Stable tracking settle window (ms). ARKit briefly reports TRACKING_NORMAL
 // during relocalisation while the world transform is still being corrected.
 // Production ViroAROverlay uses 1500ms to prevent the "flag flies into the
@@ -210,17 +213,18 @@ function RitualARScene(props: any) {
         };
         // Strand material — one per type. Constant lighting + Add blend +
         // diffuseColor tint applied to a neutral white flow texture.
-        // bloomThreshold 0.4 lets the gold/red/etc survive against a bright
-        // sky without blowing out to pure white. Step 4 will add a UV-scroll
-        // shaderModifier to make the texture appear to flow upward; for
-        // Step 3 (this OTA) the strand is static.
+        // v2 (post-v133 feedback): bloomThreshold 0.4 → 0.85. v1 was bloom-
+        // bombing the strand white because Add blending + Constant lighting
+        // already produces hot RGB values that pass even threshold 0.4.
+        // Threshold 0.85 keeps coloured highlights only on the texture's
+        // hot bands, not the entire strand silhouette.
         const cap = t.charAt(0).toUpperCase() + t.slice(1);
         mats[`strand${cap}`] = {
           lightingModel: 'Constant',
           diffuseTexture: STRAND_FLOW_TEX,
           diffuseColor: STRAND_TINT[t],
           blendMode: 'Add',
-          bloomThreshold: 0.4,
+          bloomThreshold: 0.85,
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
         };
@@ -239,11 +243,15 @@ function RitualARScene(props: any) {
           duration: 60000,
           easing: 'Linear',
         },
-        strandSway0: { properties: { rotateZ: '+=4' }, duration: 4200, easing: 'EaseInEaseOut' },
-        strandSway1: { properties: { rotateZ: '-=3' }, duration: 5300, easing: 'EaseInEaseOut' },
-        strandSway2: { properties: { rotateX: '+=3' }, duration: 4700, easing: 'EaseInEaseOut' },
-        strandSway3: { properties: { rotateX: '-=2' }, duration: 6100, easing: 'EaseInEaseOut' },
-        strandSway4: { properties: { rotateZ: '+=2' }, duration: 5800, easing: 'EaseInEaseOut' },
+        // v2 (post-v133 feedback): users reported strands looked completely
+        // static. v1 used +=4° / 4.2s = imperceptible. v2 ramps to ±15°
+        // over 5s — clearly visible swaying without spinning all the way
+        // around. Different axes (X vs Z) and signs prevent visual sync.
+        strandSway0: { properties: { rotateZ: '+=15' }, duration: 5000, easing: 'EaseInEaseOut' },
+        strandSway1: { properties: { rotateZ: '-=12' }, duration: 5800, easing: 'EaseInEaseOut' },
+        strandSway2: { properties: { rotateX: '+=14' }, duration: 4600, easing: 'EaseInEaseOut' },
+        strandSway3: { properties: { rotateX: '-=10' }, duration: 6300, easing: 'EaseInEaseOut' },
+        strandSway4: { properties: { rotateZ: '+=11' }, duration: 5400, easing: 'EaseInEaseOut' },
       });
 
       setMaterialsReady(true);

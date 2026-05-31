@@ -26,29 +26,34 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(__dirname, '..', 'assets', 'ar');
 
 // ── Strand parameters ─────────────────────────────────────────
-const STRAND_HEIGHT_M = 40;
-const TUBULAR_SEGS = 96;        // along-curve resolution
-const RADIAL_SEGS = 8;           // around-tube resolution
-const BASE_RADIUS = 0.18;        // baseline thickness (m)
-const RADIUS_BULGE = 0.12;       // mid-strand swelling amplitude
-const RADIUS_WOBBLE = 0.05;      // higher-frequency variation
-const UV_V_REPEAT = 4;           // texture tiles 4× along strand height
+// v2 (post-v133 user feedback): strands were too thick (read as columns,
+// not threads), too tall for indoor scale, no curve on strand_a. Reduce
+// radius 4×, height 5×, force every strand to have curve jitter.
+const STRAND_HEIGHT_M = 8;        // 40 → 8 (indoor-friendly, still visible 30m)
+const TUBULAR_SEGS = 96;
+const RADIAL_SEGS = 8;
+const BASE_RADIUS = 0.04;         // 0.18 → 0.04 (4.5× thinner)
+const RADIUS_BULGE = 0.06;        // 0.12 → 0.06 (mid-strand swell narrowed)
+const RADIUS_WOBBLE = 0.02;       // 0.05 → 0.02
+const UV_V_REPEAT = 3;            // 4 → 3 (less stretched at shorter strand)
 
-// 5 strand seeds — each produces a distinct S-curve via per-control-point
-// jitter. Seed 0 ('a') is the canonical/centred strand; others lean.
+// 5 strand seeds — every strand now has non-zero jitter at every control
+// point so NO strand is straight. Y values rescaled to STRAND_HEIGHT_M = 8m.
+// Y heights: 0, 1.6, 3.6, 5.6, 8.0 (m) along the curve.
+// Jitter scaled down proportionally to height (was ±0.6 at 40m → ±0.20 at 8m).
 const SEEDS = [
-  { name: 'a', jitter: [[ 0.0, 0.0], [ 0.4, 0.20], [-0.30, 0.50], [ 0.50,-0.20], [ 0.0, 0.0]] },
-  { name: 'b', jitter: [[ 0.0, 0.0], [-0.5, 0.30], [ 0.40,-0.40], [-0.30, 0.40], [ 0.10,-0.10]] },
-  { name: 'c', jitter: [[ 0.0, 0.0], [ 0.2,-0.50], [-0.50, 0.20], [ 0.30, 0.50], [-0.10, 0.0]] },
-  { name: 'd', jitter: [[ 0.0, 0.0], [ 0.6, 0.10], [ 0.20,-0.50], [-0.40, 0.30], [ 0.10, 0.10]] },
-  { name: 'e', jitter: [[ 0.0, 0.0], [-0.3,-0.30], [ 0.50, 0.40], [-0.20,-0.50], [ 0.0, 0.10]] },
+  { name: 'a', jitter: [[ 0.05, 0.05], [ 0.18, 0.10], [-0.12, 0.20], [ 0.20,-0.08], [ 0.05,-0.05]] },
+  { name: 'b', jitter: [[-0.05, 0.05], [-0.20, 0.12], [ 0.18,-0.16], [-0.12, 0.16], [ 0.05,-0.05]] },
+  { name: 'c', jitter: [[ 0.05,-0.05], [ 0.10,-0.20], [-0.20, 0.10], [ 0.12, 0.20], [-0.05, 0.05]] },
+  { name: 'd', jitter: [[-0.05,-0.05], [ 0.22, 0.05], [ 0.10,-0.22], [-0.16, 0.12], [ 0.05, 0.05]] },
+  { name: 'e', jitter: [[ 0.05, 0.05], [-0.15,-0.12], [ 0.20, 0.18], [-0.10,-0.20], [-0.05, 0.05]] },
 ];
 
 // ── Build one strand geometry ─────────────────────────────────
 function buildStrandGeometry(jitter) {
   // Control points — 5 along Y axis, jittered in XZ.
-  // Y values: 0, 8, 18, 28, 40 (m).
-  const ys = [0, 8, 18, 28, 40];
+  // Y values rescaled to STRAND_HEIGHT_M = 8m (was 40m for v1).
+  const ys = [0, 1.6, 3.6, 5.6, 8.0];
   const points = ys.map((y, i) => new THREE.Vector3(jitter[i][0], y, jitter[i][1]));
   const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
 
