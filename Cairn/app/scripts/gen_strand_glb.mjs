@@ -226,7 +226,12 @@ function geometryToGLB(geom, tint) {
     materials: [{
       name: 'strandSlot',
       pbrMetallicRoughness: {
-        baseColorFactor: [tint[0], tint[1], tint[2], 1.0],   // alpha multiplied by per-vertex
+        // v6 (post-v147 visual evidence + bisection): vertex alpha COLOR_0
+        // is silently ignored by Viro on iOS (v145 strands were opaque
+        // despite RGBA in COLOR_0). Fall back to baseColorFactor.a 0.55
+        // which v144 visually verified — translucent ribbons that blend
+        // with the camera feed.
+        baseColorFactor: [tint[0], tint[1], tint[2], 0.55],
         metallicFactor: 0.0,
         roughnessFactor: 1.0,
       },

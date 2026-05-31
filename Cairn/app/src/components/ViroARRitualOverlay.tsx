@@ -172,6 +172,18 @@ interface Props {
   userHeading: number | null;
   onStatus?: (status: { glReady: boolean; cairnCount: number }) => void;
   onCairnPress?: (markerId: string) => void;
+  // v148: feed ARScreen the live ARKit camera frame so its plant flow
+  // (hit-test in ARScreen.tsx:472-520) can land cairns where the user is
+  // aiming. Without this prop, ARScreen falls back to last-known cam state
+  // from production overlay, planting where the cursor was BEFORE switching
+  // to ritual mode (= 'water marker appeared on the right when I aimed
+  // left' bug).
+  onArFrame?: (info: {
+    camera: { position: [number, number, number]; forward: [number, number, number] };
+    cairns: CairnWorldPos[];
+    origin: { lat: number; lng: number; alt: number | null } | null;
+    groundY: number | null;
+  }) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -183,12 +195,14 @@ function RitualARScene(props: any) {
     arkitOrigin: { lat: number; lng: number; alt?: number | null } | null;
     markers: Marker[];
     onCairnPress?: (id: string) => void;
+    onArFrame?: Props['onArFrame'];
   }>(() => {
     const p = props.sceneNavigator?.viroAppProps ?? {};
     return {
       arkitOrigin: p.arkitOrigin ?? null,
       markers: p.markers ?? [],
       onCairnPress: p.onCairnPress,
+      onArFrame: p.onArFrame,
     };
   });
 
@@ -200,19 +214,21 @@ function RitualARScene(props: any) {
         if (
           prev.arkitOrigin === p.arkitOrigin &&
           prev.markers.length === nextMarkers.length &&
-          prev.onCairnPress === p.onCairnPress
+          prev.onCairnPress === p.onCairnPress &&
+          prev.onArFrame === p.onArFrame
         ) return prev;
         return {
           arkitOrigin: p.arkitOrigin ?? null,
           markers: nextMarkers,
           onCairnPress: p.onCairnPress,
+          onArFrame: p.onArFrame,
         };
       });
     }, 500);
     return () => clearInterval(id);
   }, []);
 
-  const { arkitOrigin, markers, onCairnPress } = liveProps;
+  const { arkitOrigin, markers, onCairnPress, onArFrame } = liveProps;
   const [tracking, setTracking] = useState(false);
   const [stableTracking, setStableTracking] = useState(false);
   const [materialsReady, setMaterialsReady] = useState(false);
@@ -290,25 +306,34 @@ function RitualARScene(props: any) {
       // looping `+=N` doesn't visually drift (delta accumulates but the
       // rotation is so small the user perceives it as gentle oscillation
       // averaged across the cycle).
-      // v147 DIAGNOSTIC: replace 4-step chained sway with a single-step
-      // simple oscillation. If chained animations are silently failing on
-      // iOS Viro, this single-step version proves it. Each strand uses
-      // an absolute rotateZ to known angle, looped (Viro's loop applies
-      // PingPong-like behaviour for absolute non-relative values).
+      // v148: chained sway animation. Source-verified syntax from
+      // ViroAnimations.ts:46 — `ViroAnimationDict[key]` accepts
+      // `ViroRegisterableAnimation | ViroRegisterableAnimation[]`. Array
+      // form = inline chain (Viro plays elements in order, then loops).
+      // This is the PROPER way; v147 single-segment loop was useless
+      // because absolute-value loops snap-reset on each cycle.
+      // Chain: 0° → +deg → 0° → -deg → 0° gives true oscillation around
+      // vertical without drift. EaseInEaseOut for natural-feeling sway.
+      const chain = (axis: 'rotateZ' | 'rotateX', deg: number, segMs: number): any[] => [
+        { properties: { [axis]:  deg }, duration: segMs, easing: 'EaseInEaseOut' },
+        { properties: { [axis]:    0 }, duration: segMs, easing: 'EaseInEaseOut' },
+        { properties: { [axis]: -deg }, duration: segMs, easing: 'EaseInEaseOut' },
+        { properties: { [axis]:    0 }, duration: segMs, easing: 'EaseInEaseOut' },
+      ];
+
       ViroAnimations.registerAnimations({
         ringSpinSlow: {
           properties: { rotateY: '+=360' },
           duration: 60000,
           easing: 'Linear',
         },
-        // v147 BISECTION animations:
-        strandTest0: { properties: { rotateZ: 90 }, duration: 1500, easing: 'Linear' },
-        // i=1 has no animation
-        strandTest2: { properties: { scaleX: 2.5, scaleY: 2.5, scaleZ: 2.5 }, duration: 1500, easing: 'Linear' },
-        strandTest3: { properties: { rotateX: 90 }, duration: 1500, easing: 'Linear' },
-        strandTest4: { properties: { opacity: 0.2 }, duration: 1500, easing: 'Linear' },
+        strandSway0: chain('rotateZ',  8, 1700),
+        strandSway1: chain('rotateZ', 10, 2100),
+        strandSway2: chain('rotateX',  9, 1500),
+        strandSway3: chain('rotateX',  7, 2300),
+        strandSway4: chain('rotateZ',  8, 1900),
       });
-      crashLogger.breadcrumb('ritualAR:animations-registered v147 [test0=rotateZ test2=scale test3=rotateX(box) test4=opacity]');
+      crashLogger.breadcrumb('ritualAR:animations-registered v148 [chained sway 4-step]');
 
       setMaterialsReady(true);
       crashLogger.breadcrumb('ritualAR:materials-registered');
@@ -373,7 +398,10 @@ function RitualARScene(props: any) {
     return nodes;
   }, [markers, arkitOrigin?.lat, arkitOrigin?.lng, arkitOrigin?.alt, groundYTick]);
 
-  // Camera transform — drift correction (1:1 from ViroAROverlay v119)
+  // Camera transform — drift correction (1:1 from ViroAROverlay v119) +
+  // v148 onArFrame fan-out so ARScreen's plant-flow hit-test sees the
+  // current ritual-mode camera state. Without this fan-out, plant uses
+  // sphere-mode's stale camera vector → markers land at wrong xyz.
   const onCameraTransformUpdate = useCallback((evt: any) => {
     const now = Date.now();
     if (now - lastFrameTsRef.current < 100) return; // 10Hz throttle
@@ -397,7 +425,15 @@ function RitualARScene(props: any) {
         }
       }
     }
-  }, []);
+    if (onArFrame) {
+      onArFrame({
+        camera: { position: t.position, forward: t.forward },
+        cairns: cairnNodesRef.current,
+        origin: arkitOrigin ? { lat: arkitOrigin.lat, lng: arkitOrigin.lng, alt: arkitOrigin.alt ?? null } : null,
+        groundY: groundYRef.current,
+      });
+    }
+  }, [onArFrame, arkitOrigin]);
 
   // Anchor handler — ground-plane detection (1:1 from ViroAROverlay v119)
   const handleAnchor = useCallback((anchor: any) => {
@@ -523,60 +559,33 @@ function RitualInstance(props: {
           strands look alike.
           Step 4 will add a UV-scroll shaderModifier so the texture appears
           to flow upward inside each strand (DS chiral effect). */}
-      {/* v147 BISECTION: 5 strands each test a different hypothesis.
-          With onStart/onFinish callbacks → telemetry will say definitively
-          which Viro APIs work and which silently fail.
-
-          i=0: Viro3DObject + 90° rotateZ animation (extreme value).
-               If this strand visibly tilts → animations work, my chain
-               syntax was the bug. If not → animations on Viro3DObject
-               parent ViroNode never fire.
-          i=1: Viro3DObject NO animation (control). Should stay vertical.
-          i=2: Viro3DObject + scale animation 1.0 → 2.5. Tests scale prop
-               vs rotate prop — sometimes one works, the other doesn't.
-          i=3: ViroBox 0.05×9×0.05 thin pillar with same 90° rotation.
-               Tests if non-GLB primitives accept animations differently.
-          i=4: Viro3DObject + opacity 1 → 0.2. Tests opacity animation. */}
+      {/* v148: 5 strands, all GLB, all driven by chained sway. v147
+          bisection confirmed Viro animation system fires correctly
+          (anim-START/FINISH breadcrumbs in telemetry session 367) so the
+          v143-v145 'static strands' bug was the absolute-value-loop
+          issue, not the animation framework. Chained array animations
+          (verified in ViroAnimations.ts:46) play forward through each
+          segment, then loop — this gives real oscillation. */}
       {STRAND_OFFSETS.map((off, i) => {
         const glbForType = STRAND_GLBS[normalized] ?? STRAND_GLBS.cairn;
-        const animName = i === 1 ? null : `strandTest${i}`;
-        const onAnimStart = () => crashLogger.breadcrumb(`ritualAR:anim-START i=${i} name=${animName}`);
-        const onAnimFinish = () => crashLogger.breadcrumb(`ritualAR:anim-FINISH i=${i} name=${animName}`);
-        const animProp = animName
-          ? { name: animName, run: true, loop: true, onStart: onAnimStart, onFinish: onAnimFinish }
-          : undefined;
-
-        if (i === 3) {
-          // BOX TEST
-          return (
-            <ViroNode
-              key={`strand-${i}`}
-              position={[off.x * (RITUAL_BASE_SIZE_M * 0.5), 0.0, off.z * (RITUAL_BASE_SIZE_M * 0.5)]}
-              animation={animProp}
-            >
-              <ViroBox
-                position={[0, 4.5, 0]}
-                width={0.05}
-                height={9}
-                length={0.05}
-                materials={[`box${normalized}`]}
-                onClick={() => crashLogger.breadcrumb(`ritualAR:box-clicked i=${i}`)}
-              />
-            </ViroNode>
-          );
-        }
         return (
           <ViroNode
             key={`strand-${i}`}
             position={[off.x * (RITUAL_BASE_SIZE_M * 0.5), 0.0, off.z * (RITUAL_BASE_SIZE_M * 0.5)]}
             rotation={[0, i * 17, 0]}
-            animation={animProp}
+            animation={{
+              name: STRAND_SWAY_ANIMS[i],
+              run: true,
+              loop: true,
+              onStart: () => crashLogger.breadcrumb(`ritualAR:sway-START i=${i}`),
+              onFinish: () => crashLogger.breadcrumb(`ritualAR:sway-FINISH i=${i}`),
+            }}
           >
             <Viro3DObject
               source={glbForType[i]}
               type="GLB"
               scale={[STRAND_BASE_SCALE, STRAND_BASE_SCALE, STRAND_BASE_SCALE]}
-              onLoadEnd={() => crashLogger.breadcrumb(`ritualAR:strand-loaded i=${i} type=${normalized} animName=${animName ?? 'none'}`)}
+              onLoadEnd={() => crashLogger.breadcrumb(`ritualAR:strand-loaded i=${i} type=${normalized}`)}
               onError={(event: any) => crashLogger.breadcrumb(`ritualAR:strand-load-fail i=${i} err=${event?.nativeEvent?.error ?? 'unknown'}`)}
             />
           </ViroNode>
@@ -607,6 +616,7 @@ export const ViroARRitualOverlay = forwardRef<ViroARRitualOverlayHandle, Props>(
   userHeading: _userHeading,
   onStatus,
   onCairnPress,
+  onArFrame,
 }: Props, ref) {
   const arkitOriginRef = useRef<{ lat: number; lng: number; alt?: number | null } | null>(null);
   const viroNavRef = useRef<any>(null);
@@ -744,6 +754,7 @@ export const ViroARRitualOverlay = forwardRef<ViroARRitualOverlayHandle, Props>(
           arkitOrigin: arkitOriginRef.current,
           markers,
           onCairnPress,
+          onArFrame,
         }}
         style={StyleSheet.absoluteFillObject}
       />

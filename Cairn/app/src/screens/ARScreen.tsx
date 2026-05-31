@@ -700,6 +700,7 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
             userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng, alt: lastCoord.alt ?? null } : null}
             userHeading={userHeading}
             onStatus={setArStatus}
+            onArFrame={setArFrame}
             onCairnPress={(id) => {
               crashLogger.breadcrumb(`ritualAR:cairn:press id=${id.slice(-6)}`);
             }}
