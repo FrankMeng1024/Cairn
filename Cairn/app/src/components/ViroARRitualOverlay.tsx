@@ -20,6 +20,7 @@ import {
   ViroARScene,
   ViroARSceneNavigator,
   ViroQuad,
+  ViroBox,
   Viro3DObject,
   ViroNode,
   ViroAmbientLight,
@@ -275,6 +276,11 @@ function RitualARScene(props: any) {
           writesToDepthBuffer: true,
           readsFromDepthBuffer: true,
         };
+        // v147 BISECTION: box material — control case for animation test.
+        mats[`box${t}`] = {
+          lightingModel: 'Constant',
+          diffuseColor: STRAND_TINT[t],
+        };
       }
       ViroMaterials.createMaterials(mats);
 
@@ -284,28 +290,25 @@ function RitualARScene(props: any) {
       // looping `+=N` doesn't visually drift (delta accumulates but the
       // rotation is so small the user perceives it as gentle oscillation
       // averaged across the cycle).
-      // v5 (DS-fidelity): bigger sway range so strands clearly bend in
-      // the breeze. Per-strand range 6-12° tilt, period 4-7s. Chained
-      // 4-step cycle returns to vertical so they don't drift.
-      const sway = (axis: 'rotateZ' | 'rotateX', deg: number, dur: number) => [
-        { properties: { [axis]:  deg }, duration: dur, easing: 'EaseInEaseOut' },
-        { properties: { [axis]:    0 }, duration: dur, easing: 'EaseInEaseOut' },
-        { properties: { [axis]: -deg }, duration: dur, easing: 'EaseInEaseOut' },
-        { properties: { [axis]:    0 }, duration: dur, easing: 'EaseInEaseOut' },
-      ];
-
+      // v147 DIAGNOSTIC: replace 4-step chained sway with a single-step
+      // simple oscillation. If chained animations are silently failing on
+      // iOS Viro, this single-step version proves it. Each strand uses
+      // an absolute rotateZ to known angle, looped (Viro's loop applies
+      // PingPong-like behaviour for absolute non-relative values).
       ViroAnimations.registerAnimations({
         ringSpinSlow: {
           properties: { rotateY: '+=360' },
           duration: 60000,
           easing: 'Linear',
         },
-        strandSway0: sway('rotateZ', 7, 1700),
-        strandSway1: sway('rotateZ', 9, 2100),
-        strandSway2: sway('rotateX', 8, 1500),
-        strandSway3: sway('rotateX', 6, 2300),
-        strandSway4: sway('rotateZ', 7, 1900),
+        // v147 BISECTION animations:
+        strandTest0: { properties: { rotateZ: 90 }, duration: 1500, easing: 'Linear' },
+        // i=1 has no animation
+        strandTest2: { properties: { scaleX: 2.5, scaleY: 2.5, scaleZ: 2.5 }, duration: 1500, easing: 'Linear' },
+        strandTest3: { properties: { rotateX: 90 }, duration: 1500, easing: 'Linear' },
+        strandTest4: { properties: { opacity: 0.2 }, duration: 1500, easing: 'Linear' },
       });
+      crashLogger.breadcrumb('ritualAR:animations-registered v147 [test0=rotateZ test2=scale test3=rotateX(box) test4=opacity]');
 
       setMaterialsReady(true);
       crashLogger.breadcrumb('ritualAR:materials-registered');
@@ -520,23 +523,60 @@ function RitualInstance(props: {
           strands look alike.
           Step 4 will add a UV-scroll shaderModifier so the texture appears
           to flow upward inside each strand (DS chiral effect). */}
+      {/* v147 BISECTION: 5 strands each test a different hypothesis.
+          With onStart/onFinish callbacks → telemetry will say definitively
+          which Viro APIs work and which silently fail.
+
+          i=0: Viro3DObject + 90° rotateZ animation (extreme value).
+               If this strand visibly tilts → animations work, my chain
+               syntax was the bug. If not → animations on Viro3DObject
+               parent ViroNode never fire.
+          i=1: Viro3DObject NO animation (control). Should stay vertical.
+          i=2: Viro3DObject + scale animation 1.0 → 2.5. Tests scale prop
+               vs rotate prop — sometimes one works, the other doesn't.
+          i=3: ViroBox 0.05×9×0.05 thin pillar with same 90° rotation.
+               Tests if non-GLB primitives accept animations differently.
+          i=4: Viro3DObject + opacity 1 → 0.2. Tests opacity animation. */}
       {STRAND_OFFSETS.map((off, i) => {
-        // v143: pick GLB by curve index AND by marker type — colour is
-        // baked into the mesh's PBR material so Viro3DObject's silent
-        // ignore-the-materials-prop bug no longer matters.
         const glbForType = STRAND_GLBS[normalized] ?? STRAND_GLBS.cairn;
+        const animName = i === 1 ? null : `strandTest${i}`;
+        const onAnimStart = () => crashLogger.breadcrumb(`ritualAR:anim-START i=${i} name=${animName}`);
+        const onAnimFinish = () => crashLogger.breadcrumb(`ritualAR:anim-FINISH i=${i} name=${animName}`);
+        const animProp = animName
+          ? { name: animName, run: true, loop: true, onStart: onAnimStart, onFinish: onAnimFinish }
+          : undefined;
+
+        if (i === 3) {
+          // BOX TEST
+          return (
+            <ViroNode
+              key={`strand-${i}`}
+              position={[off.x * (RITUAL_BASE_SIZE_M * 0.5), 0.0, off.z * (RITUAL_BASE_SIZE_M * 0.5)]}
+              animation={animProp}
+            >
+              <ViroBox
+                position={[0, 4.5, 0]}
+                width={0.05}
+                height={9}
+                length={0.05}
+                materials={[`box${normalized}`]}
+                onClick={() => crashLogger.breadcrumb(`ritualAR:box-clicked i=${i}`)}
+              />
+            </ViroNode>
+          );
+        }
         return (
           <ViroNode
             key={`strand-${i}`}
             position={[off.x * (RITUAL_BASE_SIZE_M * 0.5), 0.0, off.z * (RITUAL_BASE_SIZE_M * 0.5)]}
             rotation={[0, i * 17, 0]}
-            animation={{ name: STRAND_SWAY_ANIMS[i], run: true, loop: true }}
+            animation={animProp}
           >
             <Viro3DObject
               source={glbForType[i]}
               type="GLB"
               scale={[STRAND_BASE_SCALE, STRAND_BASE_SCALE, STRAND_BASE_SCALE]}
-              onLoadEnd={() => crashLogger.breadcrumb(`ritualAR:strand-loaded i=${i} type=${normalized}`)}
+              onLoadEnd={() => crashLogger.breadcrumb(`ritualAR:strand-loaded i=${i} type=${normalized} animName=${animName ?? 'none'}`)}
               onError={(event: any) => crashLogger.breadcrumb(`ritualAR:strand-load-fail i=${i} err=${event?.nativeEvent?.error ?? 'unknown'}`)}
             />
           </ViroNode>
