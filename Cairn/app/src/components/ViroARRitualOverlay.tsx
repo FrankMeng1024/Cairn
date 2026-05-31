@@ -362,8 +362,9 @@ function RitualInstance(props: {
   }, [id, onPress]);
 
   useEffect(() => {
+    const cap = normalized.charAt(0).toUpperCase() + normalized.slice(1);
     crashLogger.breadcrumb(
-      `ritualAR:render id=${id.slice(-6)} type=${type} norm=${normalized} dist=${dist.toFixed(1)} size=${size.toFixed(2)}`,
+      `ritualAR:render id=${id.slice(-6)} type=${type} norm=${normalized} dist=${dist.toFixed(1)} size=${size.toFixed(2)} strandMat=strand${cap}`,
     );
   }, [id, type, normalized, dist, size]);
 

@@ -162,7 +162,20 @@ function geometryToGLB(geom) {
         attributes: { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 },
         indices: 3,
         mode: 4, // TRIANGLES
+        material: 0, // CRITICAL: Viro3DObject's `materials` prop overrides
+                     // a mesh primitive's material slot. Without this,
+                     // Viro native renderer falls back to a default white
+                     // material and ignores props.materials entirely.
+                     // (This is the v133-v136 white-strand bug root cause.)
       }],
+    }],
+    materials: [{
+      name: 'strandSlot',
+      pbrMetallicRoughness: {
+        baseColorFactor: [1, 1, 1, 1],
+        metallicFactor: 0.0,
+        roughnessFactor: 1.0,
+      },
     }],
     accessors: [
       { bufferView: 0, componentType: 5126, count: vertexCount, type: 'VEC3', min, max }, // POSITION (FLOAT)
