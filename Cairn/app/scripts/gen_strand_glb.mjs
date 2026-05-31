@@ -26,16 +26,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(__dirname, '..', 'assets', 'ar');
 
 // ── Strand parameters ─────────────────────────────────────────
-// v2 (post-v133 user feedback): strands were too thick (read as columns,
-// not threads), too tall for indoor scale, no curve on strand_a. Reduce
-// radius 4×, height 5×, force every strand to have curve jitter.
-const STRAND_HEIGHT_M = 8;        // 40 → 8 (indoor-friendly, still visible 30m)
+// v3 (post-v135): user reported strands invisible despite logs confirming
+// load+render. Suspect: 0.04m base radius is too thin to see at 1m
+// distance even with solid colour. Bump back to 0.08m base, 0.16m bulge.
+// (v1 was 0.18 = white columns; v2 was 0.04 = invisible; v3 = 0.08 middle)
+const STRAND_HEIGHT_M = 8;
 const TUBULAR_SEGS = 96;
 const RADIAL_SEGS = 8;
-const BASE_RADIUS = 0.04;         // 0.18 → 0.04 (4.5× thinner)
-const RADIUS_BULGE = 0.06;        // 0.12 → 0.06 (mid-strand swell narrowed)
-const RADIUS_WOBBLE = 0.02;       // 0.05 → 0.02
-const UV_V_REPEAT = 3;            // 4 → 3 (less stretched at shorter strand)
+const BASE_RADIUS = 0.08;         // 0.04 → 0.08 (visible thread, not hairline)
+const RADIUS_BULGE = 0.10;        // 0.06 → 0.10 (mid-strand swelling more obvious)
+const RADIUS_WOBBLE = 0.03;
+const UV_V_REPEAT = 3;
 
 // 5 strand seeds — every strand now has non-zero jitter at every control
 // point so NO strand is straight. Y values rescaled to STRAND_HEIGHT_M = 8m.

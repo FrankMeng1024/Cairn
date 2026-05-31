@@ -213,23 +213,21 @@ function RitualARScene(props: any) {
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
         };
-        // Strand material — one per type. v3: switch from Add to Alpha
-        // blending. Add was making everything white because:
-        //   final = src + dest = white_texture * tint + camera_pixels
-        // White texture (RGB=1,1,1) × tint (RGB<1,1,1) = tint colour, but
-        // the alpha channel was being multiplied with brightness, and Add
-        // blending then summed it onto the camera giving washout.
-        // Alpha blending uses srcAlpha for blend, so the texture's RGB
-        // (white) gets MULTIPLIED by diffuseColor (tint) and that result
-        // alpha-blends onto the camera. Tint colour is faithful.
-        // Trade-off: less of a "glow" feel but actually a visible colour.
+        // Strand material — one per type. v4 (post-v135 diagnostic): logs
+        // confirmed strands ARE loading (ritualAR:strand-loaded × 5) but
+        // user sees nothing. Two suspects:
+        //   1. v135 Alpha blend × low-alpha texture = invisible
+        //   2. GLB radius 0.04m × Alpha = nearly transparent thin wisp
+        // v4 fix: drop the texture entirely, use solid colour material.
+        // If v136 strands appear → texture alpha was the problem.
+        // If still invisible → GLB is too thin to see at 1m, regenerate
+        //   thicker.
         const cap = t.charAt(0).toUpperCase() + t.slice(1);
         mats[`strand${cap}`] = {
           lightingModel: 'Constant',
-          diffuseTexture: STRAND_FLOW_TEX,
           diffuseColor: STRAND_TINT[t],
-          blendMode: 'Alpha',
-          writesToDepthBuffer: false,
+          // No diffuseTexture, no blendMode — solid opaque tube.
+          writesToDepthBuffer: true,
           readsFromDepthBuffer: true,
         };
       }
