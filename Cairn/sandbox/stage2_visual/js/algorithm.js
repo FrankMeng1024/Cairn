@@ -8,14 +8,22 @@
 
 // ======================================================================
 // Constants — per-type lifetime parameters (v3.2 §6)
+// v3.3 / v124: parameters can be tweaked at module load time via
+// CAIRN_*_MULT env vars. Used by param-sweep.mjs robustness test.
+// Multipliers default to 1.0 (no change).
 // ======================================================================
 
+const TAU_MULT   = (typeof process !== 'undefined' && parseFloat(process.env.CAIRN_TAU_MULT))   || 1.0;
+const BOOST_MULT = (typeof process !== 'undefined' && parseFloat(process.env.CAIRN_BOOST_MULT)) || 1.0;
+const LIFE_MULT  = (typeof process !== 'undefined' && parseFloat(process.env.CAIRN_LIFE_MULT))  || 1.0;
+const REPORT_WEIGHT = (typeof process !== 'undefined' && parseFloat(process.env.CAIRN_REPORT_WEIGHT)) || 1.5;
+
 export const TYPE_PARAMS = {
-  danger:   { baseLifetime: 7,   tau: 14,  boost: 3 },
-  supply:   { baseLifetime: 30,  tau: 30,  boost: 5 },
-  junction: { baseLifetime: 60,  tau: 60,  boost: 5 },
-  scenic:   { baseLifetime: 90,  tau: 90,  boost: 5 },
-  cairn:    { baseLifetime: 180, tau: 180, boost: 5 },
+  danger:   { baseLifetime: 7   * LIFE_MULT, tau: 14  * TAU_MULT, boost: 3 * BOOST_MULT },
+  supply:   { baseLifetime: 30  * LIFE_MULT, tau: 30  * TAU_MULT, boost: 5 * BOOST_MULT },
+  junction: { baseLifetime: 60  * LIFE_MULT, tau: 60  * TAU_MULT, boost: 5 * BOOST_MULT },
+  scenic:   { baseLifetime: 90  * LIFE_MULT, tau: 90  * TAU_MULT, boost: 5 * BOOST_MULT },
+  cairn:    { baseLifetime: 180 * LIFE_MULT, tau: 180 * TAU_MULT, boost: 5 * BOOST_MULT },
 };
 
 // DOC marker uses max(per-type, 365)
@@ -133,11 +141,9 @@ export function exposureRate(marker, now) {
   const heat = currentHeat(marker.likes || [], now, params.tau);
   const penalty = reportPenalty(marker.reports || [], now, params.tau);
 
-  // v3.3: report penalty weighted 1.5× heat. Negative signals cost more
-  // than positive signals because misleading info is more harmful than
-  // an unenthusiastic user. Validated by sandbox simulator (>92% sink
-  // rate on bad markers vs 88-90% under 1.0× weight).
-  const healthScore = heat - 1.5 * penalty;
+  // v3.3 / v124: report penalty weight tunable via CAIRN_REPORT_WEIGHT
+  // env var (default 1.5×). Negative signals cost more than positive.
+  const healthScore = heat - REPORT_WEIGHT * penalty;
 
   // Sigmoid-ish mapping
   if (healthScore >= 5) return 1.0;        // very healthy

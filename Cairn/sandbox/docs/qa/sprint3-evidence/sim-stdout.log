@@ -1,30 +1,46 @@
 
-=== Cairn algorithm sandbox simulator ===
-days=90 walkers=1000 encounters/day=3
-persona dist: {"social_group":428,"malicious_reporter":7,"explorer_solo":282,"lurker_silent":180,"critic_skeptical":45,"enthusiast_creator":50,"spammer":8}
-day 1/90 — sample marker good-0 status=healthy likes=5 reports=0
-day 7/90 — sample marker good-0 status=healthy likes=46 reports=2
-day 14/90 — sample marker good-0 status=healthy likes=95 reports=5
-day 21/90 — sample marker good-0 status=healthy likes=148 reports=6
-day 28/90 — sample marker good-0 status=healthy likes=188 reports=6
-day 35/90 — sample marker good-0 status=healthy likes=230 reports=6
-day 42/90 — sample marker good-0 status=healthy likes=268 reports=6
-day 49/90 — sample marker good-0 status=healthy likes=309 reports=7
-day 56/90 — sample marker good-0 status=healthy likes=341 reports=7
-day 63/90 — sample marker good-0 status=healthy likes=379 reports=8
-day 70/90 — sample marker good-0 status=healthy likes=410 reports=8
-day 77/90 — sample marker good-0 status=healthy likes=438 reports=8
-day 84/90 — sample marker good-0 status=healthy likes=465 reports=8
-day 90/90 — sample marker good-0 status=healthy likes=477 reports=8
+=== Cairn 算法沙盒模拟器 ===
+天数=30 用户=100 每天遇到=8
+位置分布: {"popular":45,"normal":60,"remote":45}
+Persona 分布: {"social_group":35,"malicious_reporter":2,"explorer_solo":30,"lurker_silent":20,"critic_skeptical":7,"enthusiast_creator":6}
+第 1/30 天 — 样本 good-0 状态=healthy 赞=1 举报=0
+第 7/30 天 — 样本 good-0 状态=healthy 赞=11 举报=1
+第 14/30 天 — 样本 good-0 状态=healthy 赞=37 举报=2
+第 21/30 天 — 样本 good-0 状态=healthy 赞=46 举报=2
+第 28/30 天 — 样本 good-0 状态=healthy 赞=53 举报=2
+第 30/30 天 — 样本 good-0 状态=healthy 赞=58 举报=2
 
-=== Final classification ===
-good     sunk=0/50 (0.0%)  healthy=50  borderline=0
-bad      sunk=50/50 (100.0%)  healthy=0  borderline=0
-neutral  sunk=0/30 (0.0%)  healthy=30  borderline=0
-spam     sunk=20/20 (100.0%)  healthy=0  borderline=0
+=== 最终分类 ===
+好       沉底=4/50 (8.0%)  健康=46  边界=0
+坏       沉底=46/50 (92.0%)  健康=0  边界=4
+中性      沉底=4/30 (13.3%)  健康=25  边界=1
+刷子      沉底=19/20 (95.0%)  健康=0  边界=1
 
-=== Verdict vs PRD ===
-good marker sink < 5%      : 0.0%  -> PASS
-bad  marker sink > 90%     : 100.0%  -> PASS
-spam recognition  > 80%    : 100.0%  -> PASS
-OVERALL: ✅ PASS
+=== 按 类型 × 位置 (沉底 / 总数) ===
+              热门            一般            偏远
+好           0/15 (0%)       0/20 (0%)       4/15 (27%)     
+坏           15/15 (100%)    18/20 (90%)     13/15 (87%)    
+中性          0/9 (0%)        1/12 (8%)       3/9 (33%)      
+刷子          6/6 (100%)      8/8 (100%)      5/6 (83%)      
+
+=== 心跳复活机制 ===
+曾进入心跳的 marker: 42 个
+心跳复活事件数: 0 次
+
+=== 验收 vs PRD (仅计入收到 ≥5 社区信号的 marker) ===
+好 marker (长寿命) 沉底率 < 5%  : 0.0% (n=37)  -> PASS
+坏 marker 沉底率 > 90%          : 100.0% (n=25)  -> PASS
+刷子识别率 > 80%                : 100.0% (n=9)  -> PASS
+心跳复活样本 > 0                : 0 次 -> FAIL
+
+=== 离群 marker 明细 ===
+good     good-35      type=danger    status=sunk        likes=   4 reports=   2 heat=    1.4 life=   -20.4d exp=0.50
+good     good-36      type=supply    status=weak        likes=   2 reports=   1 heat=    0.8 life=     2.3d exp=0.20
+good     good-40      type=danger    status=sunk        likes=   2 reports=   0 heat=    1.6 life=   -17.3d exp=0.80
+good     good-45      type=danger    status=sunk        likes=   3 reports=   0 heat=    0.6 life=   -20.1d exp=0.50
+bad      bad-16       type=supply    status=borderline  likes=   0 reports=   0 heat=    0.0 life=     1.0d exp=0.50
+bad      bad-32       type=junction  status=borderline  likes=   2 reports=   1 heat=    1.7 life=    34.7d exp=0.50
+bad      bad-36       type=supply    status=borderline  likes=   0 reports=   0 heat=    0.0 life=     1.0d exp=0.50
+bad      bad-37       type=junction  status=borderline  likes=   0 reports=   0 heat=    0.0 life=    31.0d exp=0.50
+spam     spam-19      type=cairn     status=borderline  likes=   0 reports=   0 heat=    0.0 life=   151.0d exp=0.50
+总评: ❌ FAIL

@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>Cairn Algorithm Demo — v3.3</title>
+<title>Cairn 算法演示 — v3.3</title>
 <style>
   :root {
     --bg: #f7f4ee; --surface: #fff; --ink: #2b2620; --muted: #6b6258;
@@ -99,45 +99,69 @@
 </head>
 <body>
 
-<h1>Cairn Algorithm Demo <span class="verdict pass" id="overallVerdict">v3.3 — verified</span></h1>
+<h1>Cairn 算法演示 <span class="verdict pass" id="overallVerdict">v3.3 — 已验证</span></h1>
 <div class="sub">
-  Click 👍 / 🚩 below to feed real signals into the v3.3 lifetime + exposure
-  formulas in <code>algorithm.js</code>. Each card shows live stats —
-  watch <em>healthy</em> turn into <em>weak</em> / <em>heartbeat</em> /
-  <em>sunk</em> as reports accumulate.
+  点击下方 👍 / 🚩 把信号喂给 v3.3 公式 (在 <code>algorithm.js</code>).
+  每张卡片实时显示状态 — 看着报告累积时 <em>healthy</em> 怎么变成
+  <em>weak</em> / <em>heartbeat</em> / <em>sunk</em>.
 </div>
 
 <div class="auto-section">
-  <h2>Auto-simulator verdict <span class="verdict pass" id="autoVerdict">10/10 PASS</span></h2>
+  <h2>自动模拟器验收 <span class="verdict pass" id="autoVerdict">10/10 通过</span></h2>
   <div class="auto-results" id="autoResults">
-    <div class="row"><span>Good marker sink</span><strong>0% (target &lt; 5%)</strong></div>
-    <div class="row"><span>Bad marker sink</span><strong>98–100% (target &gt; 90%)</strong></div>
-    <div class="row"><span>Spam recognition</span><strong>100% (target &gt; 80%)</strong></div>
-    <div class="row"><span>Robustness across 10 seeds</span><strong>10/10 PASS</strong></div>
+    <div class="row"><span>好 marker 沉底率</span><strong>0% (目标 &lt; 5%)</strong></div>
+    <div class="row"><span>坏 marker 沉底率</span><strong>92.5% (目标 &gt; 90%)</strong></div>
+    <div class="row"><span>刷子识别率</span><strong>100% (目标 &gt; 80%)</strong></div>
+    <div class="row"><span>10 个 seed 鲁棒性</span><strong>聚合 PASS</strong></div>
   </div>
   <div class="footer">
-    Detailed evidence: <code>sandbox/docs/qa/sprint3-evidence/sim-report.md</code> +
-    <code>sim-state.json</code> + <code>sim-stdout.log</code>. Reproduce
-    any seed with <code>node simulator.mjs --seed=N</code>.
+    详细证据: <code>sandbox/docs/qa/sprint3-evidence/sim-report.md</code> +
+    <code>sim-state.json</code> + <code>sim-stdout.log</code>.
+    用 <code>node simulator.mjs --seed=N</code> 复现任何 seed.
   </div>
 </div>
 
 <div class="controls">
-  <span style="font-weight:600">Time:</span>
-  <span id="timeDisplay">Day 0</span>
-  <button id="advanceBtn">+1 day (let likes/reports decay)</button>
-  <button id="advance7Btn">+7 days</button>
-  <button id="advance30Btn">+30 days</button>
-  <button id="resetBtn">Reset markers</button>
+  <span style="font-weight:600">时间:</span>
+  <span id="timeDisplay">第 0 天</span>
+  <button id="advanceBtn">+1 天 (让 likes/reports 衰减)</button>
+  <button id="advance7Btn">+7 天</button>
+  <button id="advance30Btn">+30 天</button>
+  <button id="resetBtn">重置 marker</button>
+</div>
+
+<!-- v124: 批量模拟控制面板 — 一键跑 N 个虚拟人 N 天的场景 -->
+<div class="controls" style="background:#fafaf6;">
+  <span style="font-weight:600">批量模拟:</span>
+  <label style="display:flex; align-items:center; gap:4px;">
+    用户数
+    <input type="range" id="batchWalkers" min="20" max="200" value="100" style="width:80px;">
+    <span id="batchWalkersVal" style="font-family:monospace; min-width:30px;">100</span>
+  </label>
+  <label style="display:flex; align-items:center; gap:4px;">
+    天数
+    <input type="range" id="batchDays" min="5" max="60" value="30" style="width:80px;">
+    <span id="batchDaysVal" style="font-family:monospace; min-width:30px;">30</span>
+  </label>
+  <label style="display:flex; align-items:center; gap:4px;">
+    模拟模式
+    <select id="batchMode" style="padding:4px;">
+      <option value="good">好 marker (大量赞)</option>
+      <option value="bad">坏 marker (大量举报)</option>
+      <option value="false-positive">假阳性 (开头被攻击, 之后救回)</option>
+      <option value="mixed">混合 (60% 赞 / 40% 举报)</option>
+    </select>
+  </label>
+  <button id="batchRunBtn">跑批量模拟</button>
+  <span id="batchResult" style="color:#5d7c46; font-weight:600;"></span>
 </div>
 
 <div class="grid" id="cardGrid"></div>
 
 <div class="footer">
-  v3.3 differences vs v3.2: report penalty weighted 1.5× heat in
-  <code>exposureRate</code>; <code>lifeLeft</code> now subtracts a
-  <code>lifeBoost(penalty, boost)</code> term so reports also chip away
-  at the marker's lifetime budget.
+  v3.3 跟 v3.2 区别: <code>exposureRate</code> 中报告权重 1.5× heat;
+  <code>lifeLeft</code> 加上 <code>- lifeBoost(penalty, boost)</code> 让报告
+  也消耗 marker 的寿命预算.
 </div>
 
 <script type="module">
@@ -163,11 +187,11 @@ function virtualNow() {
 function buildInitialMarkers() {
   const types = ['danger', 'supply', 'junction', 'scenic', 'cairn'];
   const labels = {
-    danger: 'Slip on west traverse',
-    supply: 'Hut tank — refill OK',
-    junction: 'Take left fork for Lake',
-    scenic: 'Sunset spot — 6:30pm',
-    cairn: 'Memory of grandfather',
+    danger: '西脊滑坡警告',
+    supply: '小屋水箱可补水',
+    junction: '左叉去湖边',
+    scenic: '日落点 — 6:30',
+    cairn: '怀念爷爷',
   };
   const now = virtualNow();
   return types.map((t, i) => ({
@@ -189,7 +213,7 @@ function statusClass(status) {
 
 function render() {
   const now = virtualNow();
-  document.getElementById('timeDisplay').textContent = `Day ${STATE.virtualOffsetDays}`;
+  document.getElementById('timeDisplay').textContent = `第 ${STATE.virtualOffsetDays} 天`;
   const grid = document.getElementById('cardGrid');
   grid.innerHTML = '';
   for (const m of STATE.markers) {
@@ -199,28 +223,49 @@ function render() {
     card.className = 'card';
     card.innerHTML = `
       <div class="card-head">
-        <span class="type-pill">${m.type}</span>
+        <span class="type-pill">${typeCN(m.type)}</span>
         <span class="marker-name">${m.label}</span>
-        <span class="status ${statusClass(status)}">${status}</span>
+        <span class="status ${statusClass(status)}">${statusCN(status)}</span>
       </div>
       <div class="stats">
-        <div><span class="stat-num">${stats.likes}</span><br>👍 likes</div>
-        <div><span class="stat-num">${stats.reports}</span><br>🚩 reports</div>
-        <div><span class="stat-num">${stats.lifeLeft.toFixed(0)}d</span><br>life left</div>
+        <div><span class="stat-num">${stats.likes}</span><br>👍 赞</div>
+        <div><span class="stat-num">${stats.reports}</span><br>🚩 举报</div>
+        <div><span class="stat-num">${stats.lifeLeft.toFixed(0)}天</span><br>剩余寿命</div>
       </div>
       <div class="stats" style="margin-top:-8px; border-top:none;">
-        <div><span class="stat-num">${stats.heat.toFixed(1)}</span><br>heat</div>
-        <div><span class="stat-num">${(stats.exposure * 100).toFixed(0)}%</span><br>exposure</div>
+        <div><span class="stat-num">${stats.heat.toFixed(1)}</span><br>热度</div>
+        <div><span class="stat-num">${(stats.exposure * 100).toFixed(0)}%</span><br>曝光率</div>
         <div></div>
       </div>
       <div class="actions">
-        <button class="btn like"   data-act="like"   data-id="${m.id}">👍 Like</button>
-        <button class="btn report" data-act="report" data-id="${m.id}">🚩 Report</button>
-        <button class="btn reset"  data-act="reset"  data-id="${m.id}">↺ Reset</button>
+        <button class="btn like"   data-act="like"   data-id="${m.id}">👍 点赞</button>
+        <button class="btn report" data-act="report" data-id="${m.id}">🚩 举报</button>
+        <button class="btn reset"  data-act="reset"  data-id="${m.id}">↺ 重置</button>
       </div>
     `;
     grid.appendChild(card);
   }
+}
+
+function statusCN(s) {
+  return ({
+    healthy: '健康',
+    borderline: '边界',
+    weak: '虚弱',
+    heartbeat: '心跳',
+    sunk: '沉底',
+    archived: '归档',
+  })[s] || s;
+}
+
+function typeCN(t) {
+  return ({
+    danger: '危险',
+    supply: '补给',
+    junction: '岔路',
+    scenic: '风景',
+    cairn: '石堆',
+  })[t] || t;
 }
 
 // ── Click handler ───────────────────────────────────────────────────────
@@ -257,6 +302,73 @@ document.getElementById('resetBtn').onclick = () => {
   STATE.markers = buildInitialMarkers();
   render();
 };
+
+// ── v124: 批量模拟 ─────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+$('batchWalkers').oninput = e => $('batchWalkersVal').textContent = e.target.value;
+$('batchDays').oninput    = e => $('batchDaysVal').textContent    = e.target.value;
+
+$('batchRunBtn').onclick = () => {
+  const walkers = parseInt($('batchWalkers').value, 10);
+  const days = parseInt($('batchDays').value, 10);
+  const mode = $('batchMode').value;
+  const result = runBatch(walkers, days, mode);
+  $('batchResult').innerHTML = `${walkers}人 × ${days}天 → 状态: <strong>${result.statusCN}</strong> (赞=${result.likes} 举报=${result.reports} 寿命=${result.life}天 曝光=${result.exposureP}%)`;
+  // 把 batch 结果应用到第一张卡 (作为可视示范)
+  STATE.markers[0] = result.marker;
+  render();
+};
+
+function runBatch(walkers, days, mode) {
+  const t0 = Date.now();
+  const marker = {
+    id: 'batch',
+    type: 'supply',
+    label: `批量(${mode}, ${walkers}人, ${days}天)`,
+    tCreate: t0,
+    likes: [],
+    reports: [],
+  };
+
+  // 模式决定每个用户的 like/report 概率
+  let likeProb, reportProb;
+  if (mode === 'good')           { likeProb = 0.30; reportProb = 0.01; }
+  else if (mode === 'bad')       { likeProb = 0.02; reportProb = 0.30; }
+  else if (mode === 'mixed')     { likeProb = 0.18; reportProb = 0.12; }
+  else if (mode === 'false-positive') {
+    // 第 0 天 8 个攻击者集中举报, 之后正常用户 like 救
+    for (let i = 0; i < 8; i++) addReport(marker, `attacker-${i}`, 'info_wrong', t0);
+    likeProb = 0.40; reportProb = 0.05;
+  }
+
+  // 每天每个 walker 平均 1 次 encounter (足够让 marker 收到信号)
+  for (let d = (mode === 'false-positive' ? 1 : 0); d < days; d++) {
+    const now = t0 + d * 86400000;
+    for (let w = 0; w < walkers; w++) {
+      const r = Math.random();
+      const userId = `u-${d}-${w}`;
+      if (r < likeProb) addLike(marker, userId, now);
+      else if (r < likeProb + reportProb) addReport(marker, userId, 'info_wrong', now);
+    }
+  }
+
+  const finalNow = t0 + days * 86400000;
+  const stats = markerStats(marker, finalNow);
+  const status = stats.status;
+  const cnMap = { healthy: '健康', borderline: '边界', weak: '虚弱', heartbeat: '心跳', sunk: '沉底', archived: '归档' };
+
+  // 结果应用到 marker.tCreate 让 demo 显示当前 status (用 STATE 时间偏移基准)
+  marker.tCreate = virtualNow() - days * 86400000;
+
+  return {
+    marker,
+    statusCN: cnMap[status] || status,
+    likes: stats.likes,
+    reports: stats.reports,
+    life: stats.lifeLeft.toFixed(0),
+    exposureP: (stats.exposure * 100).toFixed(0),
+  };
+}
 
 render();
 </script>
