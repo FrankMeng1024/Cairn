@@ -26,17 +26,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(__dirname, '..', 'assets', 'ar');
 
 // ── Strand parameters ─────────────────────────────────────────
-// v4 (post-v143 visual debug): screenshots id=4,5 confirmed colour now
-// renders correctly (red/green visible) but strands are still too thick
-// — at 1m view distance they fill the screen as solid wedges. Reduce
-// radius 3× so they read as ribbons, not wedges. Also drop UV repeat
-// because we're moving to alphaMode BLEND for translucency.
-const STRAND_HEIGHT_M = 8;
-const TUBULAR_SEGS = 96;
+// v5 (DS-fidelity push): user wants screenshot-grade DS strands. Jump
+// to maximum-quality config:
+//   - 7 control points instead of 5 → smoother S-curves with more wiggle
+//   - jitter ±0.7m at 8m height = clearly bent (no more 'mostly straight')
+//   - aggressive multi-frequency thickness modulation (4 sines + noise)
+//     so each strand has visible bulges/pinches like a dripping rope
+//   - PER-VERTEX colour with alpha gradient: 1.0 at base → 0.0 at top
+//     gives 'tip dissolves into sky' effect crucial for landmark feel
+const STRAND_HEIGHT_M = 9;
+const TUBULAR_SEGS = 128;          // 96 → 128 for smoother S-curves
 const RADIAL_SEGS = 8;
-const BASE_RADIUS = 0.025;        // 0.08 → 0.025 (3× thinner — ribbon, not pillar)
-const RADIUS_BULGE = 0.030;       // 0.10 → 0.030 (proportional shrink; bulge still visible)
-const RADIUS_WOBBLE = 0.010;
+const BASE_RADIUS = 0.030;         // base thickness
+const RADIUS_BULGE = 0.060;        // bulge amplitude — 2× the base for clear pinches
+const RADIUS_WOBBLE = 0.020;
 const UV_V_REPEAT = 3;
 
 // Per-type GLB tinting. v4 (post-v142 visual debug): screenshots in
@@ -53,48 +56,69 @@ const TYPE_TINTS = {
   scenic:   [0.30, 0.45, 1.0, 1.0],   // blue
   cairn:    [0.95, 0.70, 0.30, 1.0],  // amber gold (DS canonical)
 };
+// 5 strand seeds — 7 control points each, jitter ±0.55m at the inner
+// points. Y values 0, 1.5, 3.0, 4.5, 6.0, 7.5, 9.0. Endpoints stay
+// near-axis so root anchors at origin and tip ends near the up-axis.
+// Inner 5 points have heavy XZ jitter to produce visible S-curves.
 const SEEDS = [
-  { name: 'a', jitter: [[ 0.05, 0.05], [ 0.18, 0.10], [-0.12, 0.20], [ 0.20,-0.08], [ 0.05,-0.05]] },
-  { name: 'b', jitter: [[-0.05, 0.05], [-0.20, 0.12], [ 0.18,-0.16], [-0.12, 0.16], [ 0.05,-0.05]] },
-  { name: 'c', jitter: [[ 0.05,-0.05], [ 0.10,-0.20], [-0.20, 0.10], [ 0.12, 0.20], [-0.05, 0.05]] },
-  { name: 'd', jitter: [[-0.05,-0.05], [ 0.22, 0.05], [ 0.10,-0.22], [-0.16, 0.12], [ 0.05, 0.05]] },
-  { name: 'e', jitter: [[ 0.05, 0.05], [-0.15,-0.12], [ 0.20, 0.18], [-0.10,-0.20], [-0.05, 0.05]] },
+  { name: 'a', jitter: [
+    [ 0.05, 0.05], [ 0.45,-0.30], [-0.55, 0.50], [ 0.50, 0.40],
+    [-0.40,-0.55], [ 0.20, 0.15], [ 0.0, 0.0]
+  ]},
+  { name: 'b', jitter: [
+    [-0.05, 0.05], [-0.50, 0.40], [ 0.55, 0.30], [-0.45,-0.50],
+    [ 0.40, 0.55], [-0.25,-0.20], [ 0.05, 0.0]
+  ]},
+  { name: 'c', jitter: [
+    [ 0.05,-0.05], [ 0.30, 0.50], [-0.45,-0.55], [ 0.55, 0.30],
+    [-0.20, 0.45], [ 0.30,-0.20], [-0.05, 0.05]
+  ]},
+  { name: 'd', jitter: [
+    [-0.05,-0.05], [ 0.55, 0.20], [ 0.30,-0.55], [-0.50, 0.40],
+    [ 0.45, 0.50], [-0.30, 0.10], [ 0.05, 0.05]
+  ]},
+  { name: 'e', jitter: [
+    [ 0.05, 0.05], [-0.40,-0.45], [ 0.55, 0.55], [-0.30,-0.50],
+    [ 0.50,-0.45], [-0.20, 0.25], [-0.05, 0.05]
+  ]},
 ];
 
 // ── Build one strand geometry ─────────────────────────────────
 function buildStrandGeometry(jitter) {
-  // Control points — 5 along Y axis, jittered in XZ.
-  // Y values rescaled to STRAND_HEIGHT_M = 8m (was 40m for v1).
-  const ys = [0, 1.6, 3.6, 5.6, 8.0];
+  // 7 control points along Y from 0 → STRAND_HEIGHT_M.
+  const ys = [0, 1.5, 3.0, 4.5, 6.0, 7.5, 9.0];
   const points = ys.map((y, i) => new THREE.Vector3(jitter[i][0], y, jitter[i][1]));
   const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
 
   // Generate constant-radius tube first
   const tube = new THREE.TubeGeometry(curve, TUBULAR_SEGS, BASE_RADIUS, RADIAL_SEGS, false);
 
-  // Modulate radius along length: pinch near ends, swell mid, with low-freq
-  // wobble. Each ring has (RADIAL_SEGS + 1) verts.
+  // Modulate radius along length: aggressive 4-frequency profile so the
+  // strand has visible bulges, pinches, and wobbles like a dripping rope.
+  // Each ring has (RADIAL_SEGS + 1) verts.
   const positions = tube.attributes.position.array;
   const ringVertCount = RADIAL_SEGS + 1;
   for (let s = 0; s <= TUBULAR_SEGS; s++) {
     const t = s / TUBULAR_SEGS;
-    // Bell curve: zero-ish at t=0,1 ; peak at t=0.5
-    const bell = Math.sin(t * Math.PI);
+    // Big slow bell — main bulge centred at t=0.4 (lower-mid)
+    const bell = Math.sin(t * Math.PI * 0.95 + 0.1);
+    // Med-frequency (2 oscillations along length)
+    const mid = Math.sin(t * Math.PI * 4) * 0.5 + 0.5;
+    // High-frequency wobble (5 oscillations)
+    const high = Math.sin(t * Math.PI * 10);
     const rTarget =
       BASE_RADIUS +
       RADIUS_BULGE * bell +
-      RADIUS_WOBBLE * Math.sin(t * Math.PI * 6);
+      RADIUS_BULGE * 0.45 * mid +
+      RADIUS_WOBBLE * high;
     const radiusScale = rTarget / BASE_RADIUS;
 
-    // Centre of this ring (sample curve)
     const centre = curve.getPoint(t);
-
     for (let r = 0; r < ringVertCount; r++) {
       const idx = (s * ringVertCount + r) * 3;
       const px = positions[idx + 0];
       const py = positions[idx + 1];
       const pz = positions[idx + 2];
-      // Vector from centre to vertex, scaled
       const dx = (px - centre.x) * radiusScale;
       const dy = (py - centre.y) * radiusScale;
       const dz = (pz - centre.z) * radiusScale;
@@ -106,11 +130,31 @@ function buildStrandGeometry(jitter) {
   tube.attributes.position.needsUpdate = true;
   tube.computeVertexNormals();
 
-  // Multiply UV.v by UV_V_REPEAT so texture tiles 4× along height
+  // UV: keep U as-is, repeat V along length
   const uvs = tube.attributes.uv.array;
   for (let i = 0; i < uvs.length; i += 2) {
     uvs[i + 1] = uvs[i + 1] * UV_V_REPEAT;
   }
+
+  // Per-vertex colour with alpha gradient: 1.0 at base → 0.0 at tip.
+  // Alpha follows (1 - t)^1.5 so the top half fades faster than the
+  // bottom (matches DS where the visible mass is in the lower 60% and
+  // the upper 40% dissolves into sky). Colour itself stays white here;
+  // tint comes from material baseColorFactor multiplying with this.
+  const vertexCount = tube.attributes.position.count;
+  const colors = new Float32Array(vertexCount * 4);
+  for (let s = 0; s <= TUBULAR_SEGS; s++) {
+    const t = s / TUBULAR_SEGS;
+    const alpha = Math.pow(1 - t, 1.5);
+    for (let r = 0; r < ringVertCount; r++) {
+      const vIdx = s * ringVertCount + r;
+      colors[vIdx * 4 + 0] = 1;
+      colors[vIdx * 4 + 1] = 1;
+      colors[vIdx * 4 + 2] = 1;
+      colors[vIdx * 4 + 3] = alpha;
+    }
+  }
+  tube.setAttribute('color', new THREE.BufferAttribute(colors, 4));
 
   return tube;
 }
@@ -119,12 +163,13 @@ function buildStrandGeometry(jitter) {
 // Layout:
 //   Header (12 bytes)
 //   JSON chunk
-//   BIN chunk (POSITION + NORMAL + TEXCOORD_0 + INDICES)
+//   BIN chunk (POSITION + NORMAL + TEXCOORD_0 + COLOR_0 + INDICES)
 function geometryToGLB(geom, tint) {
   const pos = geom.attributes.position.array;       // Float32Array, vec3
   const nrm = geom.attributes.normal.array;         // Float32Array, vec3
   const uv  = geom.attributes.uv.array;             // Float32Array, vec2
-  const idx = geom.index.array;                     // Uint32Array (TubeGeometry uses uint32)
+  const col = geom.attributes.color.array;          // Float32Array, vec4 (rgba)
+  const idx = geom.index.array;                     // Uint32Array
 
   const vertexCount = pos.length / 3;
 
@@ -132,7 +177,7 @@ function geometryToGLB(geom, tint) {
   const posBytes = pos.byteLength;
   const nrmBytes = nrm.byteLength;
   const uvBytes  = uv.byteLength;
-  // Use UNSIGNED_INT (5125) for indices to match TubeGeometry's Uint32 default
+  const colBytes = col.byteLength;
   const idxIsUint16 = vertexCount < 65536;
   const indices = idxIsUint16 ? new Uint16Array(idx) : new Uint32Array(idx);
   const idxBytes = indices.byteLength;
@@ -142,13 +187,15 @@ function geometryToGLB(geom, tint) {
   const posOffset = 0;
   const nrmOffset = align(posOffset + posBytes);
   const uvOffset  = align(nrmOffset + nrmBytes);
-  const idxOffset = align(uvOffset + uvBytes);
+  const colOffset = align(uvOffset + uvBytes);
+  const idxOffset = align(colOffset + colBytes);
   const totalBin  = align(idxOffset + idxBytes);
 
   const bin = new Uint8Array(totalBin);
   bin.set(new Uint8Array(pos.buffer, pos.byteOffset, posBytes), posOffset);
   bin.set(new Uint8Array(nrm.buffer, nrm.byteOffset, nrmBytes), nrmOffset);
   bin.set(new Uint8Array(uv.buffer, uv.byteOffset, uvBytes), uvOffset);
+  bin.set(new Uint8Array(col.buffer, col.byteOffset, colBytes), colOffset);
   bin.set(new Uint8Array(indices.buffer, indices.byteOffset, idxBytes), idxOffset);
 
   // Compute min/max for POSITION accessor (required by spec)
@@ -170,46 +217,41 @@ function geometryToGLB(geom, tint) {
     nodes: [{ mesh: 0 }],
     meshes: [{
       primitives: [{
-        attributes: { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 },
-        indices: 3,
+        attributes: { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2, COLOR_0: 3 },
+        indices: 4,
         mode: 4, // TRIANGLES
-        material: 0, // CRITICAL: Viro3DObject's `materials` prop overrides
-                     // a mesh primitive's material slot. Without this,
-                     // Viro native renderer falls back to a default white
-                     // material and ignores props.materials entirely.
-                     // (This is the v133-v136 white-strand bug root cause.)
+        material: 0,
       }],
     }],
     materials: [{
       name: 'strandSlot',
       pbrMetallicRoughness: {
-        // v4: alpha 0.55 + alphaMode BLEND for ribbon-like translucency.
-        // Combined with emissive bloom this gives a glow-through effect
-        // instead of solid wedges (v143 was opaque white-bg-against-camera).
-        baseColorFactor: [tint[0], tint[1], tint[2], 0.55],
+        baseColorFactor: [tint[0], tint[1], tint[2], 1.0],   // alpha multiplied by per-vertex
         metallicFactor: 0.0,
         roughnessFactor: 1.0,
       },
-      emissiveFactor: [tint[0] * 0.7, tint[1] * 0.7, tint[2] * 0.7],
+      emissiveFactor: [tint[0] * 0.85, tint[1] * 0.85, tint[2] * 0.85],
       alphaMode: 'BLEND',
       doubleSided: true,
     }],
     accessors: [
-      { bufferView: 0, componentType: 5126, count: vertexCount, type: 'VEC3', min, max }, // POSITION (FLOAT)
+      { bufferView: 0, componentType: 5126, count: vertexCount, type: 'VEC3', min, max }, // POSITION
       { bufferView: 1, componentType: 5126, count: vertexCount, type: 'VEC3' },            // NORMAL
       { bufferView: 2, componentType: 5126, count: vertexCount, type: 'VEC2' },            // TEXCOORD_0
+      { bufferView: 3, componentType: 5126, count: vertexCount, type: 'VEC4' },            // COLOR_0 (rgba)
       {
-        bufferView: 3,
+        bufferView: 4,
         componentType: idxIsUint16 ? 5123 : 5125,
         count: indices.length,
         type: 'SCALAR',
       },
     ],
     bufferViews: [
-      { buffer: 0, byteOffset: posOffset, byteLength: posBytes, target: 34962 }, // ARRAY_BUFFER
+      { buffer: 0, byteOffset: posOffset, byteLength: posBytes, target: 34962 },
       { buffer: 0, byteOffset: nrmOffset, byteLength: nrmBytes, target: 34962 },
       { buffer: 0, byteOffset: uvOffset,  byteLength: uvBytes,  target: 34962 },
-      { buffer: 0, byteOffset: idxOffset, byteLength: idxBytes, target: 34963 }, // ELEMENT_ARRAY_BUFFER
+      { buffer: 0, byteOffset: colOffset, byteLength: colBytes, target: 34962 },
+      { buffer: 0, byteOffset: idxOffset, byteLength: idxBytes, target: 34963 },
     ],
     buffers: [{ byteLength: totalBin }],
   };

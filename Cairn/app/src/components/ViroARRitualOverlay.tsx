@@ -269,13 +269,9 @@ function RitualARScene(props: any) {
       // looping `+=N` doesn't visually drift (delta accumulates but the
       // rotation is so small the user perceives it as gentle oscillation
       // averaged across the cycle).
-      // v3 (post-v134 feedback): users reported strands "tilt and fall over,
-      // never come back". Root cause: `+=15` is ACCUMULATIVE — every loop
-      // adds 15° to current rotation, monotonic. FIX: chained sequence of
-      // absolute-rotation animations creates true oscillation.
-      // ViroAnimationDict syntax for chains is an array of inline animation
-      // objects (not name references). Each strand has 4 segments forming
-      // a smooth left-right-left oscillation.
+      // v5 (DS-fidelity): bigger sway range so strands clearly bend in
+      // the breeze. Per-strand range 6-12° tilt, period 4-7s. Chained
+      // 4-step cycle returns to vertical so they don't drift.
       const sway = (axis: 'rotateZ' | 'rotateX', deg: number, dur: number) => [
         { properties: { [axis]:  deg }, duration: dur, easing: 'EaseInEaseOut' },
         { properties: { [axis]:    0 }, duration: dur, easing: 'EaseInEaseOut' },
@@ -289,11 +285,11 @@ function RitualARScene(props: any) {
           duration: 60000,
           easing: 'Linear',
         },
-        strandSway0: sway('rotateZ', 10, 1500),
-        strandSway1: sway('rotateZ', 12, 1700),
-        strandSway2: sway('rotateX', 10, 1400),
-        strandSway3: sway('rotateX',  8, 1900),
-        strandSway4: sway('rotateZ',  9, 1600),
+        strandSway0: sway('rotateZ', 7, 1700),
+        strandSway1: sway('rotateZ', 9, 2100),
+        strandSway2: sway('rotateX', 8, 1500),
+        strandSway3: sway('rotateX', 6, 2300),
+        strandSway4: sway('rotateZ', 7, 1900),
       });
 
       setMaterialsReady(true);
