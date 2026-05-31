@@ -213,7 +213,13 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   // when user taps the bug button. Snapshot is base64-chunked into telemetry
   // breadcrumbs so I can pull it via mysql + reassemble locally.
   const ritualOverlayRef = useRef<ViroARRitualOverlayHandle | null>(null);
-  const [snapshotBusy, setSnapshotBusy] = useState(false);
+  // Snapshot UI state machine:
+  //   idle  - normal bug emoji
+  //   busy  - spinner while takeScreenshot + base64 + telemetry flush
+  //   done  - green check for 4s, then auto-revert to idle
+  //   err   - red X with error code for 4s, then auto-revert
+  const [snapState, setSnapState] = useState<'idle' | 'busy' | 'done' | 'err'>('idle');
+  const [snapMsg, setSnapMsg] = useState<string>('');
   // v78 #3: AR init UX. Tracks one of:
   //   'init'      — first 4 seconds, glReady === false. Show spinner.
   //   'ready'     — glReady === true. Hide overlay.
@@ -834,24 +840,53 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
             reassembles the PNG locally so I can SEE what the user sees. */}
         {ritualMode && (
           <TouchableOpacity
-            style={[styles.debugSnapBtn, snapshotBusy && styles.debugSnapBtnBusy]}
+            style={[
+              styles.debugSnapBtn,
+              snapState === 'busy' && styles.debugSnapBtnBusy,
+              snapState === 'done' && styles.debugSnapBtnDone,
+              snapState === 'err'  && styles.debugSnapBtnErr,
+            ]}
+            disabled={snapState !== 'idle'}
             onPress={async () => {
-              if (snapshotBusy) return;
-              setSnapshotBusy(true);
+              setSnapState('busy');
+              setSnapMsg('');
               try {
                 const res = await ritualOverlayRef.current?.takeDebugSnapshot();
-                Alert.alert(
-                  res?.success ? 'Snapshot uploaded' : 'Snapshot failed',
-                  res?.success ? 'Image and state sent to telemetry.' : (res?.error ?? 'unknown error'),
-                );
-              } finally {
-                setSnapshotBusy(false);
+                if (res?.success) {
+                  setSnapState('done');
+                  setSnapMsg('uploaded');
+                } else {
+                  setSnapState('err');
+                  setSnapMsg(res?.error ?? 'unknown');
+                }
+              } catch (e: any) {
+                setSnapState('err');
+                setSnapMsg(e?.message ?? 'crash');
               }
+              // auto-revert after 4s so user can keep using the button
+              setTimeout(() => { setSnapState('idle'); setSnapMsg(''); }, 4000);
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.debugSnapBtnText}>{snapshotBusy ? '…' : '🐛'}</Text>
+            {snapState === 'busy' ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.debugSnapBtnText}>
+                {snapState === 'done' ? '✓' : snapState === 'err' ? '✗' : '🐛'}
+              </Text>
+            )}
           </TouchableOpacity>
+        )}
+        {/* Persistent message strip below the buttons so user can read
+            success/error without losing focus on AR view */}
+        {snapState !== 'idle' && (
+          <View style={styles.debugSnapMsg}>
+            <Text style={styles.debugSnapMsgText}>
+              {snapState === 'busy' ? 'capturing...' :
+               snapState === 'done' ? `✓ ${snapMsg}` :
+               `✗ ${snapMsg}`}
+            </Text>
+          </View>
         )}
       </View>
 
@@ -997,8 +1032,26 @@ const styles = StyleSheet.create({
   debugSnapBtnBusy: {
     backgroundColor: 'rgba(120,120,120,0.7)',
   },
+  debugSnapBtnDone: {
+    backgroundColor: 'rgba(50,170,80,0.85)',
+  },
+  debugSnapBtnErr: {
+    backgroundColor: 'rgba(180,40,40,0.85)',
+  },
   debugSnapBtnText: {
     fontSize: 18, color: '#fff',
+  },
+  // Floating status pill below the topBar buttons. Only visible while
+  // snap state != idle. Auto-hides after 4s along with the icon revert.
+  debugSnapMsg: {
+    position: 'absolute',
+    top: 48, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 12,
+  },
+  debugSnapMsgText: {
+    color: '#fff', fontSize: 11, fontWeight: '500',
   },
   placeFab: {
     position: 'absolute', bottom: 30, alignSelf: 'center',

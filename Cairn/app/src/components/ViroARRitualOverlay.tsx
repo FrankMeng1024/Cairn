@@ -449,12 +449,20 @@ export const ViroARRitualOverlay = forwardRef<ViroARRitualOverlayHandle, Props>(
   useImperativeHandle(ref, () => ({
     takeDebugSnapshot: async () => {
       try {
-        if (!viroNavRef.current?.takeScreenshot) {
-          crashLogger.breadcrumb('ritualAR:debug-snapshot-no-ref');
-          return { success: false, error: 'no-viro-ref' };
+        // ViroARSceneNavigator exposes its native methods on
+        // `arSceneNavigator` (the class field), NOT on the component
+        // instance directly. v138 used `viroNavRef.current.takeScreenshot`
+        // and got 'no-viro-ref' because that method doesn't exist there.
+        const nav = (viroNavRef.current as any)?.arSceneNavigator;
+        const takeScreenshot = nav?.takeScreenshot;
+        if (typeof takeScreenshot !== 'function') {
+          const keys = viroNavRef.current ? Object.keys(viroNavRef.current).slice(0, 20).join(',') : 'null';
+          const navKeys = nav ? Object.keys(nav).slice(0, 20).join(',') : 'null';
+          crashLogger.breadcrumb(`ritualAR:debug-snapshot-no-fn refKeys=[${keys}] navKeys=[${navKeys}]`);
+          return { success: false, error: 'takeScreenshot-not-fn' };
         }
         crashLogger.breadcrumb(`ritualAR:debug-snapshot-start markers=${markers.length}`);
-        const result = await viroNavRef.current.takeScreenshot('cairn-debug', false);
+        const result = await takeScreenshot('cairn-debug', false);
         crashLogger.breadcrumb(
           `ritualAR:debug-snapshot-result success=${result?.success} url=${result?.url ?? 'none'} err=${result?.errorCode ?? 'none'}`
         );
