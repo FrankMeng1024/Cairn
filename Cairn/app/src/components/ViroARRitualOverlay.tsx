@@ -14,7 +14,7 @@
  *
  * Milestone 1: ground ritual circle only (no strands, no debris yet).
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import {
   ViroARScene,
@@ -418,19 +418,85 @@ function RitualInstance(props: {
   );
 }
 
+// Public ref handle exposed to ARScreen for debugging.
+export interface ViroARRitualOverlayHandle {
+  /**
+   * Take a screenshot of the Viro AR view + dump diagnostic state.
+   * Image is base64-encoded and written to telemetry as a special
+   * `debug-snapshot` breadcrumb. Backend pulls it via mysql; the
+   * scripts/get_debug_snapshot.mjs helper decodes to PNG locally.
+   */
+  takeDebugSnapshot: () => Promise<{ success: boolean; error?: string }>;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Public component — same Props shape as ViroAROverlay so ARScreen
 // can swap them with a single ternary.
 // ─────────────────────────────────────────────────────────────────
-export function ViroARRitualOverlay({
+export const ViroARRitualOverlay = forwardRef<ViroARRitualOverlayHandle, Props>(function ViroARRitualOverlay({
   markers,
   userPos,
   userHeading: _userHeading,
   onStatus,
   onCairnPress,
-}: Props) {
+}: Props, ref) {
   const arkitOriginRef = useRef<{ lat: number; lng: number; alt?: number | null } | null>(null);
+  const viroNavRef = useRef<any>(null);
   const [originReady, setOriginReady] = useState(false);
+
+  // Expose debug snapshot to parent (ARScreen). Captures the live Viro
+  // render + emits diagnostic breadcrumbs with current strand state.
+  useImperativeHandle(ref, () => ({
+    takeDebugSnapshot: async () => {
+      try {
+        if (!viroNavRef.current?.takeScreenshot) {
+          crashLogger.breadcrumb('ritualAR:debug-snapshot-no-ref');
+          return { success: false, error: 'no-viro-ref' };
+        }
+        crashLogger.breadcrumb(`ritualAR:debug-snapshot-start markers=${markers.length}`);
+        const result = await viroNavRef.current.takeScreenshot('cairn-debug', false);
+        crashLogger.breadcrumb(
+          `ritualAR:debug-snapshot-result success=${result?.success} url=${result?.url ?? 'none'} err=${result?.errorCode ?? 'none'}`
+        );
+        if (result?.success && result?.url) {
+          // Read file → base64. RNFS not in deps; use fetch on file:// URI.
+          const fileUri = result.url.startsWith('file://') ? result.url : `file://${result.url}`;
+          const resp = await fetch(fileUri);
+          const blob = await resp.blob();
+          const reader = new FileReader();
+          await new Promise<void>((resolve, reject) => {
+            reader.onload = () => resolve();
+            reader.onerror = () => reject(new Error('reader-failed'));
+            reader.readAsDataURL(blob);
+          });
+          const dataUrl = reader.result as string; // "data:image/png;base64,..."
+          const b64 = dataUrl.split(',')[1] ?? '';
+          // Chunk into multiple breadcrumbs because crashLogger may cap
+          // single-line size. 4KB chunks × N => reassembled by reader script.
+          const CHUNK_SIZE = 4000;
+          const totalChunks = Math.ceil(b64.length / CHUNK_SIZE);
+          const snapshotId = `snap-${Date.now()}`;
+          crashLogger.breadcrumb(
+            `ritualAR:debug-snapshot-meta id=${snapshotId} bytes=${b64.length} chunks=${totalChunks} markers=${markers.length}`
+          );
+          for (let i = 0; i < totalChunks; i++) {
+            const chunk = b64.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+            crashLogger.breadcrumb(`ritualAR:debug-snapshot-data id=${snapshotId} i=${i} d=${chunk}`);
+          }
+          crashLogger.breadcrumb(`ritualAR:debug-snapshot-end id=${snapshotId}`);
+          // Force flush so it uploads immediately, not on next session
+          if ((crashLogger as any).flushNow) {
+            try { await (crashLogger as any).flushNow(); } catch {}
+          }
+          return { success: true };
+        }
+        return { success: false, error: result?.errorCode ?? 'unknown' };
+      } catch (e: any) {
+        crashLogger.breadcrumb(`ritualAR:debug-snapshot-error ${e?.message ?? e}`);
+        return { success: false, error: String(e?.message ?? e) };
+      }
+    },
+  }), [markers.length]);
 
   // Reuse the SAME persisted origin as ViroAROverlay so switching modes
   // doesn't move the markers (both renderers share the world frame).
@@ -478,6 +544,7 @@ export function ViroARRitualOverlay({
   return (
     <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
       <ViroARSceneNavigator
+        ref={viroNavRef}
         autofocus
         worldAlignment="GravityAndHeading"
         provider="none"
@@ -493,4 +560,4 @@ export function ViroARRitualOverlay({
       />
     </View>
   );
-}
+});

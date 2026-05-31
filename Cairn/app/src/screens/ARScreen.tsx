@@ -28,7 +28,7 @@ import { AR3DCairnOverlay } from '../components/AR3DCairnOverlay';
 // 如果 ARKit 仍崩 → ErrorBoundary fallback 自动切回 AR3DCairnOverlay (r3f),
 // 用户体验受损但 app 不崩, 给我们时间通过 OTA 修.
 import { ViroAROverlay } from '../components/ViroAROverlay';
-import { ViroARRitualOverlay } from '../components/ViroARRitualOverlay';
+import { ViroARRitualOverlay, type ViroARRitualOverlayHandle } from '../components/ViroARRitualOverlay';
 import { CairnEdgeArrows } from '../components/CairnEdgeArrows';
 import { AimShutter } from '../components/AimShutter';
 import { PlantSheet, AimReticle, type PlantType } from '../components/PlantSheet';
@@ -209,6 +209,11 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   // DS-style ground ritual circle (ViroARRitualOverlay). Both share GPS
   // anchoring + ARKit tracking; only the rendered visuals differ.
   const [ritualMode, setRitualMode] = useState(false);
+  // Debug snapshot ref — ARScreen calls ritualOverlayRef.current?.takeDebugSnapshot()
+  // when user taps the bug button. Snapshot is base64-chunked into telemetry
+  // breadcrumbs so I can pull it via mysql + reassemble locally.
+  const ritualOverlayRef = useRef<ViroARRitualOverlayHandle | null>(null);
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
   // v78 #3: AR init UX. Tracks one of:
   //   'init'      — first 4 seconds, glReady === false. Show spinner.
   //   'ready'     — glReady === true. Hide overlay.
@@ -684,6 +689,7 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
       >
         {USE_VIRO && ritualMode ? (
           <ViroARRitualOverlay
+            ref={ritualOverlayRef}
             markers={nearbyMarkers}
             userPos={lastCoord ? { lat: lastCoord.lat, lng: lastCoord.lng, alt: lastCoord.alt ?? null } : null}
             userHeading={userHeading}
@@ -822,6 +828,31 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
             {ritualMode ? '◉ Ritual' : '○ Sphere'}
           </Text>
         </TouchableOpacity>
+        {/* Debug snapshot button — only shows when ritualMode is on. Captures
+            the live Viro AR view + dumps strand state into telemetry as a
+            base64-chunked breadcrumb sequence. Backend reader script
+            reassembles the PNG locally so I can SEE what the user sees. */}
+        {ritualMode && (
+          <TouchableOpacity
+            style={[styles.debugSnapBtn, snapshotBusy && styles.debugSnapBtnBusy]}
+            onPress={async () => {
+              if (snapshotBusy) return;
+              setSnapshotBusy(true);
+              try {
+                const res = await ritualOverlayRef.current?.takeDebugSnapshot();
+                Alert.alert(
+                  res?.success ? 'Snapshot uploaded' : 'Snapshot failed',
+                  res?.success ? 'Image and state sent to telemetry.' : (res?.error ?? 'unknown error'),
+                );
+              } finally {
+                setSnapshotBusy(false);
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.debugSnapBtnText}>{snapshotBusy ? '…' : '🐛'}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Drag-to-plant cairn picker — replaces the previous Place Flag FAB
@@ -954,6 +985,20 @@ const styles = StyleSheet.create({
   },
   ritualToggleText: {
     color: '#fff', fontSize: 12, fontWeight: '600',
+  },
+  // Debug snapshot button (shown only in ritual mode for now).
+  debugSnapBtn: {
+    marginLeft: 8,
+    width: 36, height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(220,40,40,0.7)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  debugSnapBtnBusy: {
+    backgroundColor: 'rgba(120,120,120,0.7)',
+  },
+  debugSnapBtnText: {
+    fontSize: 18, color: '#fff',
   },
   placeFab: {
     position: 'absolute', bottom: 30, alignSelf: 'center',
