@@ -488,20 +488,53 @@ export const ViroARRitualOverlay = forwardRef<ViroARRitualOverlayHandle, Props>(
           crashLogger.breadcrumb(
             `ritualAR:debug-snapshot-meta id=${snapshotId} bytes=${b64.length} chunks=${totalChunks} markers=${markers.length}`
           );
+          // v141: send base64 directly via fetch, NOT via crashLogger ring
+          // buffer (capped at 500 events; 240+ chunks risk overflow + chunks
+          // are rebuilt from RingBuffer.recentEvents which loses early ones).
+          // Single POST with full body to /api/telemetry/sessions matches
+          // crashLogger.uploadDiagnostic's wire format but bypasses the
+          // ring buffer entirely.
+          const sessionId = `diag-snap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const events = [
+            JSON.stringify({ ts: Date.now(), session_id: sessionId, event: 'diagnostic_header', tag: 'snapshot' }),
+            JSON.stringify({ ts: Date.now(), session_id: sessionId, event: 'breadcrumb',
+              message: `ritualAR:debug-snapshot-meta id=${snapshotId} bytes=${b64.length} chunks=${totalChunks} markers=${markers.length}` }),
+          ];
           for (let i = 0; i < totalChunks; i++) {
             const chunk = b64.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-            crashLogger.breadcrumb(`ritualAR:debug-snapshot-data id=${snapshotId} i=${i} d=${chunk}`);
+            events.push(JSON.stringify({
+              ts: Date.now(), session_id: sessionId, event: 'breadcrumb',
+              message: `ritualAR:debug-snapshot-data id=${snapshotId} i=${i} d=${chunk}`,
+            }));
           }
-          crashLogger.breadcrumb(`ritualAR:debug-snapshot-end id=${snapshotId}`);
-          // v140: real flush via crashLogger.uploadDiagnostic — actually
-          // POSTs to /api/telemetry. v138/139 used a non-existent
-          // `flushNow()` so chunks sat in memory until next unmount.
+          events.push(JSON.stringify({
+            ts: Date.now(), session_id: sessionId, event: 'breadcrumb',
+            message: `ritualAR:debug-snapshot-end id=${snapshotId}`,
+          }));
+          const body = events.join('\n');
+          const ts = Date.now();
           try {
-            const sid = await crashLogger.uploadDiagnostic(API_BASE_URL, 'snapshot');
-            crashLogger.breadcrumb(`ritualAR:debug-snapshot-flushed sid=${sid}`);
-            return { success: true, error: `flushed sid=${sid}` };
+            const resp = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/api/telemetry/sessions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-ndjson',
+                'X-Cairn-Device-Os': 'ios',
+                'X-Cairn-App-Version': '0.2.0',
+                'X-Cairn-Activity-Mode': 'diagnostic',
+                'X-Cairn-Started-At': String(ts),
+                'X-Cairn-Ended-At': String(ts),
+              },
+              body,
+            });
+            const status = resp.status;
+            crashLogger.breadcrumb(`ritualAR:debug-snapshot-fetched sid=${sessionId} status=${status} bytes=${body.length}`);
+            if (status >= 200 && status < 300) {
+              return { success: true, error: `OK ${status} sid=${sessionId} bytes=${body.length}` };
+            }
+            const txt = await resp.text().catch(() => 'no-body');
+            return { success: false, error: `http ${status}: ${txt.slice(0, 100)}` };
           } catch (e: any) {
-            return { success: false, error: `flush-fail: ${e?.message ?? e}` };
+            return { success: false, error: `fetch-fail: ${e?.message ?? e}` };
           }
         }
         return { success: false, error: result?.errorCode ?? 'no-url' };
