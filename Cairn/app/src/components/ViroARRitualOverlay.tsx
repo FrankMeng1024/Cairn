@@ -190,16 +190,18 @@ function RitualARScene(props: any) {
   useEffect(() => {
     try {
       const types = ['danger', 'supply', 'junction', 'scenic', 'cairn'] as const;
-      // Per-type accent colour for strand tinting. Constant lighting + Add
-      // blend multiplies diffuseTexture × diffuseColor — keeping the texture
-      // neutral white means the same flow PNG produces 5 different coloured
-      // strands by changing diffuseColor only.
+      // Per-type colour for strand tinting. v3 (post-v134 feedback): users
+      // report strands still appear white. Diagnostic: use saturated primary
+      // colours so we can verify if material assignment is working at all.
+      // If strands STILL look white in v135 → material isn't being applied
+      // (likely GLB ships without material reference, Viro defaults to white).
+      // If strands turn coloured → just need to dim further.
       const STRAND_TINT: Record<string, string> = {
-        danger:   '#ff6a55',
-        supply:   '#5fcc7a',
-        junction: '#ffa040',
-        scenic:   '#7090ff',
-        cairn:    '#d4a050',  // canonical DS gold
+        danger:   '#ff0000',  // pure red — diagnostic
+        supply:   '#00ff00',  // pure green
+        junction: '#ff8800',  // orange
+        scenic:   '#0044ff',  // pure blue
+        cairn:    '#ffaa00',  // amber gold
       };
       const mats: Record<string, any> = {};
       for (const t of types) {
@@ -211,20 +213,22 @@ function RitualARScene(props: any) {
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
         };
-        // Strand material — one per type. Constant lighting + Add blend +
-        // diffuseColor tint applied to a neutral white flow texture.
-        // v2 (post-v133 feedback): bloomThreshold 0.4 → 0.85. v1 was bloom-
-        // bombing the strand white because Add blending + Constant lighting
-        // already produces hot RGB values that pass even threshold 0.4.
-        // Threshold 0.85 keeps coloured highlights only on the texture's
-        // hot bands, not the entire strand silhouette.
+        // Strand material — one per type. v3: switch from Add to Alpha
+        // blending. Add was making everything white because:
+        //   final = src + dest = white_texture * tint + camera_pixels
+        // White texture (RGB=1,1,1) × tint (RGB<1,1,1) = tint colour, but
+        // the alpha channel was being multiplied with brightness, and Add
+        // blending then summed it onto the camera giving washout.
+        // Alpha blending uses srcAlpha for blend, so the texture's RGB
+        // (white) gets MULTIPLIED by diffuseColor (tint) and that result
+        // alpha-blends onto the camera. Tint colour is faithful.
+        // Trade-off: less of a "glow" feel but actually a visible colour.
         const cap = t.charAt(0).toUpperCase() + t.slice(1);
         mats[`strand${cap}`] = {
           lightingModel: 'Constant',
           diffuseTexture: STRAND_FLOW_TEX,
           diffuseColor: STRAND_TINT[t],
-          blendMode: 'Add',
-          bloomThreshold: 0.85,
+          blendMode: 'Alpha',
           writesToDepthBuffer: false,
           readsFromDepthBuffer: true,
         };
@@ -237,21 +241,31 @@ function RitualARScene(props: any) {
       // looping `+=N` doesn't visually drift (delta accumulates but the
       // rotation is so small the user perceives it as gentle oscillation
       // averaged across the cycle).
+      // v3 (post-v134 feedback): users reported strands "tilt and fall over,
+      // never come back". Root cause: `+=15` is ACCUMULATIVE — every loop
+      // adds 15° to current rotation, monotonic. FIX: chained sequence of
+      // absolute-rotation animations creates true oscillation.
+      // ViroAnimationDict syntax for chains is an array of inline animation
+      // objects (not name references). Each strand has 4 segments forming
+      // a smooth left-right-left oscillation.
+      const sway = (axis: 'rotateZ' | 'rotateX', deg: number, dur: number) => [
+        { properties: { [axis]:  deg }, duration: dur, easing: 'EaseInEaseOut' },
+        { properties: { [axis]:    0 }, duration: dur, easing: 'EaseInEaseOut' },
+        { properties: { [axis]: -deg }, duration: dur, easing: 'EaseInEaseOut' },
+        { properties: { [axis]:    0 }, duration: dur, easing: 'EaseInEaseOut' },
+      ];
+
       ViroAnimations.registerAnimations({
         ringSpinSlow: {
           properties: { rotateY: '+=360' },
           duration: 60000,
           easing: 'Linear',
         },
-        // v2 (post-v133 feedback): users reported strands looked completely
-        // static. v1 used +=4° / 4.2s = imperceptible. v2 ramps to ±15°
-        // over 5s — clearly visible swaying without spinning all the way
-        // around. Different axes (X vs Z) and signs prevent visual sync.
-        strandSway0: { properties: { rotateZ: '+=15' }, duration: 5000, easing: 'EaseInEaseOut' },
-        strandSway1: { properties: { rotateZ: '-=12' }, duration: 5800, easing: 'EaseInEaseOut' },
-        strandSway2: { properties: { rotateX: '+=14' }, duration: 4600, easing: 'EaseInEaseOut' },
-        strandSway3: { properties: { rotateX: '-=10' }, duration: 6300, easing: 'EaseInEaseOut' },
-        strandSway4: { properties: { rotateZ: '+=11' }, duration: 5400, easing: 'EaseInEaseOut' },
+        strandSway0: sway('rotateZ', 10, 1500),
+        strandSway1: sway('rotateZ', 12, 1700),
+        strandSway2: sway('rotateX', 10, 1400),
+        strandSway3: sway('rotateX',  8, 1900),
+        strandSway4: sway('rotateZ',  9, 1600),
       });
 
       setMaterialsReady(true);
