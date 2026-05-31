@@ -91,20 +91,17 @@ const STRAND_GLBS: Record<string, any[]> = {
 };
 const STRAND_FLOW_TEX = require('../../assets/ar/strand_flow.png');
 
-// Five strand root positions around the ring edge — 72° apart with slight
-// jitter (±0.15 rad) so placement looks organic, not mechanical.
+// v149: reduce strand count to 3 (was 5) — density was the dominant
+// 'too chaotic' complaint. Three 120°-spaced offsets give a pleasing
+// triangle arrangement without crowding.
 const STRAND_OFFSETS = [
   { x: Math.cos(0.0 * Math.PI * 2 + 0.10), z: Math.sin(0.0 * Math.PI * 2 + 0.10) },
-  { x: Math.cos(0.2 * Math.PI * 2 - 0.05), z: Math.sin(0.2 * Math.PI * 2 - 0.05) },
-  { x: Math.cos(0.4 * Math.PI * 2 + 0.12), z: Math.sin(0.4 * Math.PI * 2 + 0.12) },
-  { x: Math.cos(0.6 * Math.PI * 2 - 0.08), z: Math.sin(0.6 * Math.PI * 2 - 0.08) },
-  { x: Math.cos(0.8 * Math.PI * 2 + 0.04), z: Math.sin(0.8 * Math.PI * 2 + 0.04) },
+  { x: Math.cos((1/3) * Math.PI * 2 - 0.05), z: Math.sin((1/3) * Math.PI * 2 - 0.05) },
+  { x: Math.cos((2/3) * Math.PI * 2 + 0.08), z: Math.sin((2/3) * Math.PI * 2 + 0.08) },
 ];
 
-// Per-strand sway animation names. Each strand's wrapper ViroNode plays one
-// of these; small rotation deltas (±2-4°) on different axes/periods mean the
-// 5 strands sway independently (not in lockstep).
-const STRAND_SWAY_ANIMS = ['strandSway0', 'strandSway1', 'strandSway2', 'strandSway3', 'strandSway4'];
+// 3 strand spin animation names
+const STRAND_SWAY_ANIMS = ['strandSway0', 'strandSway1', 'strandSway2'];
 
 // Strand visual constants. v2: GLB regenerated with 8m height (was 40m) and
 // 0.04m base radius (was 0.18m) — see scripts/gen_strand_glb.mjs.
@@ -131,10 +128,11 @@ const RITUAL_GROUND_OFFSET_M = -1.2;
 // take over, same threshold as production overlay).
 const VISIBLE_RANGE_M = 50;
 const NEAR_THRESHOLD_M = 10;
-// Ritual circle physical size. v2 (post-v133 feedback): 2.0m → 0.6m.
-// 2m felt like standing inside a fortress; 0.6m = wash-basin scale lets the
-// user see the whole ring + strands in one glance even at 1m distance.
-const RITUAL_BASE_SIZE_M = 0.6;
+// Ritual circle physical size. v7 (post-v148 user feedback "5/100"):
+// 0.6m → 0.3m. The smaller the disc the more the strands carry the
+// visual weight. User explicitly mentioned the disc 'follows them'
+// (likely visual parallax illusion at 0.6m radius).
+const RITUAL_BASE_SIZE_M = 0.3;
 // Stable tracking settle window (ms). ARKit briefly reports TRACKING_NORMAL
 // during relocalisation while the world transform is still being corrected.
 // Production ViroAROverlay uses 1500ms to prevent the "flag flies into the
@@ -327,13 +325,11 @@ function RitualARScene(props: any) {
           duration: 60000,
           easing: 'Linear',
         },
-        strandSway0: chain('rotateZ',  8, 1700),
-        strandSway1: chain('rotateZ', 10, 2100),
-        strandSway2: chain('rotateX',  9, 1500),
-        strandSway3: chain('rotateX',  7, 2300),
-        strandSway4: chain('rotateZ',  8, 1900),
+        strandSway0: chain('rotateZ',  6, 1900),
+        strandSway1: chain('rotateX',  7, 2200),
+        strandSway2: chain('rotateZ',  5, 2500),
       });
-      crashLogger.breadcrumb('ritualAR:animations-registered v148 [chained sway 4-step]');
+      crashLogger.breadcrumb('ritualAR:animations-registered v149 [3 strands chained sway]');
 
       setMaterialsReady(true);
       crashLogger.breadcrumb('ritualAR:materials-registered');

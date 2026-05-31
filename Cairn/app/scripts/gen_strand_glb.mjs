@@ -26,21 +26,21 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(__dirname, '..', 'assets', 'ar');
 
 // ── Strand parameters ─────────────────────────────────────────
-// v5 (DS-fidelity push): user wants screenshot-grade DS strands. Jump
-// to maximum-quality config:
-//   - 7 control points instead of 5 → smoother S-curves with more wiggle
-//   - jitter ±0.7m at 8m height = clearly bent (no more 'mostly straight')
-//   - aggressive multi-frequency thickness modulation (4 sines + noise)
-//     so each strand has visible bulges/pinches like a dripping rope
-//   - PER-VERTEX colour with alpha gradient: 1.0 at base → 0.0 at top
-//     gives 'tip dissolves into sky' effect crucial for landmark feel
-const STRAND_HEIGHT_M = 9;
-const TUBULAR_SEGS = 128;          // 96 → 128 for smoother S-curves
-const RADIAL_SEGS = 8;
-const BASE_RADIUS = 0.030;         // base thickness
-const RADIUS_BULGE = 0.060;        // bulge amplitude — 2× the base for clear pinches
-const RADIUS_WOBBLE = 0.020;
-const UV_V_REPEAT = 3;
+// v7 (post-v148 user reaction "5/100"): radically simplify.
+// User feedback: too thick, too chaotic, no DS-feel at all.
+// Strategy: make strands LOOK like delicate threads of light, not pillars.
+// - Tiny radius 0.012m (was 0.030 — 2.5× thinner)
+// - Modest bulge so they swell only slightly mid-flight
+// - Single low-frequency curve modulation (no 4-frequency chaos)
+// - 5 control points (back from 7) — simple lazy S, not a tangle
+// - Lower jitter ±0.20m (was ±0.55m) — strand stays near vertical
+const STRAND_HEIGHT_M = 7;
+const TUBULAR_SEGS = 80;
+const RADIAL_SEGS = 6;
+const BASE_RADIUS = 0.012;        // hair-thin
+const RADIUS_BULGE = 0.012;       // doubles only at mid (0.024 max)
+const RADIUS_WOBBLE = 0.003;
+const UV_V_REPEAT = 2;
 
 // Per-type GLB tinting. v4 (post-v142 visual debug): screenshots in
 // debug_snapshots table proved Viro3DObject ignores the `materials` prop —
@@ -56,63 +56,36 @@ const TYPE_TINTS = {
   scenic:   [0.30, 0.45, 1.0, 1.0],   // blue
   cairn:    [0.95, 0.70, 0.30, 1.0],  // amber gold (DS canonical)
 };
-// 5 strand seeds — 7 control points each, jitter ±0.55m at the inner
-// points. Y values 0, 1.5, 3.0, 4.5, 6.0, 7.5, 9.0. Endpoints stay
-// near-axis so root anchors at origin and tip ends near the up-axis.
-// Inner 5 points have heavy XZ jitter to produce visible S-curves.
+// 5 strand seeds — back to 5 control points, gentle ±0.20m jitter.
+// Y values 0, 1.75, 3.5, 5.25, 7.0. Each strand has a SINGLE noticeable
+// bend, not a knot. Strands a/b/c lean slightly different ways.
 const SEEDS = [
-  { name: 'a', jitter: [
-    [ 0.05, 0.05], [ 0.45,-0.30], [-0.55, 0.50], [ 0.50, 0.40],
-    [-0.40,-0.55], [ 0.20, 0.15], [ 0.0, 0.0]
-  ]},
-  { name: 'b', jitter: [
-    [-0.05, 0.05], [-0.50, 0.40], [ 0.55, 0.30], [-0.45,-0.50],
-    [ 0.40, 0.55], [-0.25,-0.20], [ 0.05, 0.0]
-  ]},
-  { name: 'c', jitter: [
-    [ 0.05,-0.05], [ 0.30, 0.50], [-0.45,-0.55], [ 0.55, 0.30],
-    [-0.20, 0.45], [ 0.30,-0.20], [-0.05, 0.05]
-  ]},
-  { name: 'd', jitter: [
-    [-0.05,-0.05], [ 0.55, 0.20], [ 0.30,-0.55], [-0.50, 0.40],
-    [ 0.45, 0.50], [-0.30, 0.10], [ 0.05, 0.05]
-  ]},
-  { name: 'e', jitter: [
-    [ 0.05, 0.05], [-0.40,-0.45], [ 0.55, 0.55], [-0.30,-0.50],
-    [ 0.50,-0.45], [-0.20, 0.25], [-0.05, 0.05]
-  ]},
+  { name: 'a', jitter: [[ 0.05, 0.05], [ 0.18,-0.10], [-0.05, 0.18], [-0.10,-0.05], [ 0.05, 0.05]] },
+  { name: 'b', jitter: [[-0.05, 0.05], [-0.18, 0.10], [ 0.10,-0.18], [ 0.05, 0.05], [-0.05,-0.05]] },
+  { name: 'c', jitter: [[ 0.05,-0.05], [ 0.10, 0.18], [-0.18, 0.05], [ 0.05,-0.10], [-0.05, 0.05]] },
+  { name: 'd', jitter: [[-0.05,-0.05], [ 0.20, 0.05], [ 0.05,-0.20], [-0.10, 0.10], [ 0.05, 0.05]] },
+  { name: 'e', jitter: [[ 0.05, 0.05], [-0.10,-0.18], [ 0.20, 0.10], [-0.05,-0.10], [-0.05, 0.05]] },
 ];
 
 // ── Build one strand geometry ─────────────────────────────────
 function buildStrandGeometry(jitter) {
-  // 7 control points along Y from 0 → STRAND_HEIGHT_M.
-  const ys = [0, 1.5, 3.0, 4.5, 6.0, 7.5, 9.0];
+  // 5 control points, height 7m
+  const ys = [0, 1.75, 3.5, 5.25, 7.0];
   const points = ys.map((y, i) => new THREE.Vector3(jitter[i][0], y, jitter[i][1]));
   const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
 
   // Generate constant-radius tube first
   const tube = new THREE.TubeGeometry(curve, TUBULAR_SEGS, BASE_RADIUS, RADIAL_SEGS, false);
 
-  // Modulate radius along length: aggressive 4-frequency profile so the
-  // strand has visible bulges, pinches, and wobbles like a dripping rope.
-  // Each ring has (RADIAL_SEGS + 1) verts.
+  // SINGLE-frequency thickness: bell curve (bulge mid, taper ends).
+  // No more 4-frequency chaos — strand reads as a clean thread of light.
   const positions = tube.attributes.position.array;
   const ringVertCount = RADIAL_SEGS + 1;
   for (let s = 0; s <= TUBULAR_SEGS; s++) {
     const t = s / TUBULAR_SEGS;
-    // Big slow bell — main bulge centred at t=0.4 (lower-mid)
-    const bell = Math.sin(t * Math.PI * 0.95 + 0.1);
-    // Med-frequency (2 oscillations along length)
-    const mid = Math.sin(t * Math.PI * 4) * 0.5 + 0.5;
-    // High-frequency wobble (5 oscillations)
-    const high = Math.sin(t * Math.PI * 10);
-    const rTarget =
-      BASE_RADIUS +
-      RADIUS_BULGE * bell +
-      RADIUS_BULGE * 0.45 * mid +
-      RADIUS_WOBBLE * high;
+    const bell = Math.sin(t * Math.PI);
+    const rTarget = BASE_RADIUS + RADIUS_BULGE * bell + RADIUS_WOBBLE * Math.sin(t * Math.PI * 5);
     const radiusScale = rTarget / BASE_RADIUS;
-
     const centre = curve.getPoint(t);
     for (let r = 0; r < ringVertCount; r++) {
       const idx = (s * ringVertCount + r) * 3;
@@ -130,22 +103,20 @@ function buildStrandGeometry(jitter) {
   tube.attributes.position.needsUpdate = true;
   tube.computeVertexNormals();
 
-  // UV: keep U as-is, repeat V along length
   const uvs = tube.attributes.uv.array;
   for (let i = 0; i < uvs.length; i += 2) {
     uvs[i + 1] = uvs[i + 1] * UV_V_REPEAT;
   }
 
-  // Per-vertex colour with alpha gradient: 1.0 at base → 0.0 at tip.
-  // Alpha follows (1 - t)^1.5 so the top half fades faster than the
-  // bottom (matches DS where the visible mass is in the lower 60% and
-  // the upper 40% dissolves into sky). Colour itself stays white here;
-  // tint comes from material baseColorFactor multiplying with this.
+  // Per-vertex colour with ALPHA gradient. Even though Viro iOS may ignore
+  // COLOR_0 alpha (we observed in v145), keep the attribute baked — if
+  // some build/version DOES respect it the strand fades correctly. Cost:
+  // 32KB per GLB.
   const vertexCount = tube.attributes.position.count;
   const colors = new Float32Array(vertexCount * 4);
   for (let s = 0; s <= TUBULAR_SEGS; s++) {
     const t = s / TUBULAR_SEGS;
-    const alpha = Math.pow(1 - t, 1.5);
+    const alpha = Math.pow(1 - t, 1.2);  // gentler fade than 1.5
     for (let r = 0; r < ringVertCount; r++) {
       const vIdx = s * ringVertCount + r;
       colors[vIdx * 4 + 0] = 1;
@@ -226,16 +197,19 @@ function geometryToGLB(geom, tint) {
     materials: [{
       name: 'strandSlot',
       pbrMetallicRoughness: {
-        // v6 (post-v147 visual evidence + bisection): vertex alpha COLOR_0
-        // is silently ignored by Viro on iOS (v145 strands were opaque
-        // despite RGBA in COLOR_0). Fall back to baseColorFactor.a 0.55
-        // which v144 visually verified — translucent ribbons that blend
-        // with the camera feed.
-        baseColorFactor: [tint[0], tint[1], tint[2], 0.55],
+        // v7: more transparent (0.55 → 0.40) so density of 5 strands isn't
+        // overwhelming. Even a thin tube reads when it glows hard.
+        baseColorFactor: [tint[0], tint[1], tint[2], 0.40],
         metallicFactor: 0.0,
         roughnessFactor: 1.0,
       },
-      emissiveFactor: [tint[0] * 0.85, tint[1] * 0.85, tint[2] * 0.85],
+      // emissive at 1.5× tint clamped to 1.0 — push past bloom threshold so
+      // strands glow like neon threads rather than look like static plastic.
+      emissiveFactor: [
+        Math.min(1, tint[0] * 1.5),
+        Math.min(1, tint[1] * 1.5),
+        Math.min(1, tint[2] * 1.5),
+      ],
       alphaMode: 'BLEND',
       doubleSided: true,
     }],
