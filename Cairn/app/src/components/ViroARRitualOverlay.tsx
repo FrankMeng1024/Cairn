@@ -216,6 +216,21 @@ function RitualARScene(props: any) {
   const [stableTracking, setStableTracking] = useState(false);
   const [materialsReady, setMaterialsReady] = useState(false);
 
+  // v146: full GPS anchoring + ground-plane logic copy-pasted from
+  // ViroAROverlay.tsx (production v122). The earlier simplified version
+  // ignored ARKit plane detection AND camera-Y drift correction, which
+  // is why the user saw "markers always 1m in front of me" + "all
+  // markers piled together at one spot". Both are bugs we already
+  // solved on the production side via groundYRef + handleAnchor +
+  // onCameraTransformUpdate. This is a 1:1 port — DO NOT simplify.
+  const cairnNodesRef = useRef<CairnWorldPos[]>([]);
+  const groundYRef = useRef<number | null>(null);
+  const [groundYTick, setGroundYTick] = useState(0);
+  const camForwardRef = useRef<number[]>([0, 0, -1]);
+  const camYRef = useRef<number>(1.5);
+  const lastCairnYRef = useRef<number | null>(null);
+  const lastFrameTsRef = useRef(0);
+
   // ── Register materials + animations (deferred to mount, RN-safe) ──
   useEffect(() => {
     try {
@@ -315,27 +330,112 @@ function RitualARScene(props: any) {
     return () => clearTimeout(id);
   }, [tracking]);
 
-  // ── World position computation ────────────────────────────────
+  // ── World position computation (v146: 1:1 port from ViroAROverlay) ──
   const cairnNodes = useMemo<CairnWorldPos[]>(() => {
     if (!arkitOrigin) return [];
-    const out: CairnWorldPos[] = [];
-    for (const m of markers) {
-      const [x, y, z] = gpsToArWorld(arkitOrigin, m as any);
-      const dLat = ((m as any).lat - arkitOrigin.lat) * 111000;
-      const cosLat = Math.cos((arkitOrigin.lat * Math.PI) / 180);
-      const dLng = ((m as any).lng - arkitOrigin.lng) * 111000 * cosLat;
-      const dist = Math.sqrt(dLat * dLat + dLng * dLng);
-      if (dist > VISIBLE_RANGE_M) continue;
-      out.push({ id: m.id, type: m.type as string, x, y, z, dist });
+    const EYE_M = 1.5;
+    const FALLBACK_HOLD_HEIGHT_M = 1.4;
+    const ground = groundYRef.current;
+    const cairnY = ground !== null
+      ? ground + EYE_M
+      : -FALLBACK_HOLD_HEIGHT_M + EYE_M;
+    const prevY = lastCairnYRef.current;
+    if (prevY !== null && Math.abs(cairnY - prevY) > 0.001) {
+      crashLogger.breadcrumb(
+        `ritualAR:drift:cairnY-changed prev=${prevY.toFixed(3)} new=${cairnY.toFixed(3)} ` +
+        `delta=${(cairnY - prevY).toFixed(3)}m ground=${ground === null ? 'null' : ground.toFixed(3)}`,
+      );
     }
-    return out;
-  }, [arkitOrigin, markers]);
+    lastCairnYRef.current = cairnY;
+    const nodes: CairnWorldPos[] = [];
+    for (const m of markers) {
+      const [x, _y, z] = gpsToArWorld(arkitOrigin, m as any);
+      const horizontal = Math.hypot(x, z);
+      if (horizontal > VISIBLE_RANGE_M) continue;
+      // For ritual circle: ground (groundY) is where the disc lies,
+      // strands rise from there. Don't add EYE_M — anchor at ground.
+      const y = ground !== null ? ground : -FALLBACK_HOLD_HEIGHT_M;
+      crashLogger.breadcrumb(
+        `ritualAR:cairn-pos id=${m.id.slice(-4)} type=${m.type} ` +
+        `xyz=(${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}) ` +
+        `dist=${horizontal.toFixed(1)}m ground=${ground === null ? 'null' : ground.toFixed(2)}`,
+      );
+      nodes.push({ id: m.id, type: m.type as string, x, y, z, dist: horizontal });
+    }
+    cairnNodesRef.current = nodes;
+    crashLogger.breadcrumb(
+      `ritualAR:scene:nodes total=${markers.length} visible=${nodes.length} ` +
+      `range=${VISIBLE_RANGE_M}m ground=${ground === null ? 'null' : ground.toFixed(2)}`,
+    );
+    return nodes;
+  }, [markers, arkitOrigin?.lat, arkitOrigin?.lng, arkitOrigin?.alt, groundYTick]);
+
+  // Camera transform — drift correction (1:1 from ViroAROverlay v119)
+  const onCameraTransformUpdate = useCallback((evt: any) => {
+    const now = Date.now();
+    if (now - lastFrameTsRef.current < 100) return; // 10Hz throttle
+    lastFrameTsRef.current = now;
+    const t = evt?.cameraTransform;
+    if (!t || !t.position || !t.forward) return;
+    camForwardRef.current = t.forward;
+    const camY = t.position[1];
+    if (typeof camY === 'number' && isFinite(camY)) {
+      camYRef.current = camY;
+      const cur = groundYRef.current;
+      if (cur !== null) {
+        const expectedFloor = camY - 1.5;
+        const deviation = Math.abs(cur - expectedFloor);
+        if (deviation > 0.7) {
+          crashLogger.breadcrumb(
+            `ritualAR:ground-stale camY=${camY.toFixed(2)} expectedFloor=${expectedFloor.toFixed(2)} cachedGround=${cur.toFixed(2)} dev=${deviation.toFixed(2)}m`
+          );
+          groundYRef.current = null;
+          setGroundYTick((n) => n + 1);
+        }
+      }
+    }
+  }, []);
+
+  // Anchor handler — ground-plane detection (1:1 from ViroAROverlay v119)
+  const handleAnchor = useCallback((anchor: any) => {
+    if (!anchor) return;
+    if (anchor.type !== 'plane') return;
+    if (anchor.alignment && anchor.alignment !== 'Horizontal' && anchor.alignment !== 'horizontal') return;
+    const y = anchor.position?.[1];
+    if (typeof y !== 'number' || !isFinite(y)) return;
+    if (y > -0.5) return; // ceiling reject
+    const expectedFloor = camYRef.current - 1.5;
+    const planeDeviation = Math.abs(y - expectedFloor);
+    if (planeDeviation > 0.7) return; // desk/table reject
+    const cur = groundYRef.current;
+    const STABILITY_THRESHOLD_M = 0.10;
+    if (cur === null) {
+      const fwd = camForwardRef.current;
+      if (fwd[1] > 0.7) {
+        crashLogger.breadcrumb(`ritualAR:plane:first-skip y=${y.toFixed(3)} fwd1=${fwd[1].toFixed(2)} (phone flat)`);
+        return;
+      }
+      groundYRef.current = y;
+      setGroundYTick((n) => n + 1);
+      crashLogger.breadcrumb(
+        `ritualAR:plane:first y=${y.toFixed(3)} camY=${camYRef.current.toFixed(2)} expectedFloor=${expectedFloor.toFixed(2)}`
+      );
+    } else if (y < cur - STABILITY_THRESHOLD_M) {
+      crashLogger.breadcrumb(`ritualAR:plane:lower y=${y.toFixed(3)} prev=${cur.toFixed(3)} delta=${(y - cur).toFixed(3)}`);
+      groundYRef.current = y;
+      setGroundYTick((n) => n + 1);
+    }
+  }, []);
+  const onAnchorFound = useCallback((anchor: any) => handleAnchor(anchor), [handleAnchor]);
+  const onAnchorUpdated = useCallback((anchor: any) => handleAnchor(anchor), [handleAnchor]);
 
   return (
-    <ViroARScene onTrackingUpdated={onTrackingUpdated}>
-      {/* Soft ambient + warm directional — keeps PNG colours readable
-          regardless of real-world lighting. Constant material does NOT
-          react to lights but other future layers (text labels) might. */}
+    <ViroARScene
+      onTrackingUpdated={onTrackingUpdated}
+      onCameraTransformUpdate={onCameraTransformUpdate}
+      onAnchorFound={onAnchorFound}
+      onAnchorUpdated={onAnchorUpdated}
+    >
       <ViroAmbientLight color="#ffffff" intensity={300} />
       <ViroDirectionalLight color="#ffffff" direction={[0.0, -1.0, -0.5]} intensity={500} />
 
