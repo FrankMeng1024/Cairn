@@ -21,6 +21,8 @@ import {
   ViroARSceneNavigator,
   ViroQuad,
   ViroBox,
+  ViroPolyline,
+  ViroParticleEmitter,
   Viro3DObject,
   ViroNode,
   ViroAmbientLight,
@@ -46,6 +48,11 @@ const RITUAL_TEX = {
   scenic:   require('../../assets/ar/ritual_circle_scenic.png'),
   cairn:    require('../../assets/ar/ritual_circle_cairn.png'),
 } as const;
+
+// v150 sprite assets (5-way A/B test)
+const STREAK_SPRITE = require('../../assets/ar/sprite_streak.png');
+const DOT_SPRITE = require('../../assets/ar/sprite_dot.png');
+const FLOW_GRADIENT = require('../../assets/ar/flow_gradient.png');
 
 // Strand assets — 5 curves × 5 types = 25 GLBs. v143: colour is BAKED into
 // the GLB's pbrMetallicRoughness.baseColorFactor at build time because
@@ -240,6 +247,13 @@ function RitualARScene(props: any) {
   // onCameraTransformUpdate. This is a 1:1 port — DO NOT simplify.
   const cairnNodesRef = useRef<CairnWorldPos[]>([]);
   const groundYRef = useRef<number | null>(null);
+  // v150: Lock the ground Y at FIRST detection per session. Once a marker is
+  // placed it must never visually translate vertically — even if ARKit later
+  // refines the floor estimate. The "marker follows me" bug in v148/149 was
+  // caused by groundYRef updating during normal use, which re-ran the cairnY
+  // computation in the useMemo and shifted every marker's y by 0.05-0.4m.
+  // Hold the first stable ground value forever per AR session.
+  const lockedGroundYRef = useRef<number | null>(null);
   const [groundYTick, setGroundYTick] = useState(0);
   const camForwardRef = useRef<number[]>([0, 0, -1]);
   const camYRef = useRef<number>(1.5);
@@ -296,6 +310,54 @@ function RitualARScene(props: any) {
           diffuseColor: STRAND_TINT[t],
         };
       }
+      // v150 NEW: scenic shader — UV-scroll flow over time, fresnel rim,
+      // tip fade. Recipe A from docs/viro-knowledge.md. JS pushes 'time'
+      // uniform every 32ms via ViroMaterials.updateShaderUniform.
+      mats['scenicFlow'] = {
+        lightingModel: 'Constant',
+        blendMode: 'Add',
+        bloomThreshold: 0.1,
+        diffuseColor: '#7090ff',
+        diffuseTexture: FLOW_GRADIENT,
+        wrapT: 'Repeat',
+        shaderModifiers: {
+          surface: {
+            uniforms: 'uniform highp float time;',
+            body: `
+              highp vec2 uv = vec2(_surface.diffuse_texcoord.x,
+                                    _surface.diffuse_texcoord.y - time * 0.0008);
+              highp float bandAlpha = texture(diffuseTexture, fract(uv)).a;
+              highp float tipFade = 1.0 - smoothstep(0.5, 1.0, _surface.diffuse_texcoord.y);
+              _surface.diffuse_color.a = bandAlpha * tipFade;
+            `,
+          } as any,
+        },
+        materialUniforms: [
+          { name: 'time', type: 'float', value: 0 },
+        ],
+      } as any;
+      // v150 NEW: cairn layered ribbon materials (3 stacked billboard quads).
+      mats['cairnLayer1'] = {
+        lightingModel: 'Constant',
+        blendMode: 'Add',
+        diffuseColor: '#80602a',
+        diffuseTexture: FLOW_GRADIENT,
+        bloomThreshold: 0.15,
+      };
+      mats['cairnLayer2'] = {
+        lightingModel: 'Constant',
+        blendMode: 'Add',
+        diffuseColor: '#d4a050',
+        diffuseTexture: FLOW_GRADIENT,
+        bloomThreshold: 0.10,
+      };
+      mats['cairnLayer3'] = {
+        lightingModel: 'Constant',
+        blendMode: 'Add',
+        diffuseColor: '#ffe0a0',
+        diffuseTexture: FLOW_GRADIENT,
+        bloomThreshold: 0.05,
+      };
       ViroMaterials.createMaterials(mats);
 
       // Animations: slow rotation around Y for the ground ring + 5 small
@@ -354,42 +416,39 @@ function RitualARScene(props: any) {
     return () => clearTimeout(id);
   }, [tracking]);
 
-  // ── World position computation (v146: 1:1 port from ViroAROverlay) ──
+  // ── World position computation (v150: locked ground Y to prevent drift) ──
   const cairnNodes = useMemo<CairnWorldPos[]>(() => {
     if (!arkitOrigin) return [];
-    const EYE_M = 1.5;
     const FALLBACK_HOLD_HEIGHT_M = 1.4;
-    const ground = groundYRef.current;
-    const cairnY = ground !== null
-      ? ground + EYE_M
-      : -FALLBACK_HOLD_HEIGHT_M + EYE_M;
-    const prevY = lastCairnYRef.current;
-    if (prevY !== null && Math.abs(cairnY - prevY) > 0.001) {
+    // v150: once we have any ground reading, freeze it. Re-detection after that
+    // does NOT shift markers. This is what fixes the 'circles follow me' bug —
+    // markers' y was changing by 0.05-0.4m each ground refinement.
+    if (lockedGroundYRef.current === null && groundYRef.current !== null) {
+      lockedGroundYRef.current = groundYRef.current;
       crashLogger.breadcrumb(
-        `ritualAR:drift:cairnY-changed prev=${prevY.toFixed(3)} new=${cairnY.toFixed(3)} ` +
-        `delta=${(cairnY - prevY).toFixed(3)}m ground=${ground === null ? 'null' : ground.toFixed(3)}`,
+        `ritualAR:ground-LOCKED y=${lockedGroundYRef.current.toFixed(3)} (frozen for session)`
       );
     }
-    lastCairnYRef.current = cairnY;
+    const ground = lockedGroundYRef.current;  // ← use locked value, not live
     const nodes: CairnWorldPos[] = [];
     for (const m of markers) {
       const [x, _y, z] = gpsToArWorld(arkitOrigin, m as any);
       const horizontal = Math.hypot(x, z);
       if (horizontal > VISIBLE_RANGE_M) continue;
-      // For ritual circle: ground (groundY) is where the disc lies,
-      // strands rise from there. Don't add EYE_M — anchor at ground.
+      // y is permanent: locked ground if known, else hand-held fallback.
+      // No matter how many planes ARKit refines later, this never changes.
       const y = ground !== null ? ground : -FALLBACK_HOLD_HEIGHT_M;
       crashLogger.breadcrumb(
         `ritualAR:cairn-pos id=${m.id.slice(-4)} type=${m.type} ` +
         `xyz=(${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}) ` +
-        `dist=${horizontal.toFixed(1)}m ground=${ground === null ? 'null' : ground.toFixed(2)}`,
+        `dist=${horizontal.toFixed(1)}m lockedGround=${ground === null ? 'null' : ground.toFixed(2)}`,
       );
       nodes.push({ id: m.id, type: m.type as string, x, y, z, dist: horizontal });
     }
     cairnNodesRef.current = nodes;
     crashLogger.breadcrumb(
       `ritualAR:scene:nodes total=${markers.length} visible=${nodes.length} ` +
-      `range=${VISIBLE_RANGE_M}m ground=${ground === null ? 'null' : ground.toFixed(2)}`,
+      `range=${VISIBLE_RANGE_M}m lockedGround=${ground === null ? 'null' : ground.toFixed(2)}`,
     );
     return nodes;
   }, [markers, arkitOrigin?.lat, arkitOrigin?.lng, arkitOrigin?.alt, groundYTick]);
@@ -555,40 +614,229 @@ function RitualInstance(props: {
           strands look alike.
           Step 4 will add a UV-scroll shaderModifier so the texture appears
           to flow upward inside each strand (DS chiral effect). */}
-      {/* v148: 5 strands, all GLB, all driven by chained sway. v147
-          bisection confirmed Viro animation system fires correctly
-          (anim-START/FINISH breadcrumbs in telemetry session 367) so the
-          v143-v145 'static strands' bug was the absolute-value-loop
-          issue, not the animation framework. Chained array animations
-          (verified in ViroAnimations.ts:46) play forward through each
-          segment, then loop — this gives real oscillation. */}
-      {STRAND_OFFSETS.map((off, i) => {
-        const glbForType = STRAND_GLBS[normalized] ?? STRAND_GLBS.cairn;
-        return (
-          <ViroNode
-            key={`strand-${i}`}
-            position={[off.x * (RITUAL_BASE_SIZE_M * 0.5), 0.0, off.z * (RITUAL_BASE_SIZE_M * 0.5)]}
-            rotation={[0, i * 17, 0]}
-            animation={{
-              name: STRAND_SWAY_ANIMS[i],
-              run: true,
-              loop: true,
-              onStart: () => crashLogger.breadcrumb(`ritualAR:sway-START i=${i}`),
-              onFinish: () => crashLogger.breadcrumb(`ritualAR:sway-FINISH i=${i}`),
+      {/* v150: 5 type 5 distinct visual experiments. Each marker type plays
+          a different strand technique so we can A/B compare in real AR.
+          See docs/viro-knowledge.md for the canonical recipes.
+            danger    = streak particles (discrete rising fragments)
+            supply    = dot particles (sparse floating glow)
+            junction  = static GLB (varying thickness, colour-baked)
+            scenic    = ViroPolyline + flow shader (UV scroll)
+            cairn     = stacked billboard quads (multi-layer transparent ribbons)
+          Future v151 will pick the winner. */}
+      <StrandsForType type={normalized} ringRadius={RITUAL_BASE_SIZE_M * 0.5} />
+    </ViroNode>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// StrandsForType — v150 5-way A/B test renderer
+// ─────────────────────────────────────────────────────────────────
+function StrandsForType({ type, ringRadius }: { type: string; ringRadius: number }) {
+  // 3 anchor points 120° apart for all variants
+  const offsets = useMemo(() => [0, 1, 2].map(i => {
+    const a = (i / 3) * Math.PI * 2 + 0.1;
+    return { x: Math.cos(a) * ringRadius, z: Math.sin(a) * ringRadius };
+  }), [ringRadius]);
+
+  // Drive scenic shader time uniform from JS (canonical Viro pattern,
+  // confirmed in ViroMaterials.ts:211 and docs).
+  useEffect(() => {
+    if (type !== 'scenic') return;
+    const start = Date.now();
+    const id = setInterval(() => {
+      try {
+        (ViroMaterials as any).updateShaderUniform?.(
+          'scenicFlow', 'time', 'float', Date.now() - start,
+        );
+      } catch (e: any) {
+        // older Viro builds don't have updateShaderUniform — silently skip
+      }
+    }, 32);  // 30Hz is enough for visual flow
+    return () => clearInterval(id);
+  }, [type]);
+
+  if (type === 'danger') {
+    // ─── DANGER: discrete rising streaks (粒子断续上升) ───
+    return (
+      <>
+        {offsets.map((off, i) => (
+          <ViroParticleEmitter
+            key={`danger-${i}`}
+            position={[off.x, 0.05, off.z]}
+            duration={3000}
+            delay={i * 350}
+            run={true}
+            loop
+            fixedToEmitter
+            image={{
+              source: STREAK_SPRITE,
+              height: 0.40, width: 0.06,
+              bloomThreshold: 0.05,
             }}
+            spawnBehavior={{
+              particleLifetime: [1500, 3500],   // wide range = irregular
+              maxParticles: 8,
+              emissionRatePerSecond: [3, 5],
+              spawnVolume: { shape: 'sphere', params: [0.05] },
+            }}
+            particleAppearance={{
+              opacity: {
+                initialRange: [0, 0],
+                factor: 'Time',
+                interpolation: [
+                  { interval: [0, 300],   endValue: 0.95 },
+                  { interval: [300, 2400], endValue: 0.95 },
+                  { interval: [2400, 3500], endValue: 0 },
+                ],
+              },
+              scale: {
+                initialRange: [[0.8, 0.8, 0.8], [1.2, 1.2, 1.2]],
+                factor: 'Time',
+                interpolation: [
+                  { interval: [0, 1500],   endValue: [1.0, 1.4, 1.0] },
+                  { interval: [1500, 3500], endValue: [0.4, 0.8, 0.4] },
+                ],
+              },
+              color: {
+                initialRange: ['#ff6a55', '#ffaa66'],
+                factor: 'Time',
+                interpolation: [],
+              },
+            }}
+            particlePhysics={{
+              velocity: { initialRange: [[-0.04, 1.0, -0.04], [0.04, 1.6, 0.04]] },
+              acceleration: { initialRange: [[0, 0.05, 0], [0, 0.10, 0]] },
+            }}
+          />
+        ))}
+      </>
+    );
+  }
+
+  if (type === 'supply' || type === 'water') {
+    // ─── SUPPLY: sparse floating dots (稀疏漂浮光点) ───
+    return (
+      <>
+        {offsets.map((off, i) => (
+          <ViroParticleEmitter
+            key={`supply-${i}`}
+            position={[off.x, 0.05, off.z]}
+            duration={4000}
+            delay={i * 500}
+            run={true}
+            loop
+            fixedToEmitter
+            image={{
+              source: DOT_SPRITE,
+              height: 0.12, width: 0.12,
+              bloomThreshold: 0.05,
+            }}
+            spawnBehavior={{
+              particleLifetime: [3000, 5000],   // longer life = drifty
+              maxParticles: 6,
+              emissionRatePerSecond: [1.5, 2.5],
+              spawnVolume: { shape: 'sphere', params: [0.08] },
+            }}
+            particleAppearance={{
+              opacity: {
+                initialRange: [0, 0],
+                factor: 'Time',
+                interpolation: [
+                  { interval: [0, 600],   endValue: 0.85 },
+                  { interval: [600, 3500], endValue: 0.85 },
+                  { interval: [3500, 5000], endValue: 0 },
+                ],
+              },
+              scale: {
+                initialRange: [[0.6, 0.6, 0.6], [1.0, 1.0, 1.0]],
+                factor: 'Time',
+                interpolation: [
+                  { interval: [0, 2500],   endValue: [1.4, 1.4, 1.4] },
+                  { interval: [2500, 5000], endValue: [0.4, 0.4, 0.4] },
+                ],
+              },
+              color: {
+                initialRange: ['#5fcc7a', '#a0e8b0'],
+                factor: 'Time',
+                interpolation: [],
+              },
+            }}
+            particlePhysics={{
+              velocity: { initialRange: [[-0.05, 0.4, -0.05], [0.05, 0.8, 0.05]] },
+              acceleration: { initialRange: [[0, 0, 0], [0, 0.05, 0]] },
+            }}
+          />
+        ))}
+      </>
+    );
+  }
+
+  if (type === 'junction') {
+    // ─── JUNCTION: static GLB tubes (现有 GLB,变薄变短) ───
+    const glbForType = STRAND_GLBS.junction;
+    return (
+      <>
+        {offsets.map((off, i) => (
+          <ViroNode
+            key={`junction-${i}`}
+            position={[off.x, 0.0, off.z]}
+            rotation={[0, i * 23, 0]}
           >
             <Viro3DObject
               source={glbForType[i]}
               type="GLB"
-              scale={[STRAND_BASE_SCALE, STRAND_BASE_SCALE, STRAND_BASE_SCALE]}
-              onLoadEnd={() => crashLogger.breadcrumb(`ritualAR:strand-loaded i=${i} type=${normalized}`)}
-              onError={(event: any) => crashLogger.breadcrumb(`ritualAR:strand-load-fail i=${i} err=${event?.nativeEvent?.error ?? 'unknown'}`)}
+              scale={[1.0, 0.6, 1.0]}   // squish vertically — testing thickness
+              onLoadEnd={() => crashLogger.breadcrumb(`ritualAR:junction-loaded i=${i}`)}
+              onError={(e: any) => crashLogger.breadcrumb(`ritualAR:junction-fail i=${i}`)}
             />
           </ViroNode>
-        );
-      })}
-    </ViroNode>
-  );
+        ))}
+      </>
+    );
+  }
+
+  if (type === 'scenic' || type === 'free') {
+    // ─── SCENIC: ViroPolyline + flow shader (流动光柱) ───
+    // Polyline runs from ground (y=0) to tip (y=4m). Shader scrolls flow_gradient
+    // texture along V over time uniform. This is the DS-aesthetic recipe from
+    // docs/viro-knowledge.md Recipe A.
+    return (
+      <>
+        {offsets.map((off, i) => (
+          <ViroPolyline
+            key={`scenic-${i}`}
+            position={[off.x, 0.05, off.z]}
+            points={[[0, 0, 0], [0, 4.0, 0]]}
+            thickness={0.06}
+            materials={['scenicFlow']}
+          />
+        ))}
+      </>
+    );
+  }
+
+  if (type === 'cairn' || type === 'hut') {
+    // ─── CAIRN: stacked billboard ribbons (3 层透光带) ───
+    // Three ViroQuads at slightly different sizes, all billboarded toward
+    // camera, with Constant Add material. Layered transparency = soft glow column.
+    return (
+      <>
+        {offsets.map((off, i) => (
+          <ViroNode
+            key={`cairn-${i}`}
+            position={[off.x, 1.5, off.z]}
+            transformBehaviors={['billboard']}
+          >
+            <ViroQuad width={0.10} height={3.0} materials={['cairnLayer1']} position={[0, 0, -0.01]} />
+            <ViroQuad width={0.06} height={3.2} materials={['cairnLayer2']} position={[0, 0, 0]} />
+            <ViroQuad width={0.02} height={3.4} materials={['cairnLayer3']} position={[0, 0, 0.01]} />
+          </ViroNode>
+        ))}
+      </>
+    );
+  }
+
+  return null;
 }
 
 // Public ref handle exposed to ARScreen for debugging.
