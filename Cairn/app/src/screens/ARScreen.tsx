@@ -829,6 +829,29 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
           regular nav screen, not a modal. */}
       <View style={[styles.topBar, { top: insets.top + 2 }]}>
         <BackButton variant="pill" onPress={() => onClose ? onClose() : nav.goBack()} />
+        {/* v153.1: Manual AR-origin reset.
+            arOrigin is persisted in MMKV across sessions (v118 design — keeps
+            markers from drifting between app launches at the same location).
+            But when user changes location (home → office), the persisted home
+            origin is still used to convert ARKit world → GPS, putting all
+            new plants ~15km away from the user.
+            We deliberately don't auto-detect this (user wanted no hardcode /
+            no auto-judgement). Instead: user taps the 📍 button to explicitly
+            clear AR origin, then plant the next marker — that re-locks the
+            origin at the current GPS. One-tap fix, user-controlled. */}
+        <TouchableOpacity
+          style={styles.arResetBtn}
+          onPress={() => {
+            useMarkerStore.getState().clearArOrigin();
+            Alert.alert(
+              'AR origin reset',
+              'Your AR world is now anchored to your current location. Plant a marker to lock it.',
+            );
+          }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.arResetBtnText}>📍</Text>
+        </TouchableOpacity>
         {/* v153: ritual toggle hidden until 3D baseline re-validated.
             Set RITUAL_ENABLED = true above to show again. */}
         {RITUAL_ENABLED && <TouchableOpacity
@@ -1028,6 +1051,17 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(0,0,0,0.55)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+  },
+  arResetBtn: {
+    marginLeft: 'auto',
+    width: 36, height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  arResetBtnText: {
+    fontSize: 16,
   },
   ritualToggleActive: {
     backgroundColor: 'rgba(212,160,80,0.25)',

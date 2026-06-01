@@ -1574,12 +1574,49 @@ export function ViroAROverlay({
     // Seed arkitOriginRef from persisted origin if available so the first
     // render has a usable origin immediately (markers placed at correct
     // GPS deltas with no visual settle).
+    //
+    // v153.1 fix: ALSO check distance from current GPS. v118 introduced
+    // "persistent arOrigin never overwrites" to prevent GPS jitter from
+    // shifting markers between sessions at the SAME location. But it also
+    // prevented relock when user moves to a DIFFERENT location (home ↔
+    // office). Symptom: in v118+, all plants land at the persisted location
+    // regardless of where the user actually is — diagnosed via 5/26
+    // telemetry showing successful office plants pre-v118, vs 6/01 telemetry
+    // showing only home-coordinate plants when user is in the office.
+    //
+    // Distance threshold 100m: well above GPS noise (~5-10m) but well below
+    // any meaningful location change (>500m typically). Within 100m we
+    // preserve the v118 anti-jitter property; beyond, we drop the stale
+    // origin and let userPos useEffect lock fresh.
     if (persistedArOrigin) {
-      arkitOriginRef.current = { ...persistedArOrigin };
-      setOriginReady(true);
-      crashLogger.breadcrumb(
-        `viro:origin-restored lat=${persistedArOrigin.lat.toFixed(6)} lng=${persistedArOrigin.lng.toFixed(6)} (from store)`
-      );
+      let useStored = true;
+      if (userPos) {
+        const dLat = (userPos.lat - persistedArOrigin.lat) * 111000;
+        const cosLat = Math.cos((persistedArOrigin.lat * Math.PI) / 180);
+        const dLng = (userPos.lng - persistedArOrigin.lng) * 111000 * cosLat;
+        const distM = Math.sqrt(dLat * dLat + dLng * dLng);
+        if (distM > 100) {
+          useStored = false;
+          crashLogger.breadcrumb(
+            `viro:origin-DROP-stale dist=${(distM / 1000).toFixed(2)}km ` +
+            `stored=(${persistedArOrigin.lat.toFixed(5)},${persistedArOrigin.lng.toFixed(5)}) ` +
+            `current=(${userPos.lat.toFixed(5)},${userPos.lng.toFixed(5)}) — will relock`,
+          );
+        }
+      }
+      if (useStored) {
+        arkitOriginRef.current = { ...persistedArOrigin };
+        setOriginReady(true);
+        crashLogger.breadcrumb(
+          `viro:origin-restored lat=${persistedArOrigin.lat.toFixed(6)} lng=${persistedArOrigin.lng.toFixed(6)} (from store)`
+        );
+      } else {
+        arkitOriginRef.current = null;
+        setOriginReady(false);
+        // Drop the stale persisted origin — clearArOrigin removes from MMKV too,
+        // so userPos useEffect's setArOriginIfMissing will re-lock fresh.
+        useMarkerStore.getState().clearArOrigin();
+      }
     } else {
       arkitOriginRef.current = null;
       setOriginReady(false);
