@@ -376,11 +376,28 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   }, []);
 
   // Filter markers within AR range
+  // v151 fix: fall back to arOrigin if lastCoord is not yet available.
+  // Without this, the filter returned 0 markers any time GPS hadn't fixed
+  // since the AR screen mounted, even though arOrigin (used for plant) is
+  // already known. This was the 'I planted but I see nothing' bug.
+  const arOriginForFilter = useMarkerStore(s => s.arOrigin);
+  const filterCoord = lastCoord
+    ? { lat: lastCoord.lat, lng: lastCoord.lng }
+    : (arOriginForFilter ? { lat: arOriginForFilter.lat, lng: arOriginForFilter.lng } : null);
   const nearbyMarkers = markers.filter(m => {
-    if (!lastCoord) return false;
-    const dist = haversineM({ lat: lastCoord.lat, lng: lastCoord.lng }, { lat: m.lat, lng: m.lng });
+    if (!filterCoord) return false;
+    const dist = haversineM(filterCoord, { lat: m.lat, lng: m.lng });
     return dist <= AR_MAX_RANGE_M;
   });
+
+  // v151 diagnostic
+  useEffect(() => {
+    crashLogger.breadcrumb(
+      `ARScreen:markers-filter total=${markers.length} nearby=${nearbyMarkers.length} ` +
+      `hasLastCoord=${!!lastCoord} hasArOrigin=${!!arOriginForFilter} ` +
+      `filterCoord=${filterCoord ? `(${filterCoord.lat.toFixed(5)},${filterCoord.lng.toFixed(5)})` : 'null'}`,
+    );
+  }, [markers.length, nearbyMarkers.length, lastCoord?.lat, lastCoord?.lng, arOriginForFilter?.lat]);
 
   // Plant a cairn at the user's GPS, projected forward by `distanceM`
   // along their current heading. Distance values: 5/10/20/30 — 30 is

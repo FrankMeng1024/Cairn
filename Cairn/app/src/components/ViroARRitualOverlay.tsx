@@ -222,6 +222,11 @@ function RitualARScene(props: any) {
           prev.onCairnPress === p.onCairnPress &&
           prev.onArFrame === p.onArFrame
         ) return prev;
+        // v151 diagnostic: tell us the prev/next counts when polling kicks in
+        crashLogger.breadcrumb(
+          `ritualAR:polling-update prev=${prev.markers.length} next=${nextMarkers.length} ` +
+          `originSame=${prev.arkitOrigin === p.arkitOrigin}`,
+        );
         return {
           arkitOrigin: p.arkitOrigin ?? null,
           markers: nextMarkers,
@@ -981,6 +986,15 @@ export const ViroARRitualOverlay = forwardRef<ViroARRitualOverlayHandle, Props>(
     crashLogger.breadcrumb(`ritualAR:overlay-mount markers=${markers.length}`);
     return () => { crashLogger.breadcrumb('ritualAR:overlay-unmount'); };
   }, []);
+
+  // v151 diagnostic: log every time the markers prop changes from JS side
+  // so we can see whether ARScreen is even propagating updates.
+  useEffect(() => {
+    crashLogger.breadcrumb(
+      `ritualAR:markers-prop-changed count=${markers.length} ` +
+      `ids=[${markers.map(m => String(m.id).slice(-4)).slice(0, 5).join(',')}]`,
+    );
+  }, [markers, markers.length]);
 
   if (!userPos || !arkitOriginRef.current) return null;
 

@@ -31,7 +31,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 //
 // Bump rule: increment by 1 immediately before running `eas update`.
 // Never reuse a number, never decrement.
-export const OTA_VERSION = 150;
+export const OTA_VERSION = 151;
 
 type OtaState =
   | 'idle'          // checked, no update — "Up to date"
