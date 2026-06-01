@@ -298,31 +298,8 @@ export const useMarkerStore = create<MarkerState>((set, get) => ({
 
   setArOriginIfMissing: (origin) => {
     const cur = get().arOrigin;
+    if (cur) return; // origin already locked — never overwrite
     const userId = get().userId;
-    // v151 fix: re-lock if current origin is more than 100m from new GPS.
-    // Without this, arOrigin persisted from a previous location (e.g. home)
-    // means today's plants at the office land 15+ km away. Symptom:
-    // "plant marker, see nothing in AR". Diagnosed via telemetry showing
-    // arOrigin=(home) but lastCoord=(office) with 15.6km distance.
-    // 100m is well above GPS jitter (~5-10m) but well below "walked to a
-    // different city" — so it preserves the anti-drift property within a
-    // session while resetting cleanly across sessions/locations.
-    if (cur) {
-      const dLat = (origin.lat - cur.lat) * 111000;
-      const cosLat = Math.cos((cur.lat * Math.PI) / 180);
-      const dLng = (origin.lng - cur.lng) * 111000 * cosLat;
-      const distM = Math.sqrt(dLat * dLat + dLng * dLng);
-      if (distM < 100) {
-        // close enough — keep existing origin to prevent jitter
-        return;
-      }
-      crashLogger.breadcrumb(
-        `ar:origin:relock-distance dist=${(distM / 1000).toFixed(2)}km ` +
-        `old=(${cur.lat.toFixed(5)},${cur.lng.toFixed(5)}) ` +
-        `new=(${origin.lat.toFixed(5)},${origin.lng.toFixed(5)})`,
-      );
-      // fall through to overwrite
-    }
     set({ arOrigin: { lat: origin.lat, lng: origin.lng, alt: origin.alt ?? null } });
     if (userId) {
       storage.setItem(arOriginKey(userId), JSON.stringify(origin));

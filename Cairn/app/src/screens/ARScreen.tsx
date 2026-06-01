@@ -208,6 +208,13 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   // switches between production sphere/icon (ViroAROverlay) and the
   // DS-style ground ritual circle (ViroARRitualOverlay). Both share GPS
   // anchoring + ARKit tracking; only the rendered visuals differ.
+  // v153: ritual mode is DISABLED at the JS level until 3D baseline is
+  // re-validated. The ritualOverlay component still exists and ritualMode
+  // state still exists (so we can flip RITUAL_ENABLED back on later without
+  // re-importing or re-wiring), but the toggle is hidden and the ternary
+  // never enters the ritual branch. ALL AR rendering goes through the
+  // production ViroAROverlay (3D sphere) path during this validation phase.
+  const RITUAL_ENABLED = false;
   const [ritualMode, setRitualMode] = useState(false);
   // Debug snapshot ref — ARScreen calls ritualOverlayRef.current?.takeDebugSnapshot()
   // when user taps the bug button. Snapshot is base64-chunked into telemetry
@@ -376,28 +383,11 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   }, []);
 
   // Filter markers within AR range
-  // v151 fix: fall back to arOrigin if lastCoord is not yet available.
-  // Without this, the filter returned 0 markers any time GPS hadn't fixed
-  // since the AR screen mounted, even though arOrigin (used for plant) is
-  // already known. This was the 'I planted but I see nothing' bug.
-  const arOriginForFilter = useMarkerStore(s => s.arOrigin);
-  const filterCoord = lastCoord
-    ? { lat: lastCoord.lat, lng: lastCoord.lng }
-    : (arOriginForFilter ? { lat: arOriginForFilter.lat, lng: arOriginForFilter.lng } : null);
   const nearbyMarkers = markers.filter(m => {
-    if (!filterCoord) return false;
-    const dist = haversineM(filterCoord, { lat: m.lat, lng: m.lng });
+    if (!lastCoord) return false;
+    const dist = haversineM({ lat: lastCoord.lat, lng: lastCoord.lng }, { lat: m.lat, lng: m.lng });
     return dist <= AR_MAX_RANGE_M;
   });
-
-  // v151 diagnostic
-  useEffect(() => {
-    crashLogger.breadcrumb(
-      `ARScreen:markers-filter total=${markers.length} nearby=${nearbyMarkers.length} ` +
-      `hasLastCoord=${!!lastCoord} hasArOrigin=${!!arOriginForFilter} ` +
-      `filterCoord=${filterCoord ? `(${filterCoord.lat.toFixed(5)},${filterCoord.lng.toFixed(5)})` : 'null'}`,
-    );
-  }, [markers.length, nearbyMarkers.length, lastCoord?.lat, lastCoord?.lng, arOriginForFilter?.lat]);
 
   // Plant a cairn at the user's GPS, projected forward by `distanceM`
   // along their current heading. Distance values: 5/10/20/30 — 30 is
@@ -710,7 +700,7 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
           />
         }
       >
-        {USE_VIRO && ritualMode ? (
+        {USE_VIRO && RITUAL_ENABLED && ritualMode ? (
           <ViroARRitualOverlay
             ref={ritualOverlayRef}
             markers={nearbyMarkers}
@@ -839,11 +829,9 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
           regular nav screen, not a modal. */}
       <View style={[styles.topBar, { top: insets.top + 2 }]}>
         <BackButton variant="pill" onPress={() => onClose ? onClose() : nav.goBack()} />
-        {/* Experimental ritual-circle mode toggle. Tap to swap between
-            current production sphere render and the DS-style ground ritual
-            circle. Both share GPS anchoring; only visuals differ.
-            Auto-pushed to the right via marginLeft: 'auto'. */}
-        <TouchableOpacity
+        {/* v153: ritual toggle hidden until 3D baseline re-validated.
+            Set RITUAL_ENABLED = true above to show again. */}
+        {RITUAL_ENABLED && <TouchableOpacity
           style={[styles.ritualToggle, ritualMode && styles.ritualToggleActive]}
           onPress={() => setRitualMode(m => !m)}
           activeOpacity={0.7}
@@ -851,12 +839,9 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
           <Text style={styles.ritualToggleText}>
             {ritualMode ? '◉ Ritual' : '○ Sphere'}
           </Text>
-        </TouchableOpacity>
-        {/* Debug snapshot button — only shows when ritualMode is on. Captures
-            the live Viro AR view + dumps strand state into telemetry as a
-            base64-chunked breadcrumb sequence. Backend reader script
-            reassembles the PNG locally so I can SEE what the user sees. */}
-        {ritualMode && (
+        </TouchableOpacity>}
+        {/* Debug snapshot button — only shows when ritualMode is on. */}
+        {RITUAL_ENABLED && ritualMode && (
           <TouchableOpacity
             style={[
               styles.debugSnapBtn,
