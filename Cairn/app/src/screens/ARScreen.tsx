@@ -208,13 +208,9 @@ export function ARScreen({ onClose, onPlaceMarker }: ARScreenProps) {
   // switches between production sphere/icon (ViroAROverlay) and the
   // DS-style ground ritual circle (ViroARRitualOverlay). Both share GPS
   // anchoring + ARKit tracking; only the rendered visuals differ.
-  // v153: ritual mode is DISABLED at the JS level until 3D baseline is
-  // re-validated. The ritualOverlay component still exists and ritualMode
-  // state still exists (so we can flip RITUAL_ENABLED back on later without
-  // re-importing or re-wiring), but the toggle is hidden and the ternary
-  // never enters the ritual branch. ALL AR rendering goes through the
-  // production ViroAROverlay (3D sphere) path during this validation phase.
-  const RITUAL_ENABLED = false;
+  // v155: ritual mode RE-ENABLED. 5 type 5 distinct best-effort strand
+  // techniques, one per type, for user-side A/B comparison.
+  const RITUAL_ENABLED = true;
   const [ritualMode, setRitualMode] = useState(false);
   // Debug snapshot ref — ARScreen calls ritualOverlayRef.current?.takeDebugSnapshot()
   // when user taps the bug button. Snapshot is base64-chunked into telemetry

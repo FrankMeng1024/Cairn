@@ -318,11 +318,22 @@ function RitualARScene(props: any) {
       // v150 NEW: scenic shader — UV-scroll flow over time, fresnel rim,
       // tip fade. Recipe A from docs/viro-knowledge.md. JS pushes 'time'
       // uniform every 32ms via ViroMaterials.updateShaderUniform.
-      mats['scenicFlow'] = {
+      // v155 SUPPLY: parallel polyline strands — same green tint, no shader,
+      // multiple thin polylines per anchor stacked side-by-side.
+      mats['supplyStrand'] = {
+        lightingModel: 'Constant',
+        blendMode: 'Add',
+        bloomThreshold: 0.05,
+        diffuseColor: '#5fcc7a',
+      };
+      // v155 JUNCTION: shader-driven flowing column. Time uniform pushed
+      // every 32ms from JS. UV scroll over flow_gradient texture creates
+      // the "energy streaming up" effect. Recipe A from viro-knowledge.md.
+      mats['junctionFlow'] = {
         lightingModel: 'Constant',
         blendMode: 'Add',
         bloomThreshold: 0.1,
-        diffuseColor: '#7090ff',
+        diffuseColor: '#ffa040',
         diffuseTexture: FLOW_GRADIENT,
         wrapT: 'Repeat',
         shaderModifiers: {
@@ -341,7 +352,7 @@ function RitualARScene(props: any) {
           { name: 'time', type: 'float', value: 0 },
         ],
       } as any;
-      // v150 NEW: cairn layered ribbon materials (3 stacked billboard quads).
+      // v150 cairn layered ribbon materials (3 stacked billboard quads).
       mats['cairnLayer1'] = {
         lightingModel: 'Constant',
         blendMode: 'Add',
@@ -634,82 +645,72 @@ function RitualInstance(props: {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// StrandsForType — v150 5-way A/B test renderer
+// StrandsForType — v155 5 distinct best-effort techniques
+// Each type tests a fundamentally different rendering technique
+// (one per Viro primitive: particle / polyline / shader / multi-layer)
+// so the user can compare aesthetic + perf head-to-head and pick the
+// winner for production. Recipes drawn from docs/viro-knowledge.md.
 // ─────────────────────────────────────────────────────────────────
 function StrandsForType({ type, ringRadius }: { type: string; ringRadius: number }) {
-  // 3 anchor points 120° apart for all variants
-  const offsets = useMemo(() => [0, 1, 2].map(i => {
+  // Anchor points around the ring edge with slight jitter
+  const offsets5 = useMemo(() => [0, 1, 2, 3, 4].map(i => {
+    const a = (i / 5) * Math.PI * 2 + (i % 2 ? 0.10 : -0.05);
+    return { x: Math.cos(a) * ringRadius, z: Math.sin(a) * ringRadius };
+  }), [ringRadius]);
+  const offsets3 = useMemo(() => [0, 1, 2].map(i => {
     const a = (i / 3) * Math.PI * 2 + 0.1;
     return { x: Math.cos(a) * ringRadius, z: Math.sin(a) * ringRadius };
   }), [ringRadius]);
 
-  // Drive scenic shader time uniform from JS (canonical Viro pattern,
-  // confirmed in ViroMaterials.ts:211 and docs).
+  // Drive junction shader time uniform from JS (canonical Viro pattern)
   useEffect(() => {
-    if (type !== 'scenic') return;
+    if (type !== 'junction') return;
     const start = Date.now();
     const id = setInterval(() => {
       try {
         (ViroMaterials as any).updateShaderUniform?.(
-          'scenicFlow', 'time', 'float', Date.now() - start,
+          'junctionFlow', 'time', 'float', Date.now() - start,
         );
-      } catch (e: any) {
-        // older Viro builds don't have updateShaderUniform — silently skip
-      }
-    }, 32);  // 30Hz is enough for visual flow
+      } catch {}
+    }, 32);
     return () => clearInterval(id);
   }, [type]);
 
+  // ─── DANGER (red): discrete rising streak particles ───
   if (type === 'danger') {
-    // ─── DANGER: discrete rising streaks (粒子断续上升) ───
     return (
       <>
-        {offsets.map((off, i) => (
+        {offsets5.map((off, i) => (
           <ViroParticleEmitter
-            key={`danger-${i}`}
+            key={`d-${i}`}
             position={[off.x, 0.05, off.z]}
             duration={3000}
-            delay={i * 350}
-            run={true}
-            loop
-            fixedToEmitter
-            image={{
-              source: STREAK_SPRITE,
-              height: 0.40, width: 0.06,
-              bloomThreshold: 0.05,
-            }}
+            delay={i * 250}
+            run loop fixedToEmitter
+            image={{ source: STREAK_SPRITE, height: 0.55, width: 0.07, bloomThreshold: 0.05 }}
             spawnBehavior={{
-              particleLifetime: [1500, 3500],   // wide range = irregular
-              maxParticles: 8,
-              emissionRatePerSecond: [3, 5],
+              particleLifetime: [1500, 3500],
+              maxParticles: 12,
+              emissionRatePerSecond: [5, 8],
               spawnVolume: { shape: 'sphere', params: [0.05] },
             }}
             particleAppearance={{
-              opacity: {
-                initialRange: [0, 0],
-                factor: 'Time',
-                interpolation: [
-                  { interval: [0, 300],   endValue: 0.95 },
-                  { interval: [300, 2400], endValue: 0.95 },
-                  { interval: [2400, 3500], endValue: 0 },
-                ],
-              },
-              scale: {
-                initialRange: [[0.8, 0.8, 0.8], [1.2, 1.2, 1.2]],
-                factor: 'Time',
-                interpolation: [
-                  { interval: [0, 1500],   endValue: [1.0, 1.4, 1.0] },
-                  { interval: [1500, 3500], endValue: [0.4, 0.8, 0.4] },
-                ],
-              },
-              color: {
-                initialRange: ['#ff6a55', '#ffaa66'],
-                factor: 'Time',
-                interpolation: [],
-              },
+              opacity: { initialRange: [0, 0], factor: 'Time', interpolation: [
+                { interval: [0, 250], endValue: 0.95 },
+                { interval: [250, 2400], endValue: 0.95 },
+                { interval: [2400, 3500], endValue: 0 },
+              ]},
+              scale: { initialRange: [[0.7,0.7,0.7],[1.0,1.0,1.0]], factor: 'Time', interpolation: [
+                { interval: [0, 1400], endValue: [1.2,1.4,1.2] },
+                { interval: [1400, 3500], endValue: [0.4,0.6,0.4] },
+              ]},
+              color: { initialRange: ['#ff5a3a','#ff5a3a'], factor: 'Time', interpolation: [
+                { interval: [0, 2000], endValue: '#ff5a3a' },
+                { interval: [2000, 3500], endValue: '#ffd0a0' },
+              ]},
             }}
             particlePhysics={{
-              velocity: { initialRange: [[-0.04, 1.0, -0.04], [0.04, 1.6, 0.04]] },
+              velocity: { initialRange: [[-0.05, 1.0, -0.05], [0.05, 1.6, 0.05]] },
               acceleration: { initialRange: [[0, 0.05, 0], [0, 0.10, 0]] },
             }}
           />
@@ -718,81 +719,26 @@ function StrandsForType({ type, ringRadius }: { type: string; ringRadius: number
     );
   }
 
+  // ─── SUPPLY (green): multi-parallel thin polyline strands ───
   if (type === 'supply' || type === 'water') {
-    // ─── SUPPLY: sparse floating dots (稀疏漂浮光点) ───
     return (
       <>
-        {offsets.map((off, i) => (
-          <ViroParticleEmitter
-            key={`supply-${i}`}
-            position={[off.x, 0.05, off.z]}
-            duration={4000}
-            delay={i * 500}
-            run={true}
-            loop
-            fixedToEmitter
-            image={{
-              source: DOT_SPRITE,
-              height: 0.12, width: 0.12,
-              bloomThreshold: 0.05,
-            }}
-            spawnBehavior={{
-              particleLifetime: [3000, 5000],   // longer life = drifty
-              maxParticles: 6,
-              emissionRatePerSecond: [1.5, 2.5],
-              spawnVolume: { shape: 'sphere', params: [0.08] },
-            }}
-            particleAppearance={{
-              opacity: {
-                initialRange: [0, 0],
-                factor: 'Time',
-                interpolation: [
-                  { interval: [0, 600],   endValue: 0.85 },
-                  { interval: [600, 3500], endValue: 0.85 },
-                  { interval: [3500, 5000], endValue: 0 },
-                ],
-              },
-              scale: {
-                initialRange: [[0.6, 0.6, 0.6], [1.0, 1.0, 1.0]],
-                factor: 'Time',
-                interpolation: [
-                  { interval: [0, 2500],   endValue: [1.4, 1.4, 1.4] },
-                  { interval: [2500, 5000], endValue: [0.4, 0.4, 0.4] },
-                ],
-              },
-              color: {
-                initialRange: ['#5fcc7a', '#a0e8b0'],
-                factor: 'Time',
-                interpolation: [],
-              },
-            }}
-            particlePhysics={{
-              velocity: { initialRange: [[-0.05, 0.4, -0.05], [0.05, 0.8, 0.05]] },
-              acceleration: { initialRange: [[0, 0, 0], [0, 0.05, 0]] },
-            }}
-          />
-        ))}
-      </>
-    );
-  }
-
-  if (type === 'junction') {
-    // ─── JUNCTION: static GLB tubes (现有 GLB,变薄变短) ───
-    const glbForType = STRAND_GLBS.junction;
-    return (
-      <>
-        {offsets.map((off, i) => (
-          <ViroNode
-            key={`junction-${i}`}
-            position={[off.x, 0.0, off.z]}
-            rotation={[0, i * 23, 0]}
-          >
-            <Viro3DObject
-              source={glbForType[i]}
-              type="GLB"
-              scale={[1.0, 0.6, 1.0]}   // squish vertically — testing thickness
-              onLoadEnd={() => crashLogger.breadcrumb(`ritualAR:junction-loaded i=${i}`)}
-              onError={(e: any) => crashLogger.breadcrumb(`ritualAR:junction-fail i=${i}`)}
+        {offsets3.map((off, i) => (
+          <ViroNode key={`s-${i}`} position={[off.x, 0.05, off.z]}>
+            <ViroPolyline
+              points={[[0,0,0],[0,4.5,0]]}
+              thickness={0.03}
+              materials={['supplyStrand']}
+            />
+            <ViroPolyline
+              points={[[0.04,0,0],[0.04,4.0,0]]}
+              thickness={0.02}
+              materials={['supplyStrand']}
+            />
+            <ViroPolyline
+              points={[[-0.04,0,0],[-0.04,4.0,0]]}
+              thickness={0.02}
+              materials={['supplyStrand']}
             />
           </ViroNode>
         ))}
@@ -800,41 +746,102 @@ function StrandsForType({ type, ringRadius }: { type: string; ringRadius: number
     );
   }
 
-  if (type === 'scenic' || type === 'free') {
-    // ─── SCENIC: ViroPolyline + flow shader (流动光柱) ───
-    // Polyline runs from ground (y=0) to tip (y=4m). Shader scrolls flow_gradient
-    // texture along V over time uniform. This is the DS-aesthetic recipe from
-    // docs/viro-knowledge.md Recipe A.
+  // ─── JUNCTION (orange): flowing-shader polyline ───
+  if (type === 'junction') {
     return (
       <>
-        {offsets.map((off, i) => (
+        {offsets3.map((off, i) => (
           <ViroPolyline
-            key={`scenic-${i}`}
+            key={`j-${i}`}
             position={[off.x, 0.05, off.z]}
-            points={[[0, 0, 0], [0, 4.0, 0]]}
-            thickness={0.06}
-            materials={['scenicFlow']}
+            points={[[0,0,0],[0,5.0,0]]}
+            thickness={0.07}
+            materials={['junctionFlow']}
           />
         ))}
       </>
     );
   }
 
-  if (type === 'cairn' || type === 'hut') {
-    // ─── CAIRN: stacked billboard ribbons (3 层透光带) ───
-    // Three ViroQuads at slightly different sizes, all billboarded toward
-    // camera, with Constant Add material. Layered transparency = soft glow column.
+  // ─── SCENIC (blue): thick column + tip particles flying off ───
+  if (type === 'scenic' || type === 'free') {
     return (
       <>
-        {offsets.map((off, i) => (
-          <ViroNode
-            key={`cairn-${i}`}
-            position={[off.x, 1.5, off.z]}
-            transformBehaviors={['billboard']}
-          >
-            <ViroQuad width={0.10} height={3.0} materials={['cairnLayer1']} position={[0, 0, -0.01]} />
-            <ViroQuad width={0.06} height={3.2} materials={['cairnLayer2']} position={[0, 0, 0]} />
-            <ViroQuad width={0.02} height={3.4} materials={['cairnLayer3']} position={[0, 0, 0.01]} />
+        {offsets3.map((off, i) => (
+          <ViroNode key={`sc-${i}`} position={[off.x, 0.05, off.z]}>
+            {/* Bottom: dense rising column */}
+            <ViroParticleEmitter
+              duration={2500} delay={i * 200}
+              run loop fixedToEmitter
+              image={{ source: STREAK_SPRITE, height: 0.45, width: 0.10, bloomThreshold: 0.05 }}
+              spawnBehavior={{
+                particleLifetime: [1200, 2500],
+                maxParticles: 16,
+                emissionRatePerSecond: [10, 14],
+                spawnVolume: { shape: 'sphere', params: [0.06] },
+              }}
+              particleAppearance={{
+                opacity: { initialRange: [0,0], factor: 'Time', interpolation: [
+                  { interval: [0, 200], endValue: 0.9 },
+                  { interval: [200, 2000], endValue: 0.9 },
+                  { interval: [2000, 2500], endValue: 0 },
+                ]},
+                scale: { initialRange: [[0.8,0.8,0.8],[1.1,1.1,1.1]], factor: 'Time', interpolation: [
+                  { interval: [0, 1000], endValue: [1.3,1.3,1.3] },
+                  { interval: [1000, 2500], endValue: [0.5,0.5,0.5] },
+                ]},
+                color: { initialRange: ['#7090ff','#7090ff'], factor: 'Time', interpolation: [
+                  { interval: [0, 1500], endValue: '#7090ff' },
+                  { interval: [1500, 2500], endValue: '#d8e8ff' },
+                ]},
+              }}
+              particlePhysics={{
+                velocity: { initialRange: [[-0.08, 1.4, -0.08], [0.08, 2.0, 0.08]] },
+                acceleration: { initialRange: [[0, 0.08, 0], [0, 0.15, 0]] },
+              }}
+            />
+            {/* Top: dot particles flying outward */}
+            <ViroParticleEmitter
+              position={[0, 4.0, 0]}
+              duration={2500} delay={i * 200 + 1000}
+              run loop fixedToEmitter
+              image={{ source: DOT_SPRITE, height: 0.10, width: 0.10, bloomThreshold: 0.05 }}
+              spawnBehavior={{
+                particleLifetime: [1500, 3000],
+                maxParticles: 8,
+                emissionRatePerSecond: [3, 5],
+                spawnVolume: { shape: 'sphere', params: [0.15] },
+              }}
+              particleAppearance={{
+                opacity: { initialRange: [0.8,0.9], factor: 'Time', interpolation: [
+                  { interval: [0, 500], endValue: 0.8 },
+                  { interval: [500, 3000], endValue: 0 },
+                ]},
+                scale: { initialRange: [[0.5,0.5,0.5],[0.8,0.8,0.8]], factor: 'Time', interpolation: [
+                  { interval: [0, 3000], endValue: [1.2,1.2,1.2] },
+                ]},
+                color: { initialRange: ['#d8e8ff','#d8e8ff'], factor: 'Time', interpolation: [] },
+              }}
+              particlePhysics={{
+                velocity: { initialRange: [[-0.4, 0.3, -0.4], [0.4, 0.8, 0.4]] },
+                acceleration: { initialRange: [[0, -0.1, 0], [0, 0, 0]] },
+              }}
+            />
+          </ViroNode>
+        ))}
+      </>
+    );
+  }
+
+  // ─── CAIRN (gold): 3 stacked transparent ribbons billboard ───
+  if (type === 'cairn' || type === 'hut') {
+    return (
+      <>
+        {offsets3.map((off, i) => (
+          <ViroNode key={`c-${i}`} position={[off.x, 2.0, off.z]} transformBehaviors={['billboard']}>
+            <ViroQuad width={0.12} height={4.0} materials={['cairnLayer1']} position={[0, 0, -0.01]} />
+            <ViroQuad width={0.06} height={4.2} materials={['cairnLayer2']} position={[0, 0, 0]} />
+            <ViroQuad width={0.02} height={4.4} materials={['cairnLayer3']} position={[0, 0, 0.01]} />
           </ViroNode>
         ))}
       </>
